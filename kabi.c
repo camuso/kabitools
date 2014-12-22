@@ -1,11 +1,10 @@
 /* kabi.c
- *
- * This code was lifted directly from the spartakus project ...
- * http://git.engineering.redhat.com/git/users/sbairagy/spartakus.git
- * ... and modified for ksym detection.
- *
- */
-
+**
+** The code that identifies exported symbols was lifted from the spartakus
+** project: http://git.engineering.redhat.com/git/users/sbairagy/spartakus.git
+**
+**
+*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,33 +17,15 @@
 #include "sparse/expression.h"
 #include "sparse/token.h"
 
+typedef int bool;
+#define true 1
+#define false 0;
+
 int starts_with(const char *, const char *);
 char * substring(const char* input, int offset, int len, char* dest);
 
 static struct symbol_list *exported = NULL;
 static struct symbol_list *symlist = NULL;
-
-char *typenames[] = {
-	[SYM_UNINITIALIZED] = "uninitialized",
-	[SYM_PREPROCESSOR]  = "preprocessor",
-	[SYM_BASETYPE]      = "basetype",
-	[SYM_NODE]          = "node",
-	[SYM_PTR]           = "pointer",
-	[SYM_FN]            = "function",
-	[SYM_ARRAY]         = "array",
-	[SYM_STRUCT]        = "struct",
-	[SYM_UNION]         = "union",
-	[SYM_ENUM]          = "enum",
-	[SYM_TYPEDEF]       = "typedef",
-	[SYM_TYPEOF]        = "typeof",
-	[SYM_MEMBER]        = "member",
-	[SYM_BITFIELD]      = "bitfield",
-	[SYM_LABEL]         = "label",
-	[SYM_RESTRICT]      = "restrict",
-	[SYM_FOULED]        = "fouled",
-	[SYM_KEYWORD]       = "keyword",
-	[SYM_BAD]           = "bad",
-};
 
 static void dump_symbol(struct symbol *sym)
 {
@@ -113,6 +94,47 @@ fie_foundit:
 	return sym;
 }
 
+static inline bool symbol_is_fp_type(struct symbol *sym)
+{
+	if (!sym)
+		return false;
+
+	return sym->ctype.base_type == &fp_type;
+}
+
+// explore_ctype(struct symbol *sym)
+//
+// Recursively traverse the ctype tree to get the details about the symbol,
+// i.e. type, name, etc.
+//
+// sparse calls:
+// 	symbol.c::get_type_name()
+// 	show-parse.c::modifier_string()
+//
+void explore_ctype(struct symbol *sym)
+{
+	struct symbol *basetype = sym->ctype.base_type;
+
+	if (basetype) {
+		if (basetype->type) {
+			const char *typnam = get_type_name(basetype->type);
+			if (strcmp(typnam, "basetype") == 0) {
+
+				if (! basetype->ctype.modifiers)
+					typnam = "void";
+				else
+					typnam = modifier_string
+						(basetype->ctype.modifiers);
+			}
+			printf("%s ", typnam);
+		}
+		if (basetype->ident)
+			printf("%s ", basetype->ident->name);
+
+		explore_ctype(basetype);
+	}
+}
+
 // show_args(struct symbol *sym)
 //
 // Determines if the symbol arg is a function. If so, prints the argument
@@ -130,21 +152,11 @@ static void show_args (struct symbol *sym)
 	if (sym->arguments) {
 		struct symbol *arg = NULL;
 
-		printf("arguments\n");
+		printf("\n\t\targuments:\n");
 
 		FOR_EACH_PTR(sym->arguments, arg) {
 			printf("\t\t");
-			basetype = arg->ctype.base_type;
-
-			if (basetype->type) {
-				printf("%s ", typenames[basetype->type]);
-				basetype = basetype->ctype.base_type;
-				if (basetype->type)
-					printf("%s ", typenames[basetype->type]);
-				if (basetype->ident)
-					printf("%s ", basetype->ident->name);
-			}
-
+			explore_ctype(arg);
 			printf("%s\n", arg->ident->name);
 		} END_FOR_EACH_PTR(arg);
 	}
@@ -165,7 +177,7 @@ void show_exported(struct symbol *sym)
 		int len = strlen(sym->ident->name) - strlen("__ksymtab_");
 
 		symname = substring(sym->ident->name, offset, len, symname);
-		printf("exported sym: %s ", symname, sym->namespace);
+		printf("\nexported sym: %s ", symname, sym->namespace);
 
 		// find the internal declaration of the exported symbol.
 		//
@@ -178,7 +190,7 @@ void show_exported(struct symbol *sym)
 			// args.
 			//
 			if (basetype->type == SYM_FN) {
-				printf("\tctype %s ", typenames[SYM_FN]);
+				printf(" %s ", get_type_name(SYM_FN));
 				show_args(basetype);
 			}
 
