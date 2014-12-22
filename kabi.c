@@ -177,7 +177,7 @@ void show_exported(struct symbol *sym)
 		int len = strlen(sym->ident->name) - strlen("__ksymtab_");
 
 		symname = substring(sym->ident->name, offset, len, symname);
-		printf("\nexported sym: %s ", symname, sym->namespace);
+		printf("\n%s ", symname, sym->namespace);
 
 		// find the internal declaration of the exported symbol.
 		//
@@ -185,15 +185,13 @@ void show_exported(struct symbol *sym)
 			struct symbol *basetype = exp->ctype.base_type;
 
 			add_symbol(&exported, exp);
+			explore_ctype(exp);
 
 			// If the exported symbol is a C function, print its
 			// args.
 			//
-			if (basetype->type == SYM_FN) {
-				printf(" %s ", get_type_name(SYM_FN));
+			if (basetype->type == SYM_FN)
 				show_args(basetype);
-			}
-
 		} else
 			printf("Could not find internal source.\n");
 	}
@@ -212,6 +210,9 @@ int main(int argc, char **argv)
 {
 	char *file;
 	struct string_list *filelist = NULL;
+
+	printf("\nIdentify Exported Symbols and "
+		"their Arguments and Members.\n");
 
 	symlist = sparse_initialize(argc, argv, &filelist);
 	show_symbol_list(symlist, "\n");
