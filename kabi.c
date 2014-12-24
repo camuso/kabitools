@@ -21,48 +21,9 @@ typedef int bool;
 #define true 1
 #define false 0;
 
-int starts_with(const char *, const char *);
-char * substring(const char* input, int offset, int len, char* dest);
-
+const char *ksymprefix = "__ksymtab_";
 static struct symbol_list *exported = NULL;
 static struct symbol_list *symlist = NULL;
-
-static void dump_symbol(struct symbol *sym)
-{
-	const char *typename;
-	struct symbol *type;
-
-	if (!sym) {
-		puts("");
-		return;
-	}
-
-	printf("TYPE: %s\n", show_typename(sym));
-	type = sym->ctype.base_type;
-
-	return;
-
-	if (!type)
-		return;
-
-	switch (type->type) {
-		struct symbol *member;
-
-	case SYM_STRUCT:
-	case SYM_UNION:
-		if(member->ident) {
-			puts(" {");
-			FOR_EACH_PTR(type->symbol_list, member) {
-				printf("\t%s\n", show_ident(member->ident));
-			} END_FOR_EACH_PTR(member);
-			puts("}");
-		}
-		break;
-	default:
-		puts("");
-		break;
-	}
-}
 
 // find_internal_exported (symbol_list* symlist, char *symname)
 //
@@ -164,20 +125,26 @@ static void show_args (struct symbol *sym)
 		putchar('\n');
 }
 
-void show_exported(struct symbol *sym)
+static int starts_with(const char *a, const char *b)
+{
+	if(strncmp(a, b, strlen(b)) == 0)
+	{
+		return 1;
+	}
+	return 0;
+}
+
+static void show_exported(struct symbol *sym)
 {
 	struct symbol *exp;
 
 	// Symbol name beginning with __ksymtab_ is an exported symbol
 	//
-	if (starts_with(sym->ident->name, "__ksymtab_")) {
-		char *symname = malloc((strlen(sym->ident->name)
-				- strlen("__ksymtab_")) * sizeof(char));
-		int offset = strlen("__ksymtab_");
-		int len = strlen(sym->ident->name) - strlen("__ksymtab_");
+	if (starts_with(sym->ident->name, ksymprefix)) {
+		int offset = strlen(ksymprefix);
+		char *symname = &sym->ident->name[offset];
 
-		symname = substring(sym->ident->name, offset, len, symname);
-		printf("\n%s ", symname, sym->namespace);
+		printf("\n%s ", symname);
 
 		// find the internal declaration of the exported symbol.
 		//
@@ -197,7 +164,7 @@ void show_exported(struct symbol *sym)
 	}
 }
 
-void process_file()
+static void process_file()
 {
 	struct symbol *sym;
 
@@ -226,22 +193,3 @@ int main(int argc, char **argv)
 	return 0;
 }
 
-int starts_with(const char *a, const char *b)
-{
-    if(strncmp(a, b, strlen(b)) == 0)
-    {
-        return 1;
-    }
-    return 0;
-}
-
-char * substring(const char* input, int offset, int len, char* dest)
-{
-    int input_len = strlen (input);
-    if(offset + len > input_len)
-    {
-        return NULL;
-    }
-    strncpy(dest, input + offset, len);
-    return dest;
-}
