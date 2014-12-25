@@ -1,10 +1,14 @@
 /* kabi.c
-**
-** The code that identifies exported symbols was lifted from the spartakus
-** project: http://git.engineering.redhat.com/git/users/sbairagy/spartakus.git
-**
-**
-*/
+ *
+ * Find all the exported symbols in .i file(s) passed as argument(s) on the
+ * command line when invoking this executable.
+ *
+ * Relies heavily on the sparse project. See https://www.openhub.net/p/sparse
+ *
+ * Method for identifying exported symbols was inspired by the spartakus
+ * project: http://git.engineering.redhat.com/git/users/sbairagy/spartakus.git
+ *
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,10 +20,6 @@
 #include "sparse/symbol.h"
 #include "sparse/expression.h"
 #include "sparse/token.h"
-
-typedef int bool;
-#define true 1
-#define false 0;
 
 const char *ksymprefix = "__ksymtab_";
 static struct symbol_list *exported = NULL;
@@ -55,14 +55,6 @@ fie_foundit:
 	return sym;
 }
 
-static inline bool symbol_is_fp_type(struct symbol *sym)
-{
-	if (!sym)
-		return false;
-
-	return sym->ctype.base_type == &fp_type;
-}
-
 // explore_ctype(struct symbol *sym)
 //
 // Recursively traverse the ctype tree to get the details about the symbol,
@@ -72,7 +64,7 @@ static inline bool symbol_is_fp_type(struct symbol *sym)
 // 	symbol.c::get_type_name()
 // 	show-parse.c::modifier_string()
 //
-void explore_ctype(struct symbol *sym)
+static void explore_ctype(struct symbol *sym)
 {
 	struct symbol *basetype = sym->ctype.base_type;
 
@@ -146,7 +138,8 @@ static void show_exported(struct symbol *sym)
 
 		printf("\n%s ", symname);
 
-		// find the internal declaration of the exported symbol.
+		// Find the internal declaration of the exported symbol and
+		// add it to the "exported" list.
 		//
 		if (exp = find_internal_exported(symlist, symname)) {
 			struct symbol *basetype = exp->ctype.base_type;
@@ -154,7 +147,7 @@ static void show_exported(struct symbol *sym)
 			add_symbol(&exported, exp);
 			explore_ctype(exp);
 
-			// If the exported symbol is a C function, print its
+			// If the exported symbol is a function, print its
 			// args.
 			//
 			if (basetype->type == SYM_FN)
