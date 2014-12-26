@@ -24,6 +24,7 @@
 const char *ksymprefix = "__ksymtab_";
 static struct symbol_list *exported = NULL;
 static struct symbol_list *symlist = NULL;
+static struct symbol_list *structargs = NULL;
 
 // find_internal_exported (symbol_list* symlist, char *symname)
 //
@@ -33,7 +34,9 @@ static struct symbol_list *symlist = NULL;
 //
 // Returns a pointer to the symbol that corresponds to the exported one.
 //
-static struct symbol *find_internal_exported(struct symbol_list *symlist, char *symname)
+static struct symbol *find_internal_exported(
+		struct symbol_list *symlist,
+		char *symname)
 {
 	struct symbol *sym = NULL;
 
@@ -55,6 +58,43 @@ fie_foundit:
 	return sym;
 }
 
+// lookup_sym - see if the symbol is already in the list
+//
+// This routine is called before adding a symbol to a list to assure that
+// the symbol is not already in the list.
+//
+// list - pointer to the head of the symbol list
+// sym - pointer to the symbol that is being sought
+//
+// returns 1 if symbol is there, 0 if symbol is not there.
+//
+static int lookup_sym(struct symbol_list *list, struct symbol *sym)
+{
+	struct symbol *temp;
+
+	FOR_EACH_PTR(list, temp) {
+		if (temp == sym)
+			return 1;
+	} END_FOR_EACH_PTR(temp);
+
+	return 0;
+}
+
+// add_struct - add a symbol of struct type to the structargs symbol list
+//
+// sym - pointer to the symbol to lookup
+//
+// implicit inputs:
+//
+//      structargs - globally declared symbol_list of structs passed as
+// 	             arguments.
+//
+static void add_struct( struct symbol *sym)
+{
+	if (! lookup_sym(structargs, sym))
+		add_symbol(&structargs, sym);
+}
+
 // explore_ctype(struct symbol *sym)
 //
 // Recursively traverse the ctype tree to get the details about the symbol,
@@ -71,6 +111,7 @@ static void explore_ctype(struct symbol *sym)
 	if (basetype) {
 		if (basetype->type) {
 			const char *typnam = get_type_name(basetype->type);
+
 			if (strcmp(typnam, "basetype") == 0) {
 
 				if (! basetype->ctype.modifiers)
@@ -79,6 +120,10 @@ static void explore_ctype(struct symbol *sym)
 					typnam = modifier_string
 						(basetype->ctype.modifiers);
 			}
+
+			if (basetype->type == SYM_STRUCT)
+				add_struct(basetype);
+
 			printf("%s ", typnam);
 		}
 		if (basetype->ident)
@@ -126,6 +171,18 @@ static int starts_with(const char *a, const char *b)
 	return 0;
 }
 
+// show_exported - show the internal declaration of an exported symbol
+//
+// sym - pointer to the symbol list
+//
+// implicit inputs:
+//
+// 	symlist - globally declared symbol list, initialized by a call to
+//                sparse() in main().
+//      exported - globally declared symbol list that will contain the
+//                 pointers to the internally declared struct symbols of
+//                 the exported struct symbols.
+//
 static void show_exported(struct symbol *sym)
 {
 	struct symbol *exp;
@@ -170,6 +227,7 @@ int main(int argc, char **argv)
 {
 	char *file;
 	struct string_list *filelist = NULL;
+	struct symbol *sym;
 
 	printf("\nIdentify Exported Symbols and "
 		"their Arguments and Members.\n");
@@ -182,6 +240,14 @@ int main(int argc, char **argv)
 		symlist = sparse(file);
 		process_file();
 	} END_FOR_EACH_PTR_NOTAG(file);
+
+	printf("\nstructs passed as arguments to exported functions\n");
+
+	FOR_EACH_PTR(structargs, sym) {
+		if (sym->ident->name) {
+			printf ("%s\n", sym->ident->name);
+		}
+	} END_FOR_EACH_PTR(sym);
 
 	return 0;
 }
