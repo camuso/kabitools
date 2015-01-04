@@ -23,7 +23,29 @@
 #include <sparse/expression.h>
 #include <sparse/token.h>
 
+const char *helptext =
+"\n"
+"kabi [options] filespec\n"
+"\n"
+"Parses \".i\" (intermediate, c-preprocessed) files for exported symbols and\n"
+"symbols of structs and unions that are used by the exported symbols.\n"
+"\n"
+"Options:\n"
+"	-v	verbose, lists all the arguments of functions and members\n"
+"		of structs and unions.\n"
+"\n"
+"	-v-	concise (default), lists only the exported symbols and\n"
+"		symbols for structs and unions that are used by the exported\n"
+"		symbols.\n"
+"\n"
+"	-h	This help message.\n"
+"\n"
+"filespec:\n"
+"		file or files (wildcards ok) to be processed\n"
+"\n";
+
 static const char *ksymprefix = "__ksymtab_";
+static int kp_verbose = 0;
 static struct symbol_list *exported = NULL;
 static struct symbol_list *symlist = NULL;
 static struct symbol_list *structargs = NULL;
@@ -36,6 +58,14 @@ static struct symbol_list **structlist[] = {
 	&level2_structs,
 };
 #endif
+
+// Verbose printf control
+//
+#define prverb(fmt, ...) \
+do { \
+	if (kp_verbose) \
+		printf(fmt, ##__VA_ARGS__); \
+} while (0)
 
 enum typemask {
 	SM_UNINITIALIZED = 1 << SYM_UNINITIALIZED,
@@ -183,11 +213,11 @@ static void explore_ctype(
 			if (list && (tm & id))
 				add_uniquesym(basetype, list);
 
-			printf("%s ", typnam);
+			prverb("%s ", typnam);
 		}
 
 		if (basetype->ident)
-			printf("%s ", basetype->ident->name);
+			prverb("%s ", basetype->ident->name);
 
 		explore_ctype(basetype, list, id);
 	}
@@ -214,10 +244,10 @@ static void show_syms(
 	struct symbol *sym;
 
 	FOR_EACH_PTR(list, sym) {
-		printf("\t\t");
+		prverb("\t\t");
 		explore_ctype(sym, optlist, id);
 		if (sym->ident)
-			printf("%s\n", sym->ident->name);
+			prverb("%s\n", sym->ident->name);
 	} END_FOR_EACH_PTR(sym);
 }
 
@@ -231,13 +261,13 @@ static void show_syms(
 static void show_args (struct symbol *sym)
 {
 	if (sym->arg_count)
-		printf("\targ_count: %d ", sym->arg_count);
+		prverb("\targ_count: %d ", sym->arg_count);
 
 	if (sym->arguments) {
-		printf("\n\t\targuments:\n");
+		prverb("\n\t\targuments:\n");
 		show_syms(sym->arguments, &structargs, (SM_STRUCT | SM_UNION));
 	}
-	else
+	else if (kp_verbose)
 		putchar('\n');
 }
 
@@ -273,6 +303,8 @@ static int starts_with(const char *a, const char *b)
 static void show_exported(struct symbol *sym)
 {
 	struct symbol *exp;
+	char pre = kp_verbose ? '\n' : '\0';
+	char suf = kp_verbose ? ' '  : '\n';
 
 	// Symbol name beginning with __ksymtab_ is an exported symbol
 	//
@@ -280,7 +312,7 @@ static void show_exported(struct symbol *sym)
 		int offset = strlen(ksymprefix);
 		char *symname = &sym->ident->name[offset];
 
-		printf("\n%s ", symname);
+		printf("%c%s%c", pre, symname, suf);
 
 		// Find the internal declaration of the exported symbol and
 		// add it to the "exported" list.
@@ -316,9 +348,10 @@ static void dump_list(
 	enum typemask id)
 {
 	struct symbol *sym;
+	char nl = kp_verbose ? '\n' : '\0';
 
 	FOR_EACH_PTR(list, sym) {
-		printf("\n%s ", get_type_name(sym->type));
+		printf("%c%s ", nl, get_type_name(sym->type));
 
 		if (sym->ident->name)
 			printf("%s\n", sym->ident->name);
@@ -346,14 +379,50 @@ static void print_banner(char *banner)
 	putchar('\n');
 }
 
+static int parse_opt(char opt, int on)
+{
+	int validopt = 1;
+
+	switch (opt) {
+	case 'v' : kp_verbose = on;
+		   break;
+	case 'h' : puts(helptext);
+		   exit(0);
+	default  : validopt = 0;
+		   break;
+	}
+
+	return validopt;
+}
+
+static int get_options(char **argv)
+{
+	char **args = &argv[1];
+	int on = 0;
+	int index = 0;
+
+	if (**args == '-') {
+		on = (*args)[strlen(*args)-1] == '-' ? 0 : 1;
+		index += parse_opt((*args)[1], on);
+		++args;
+	}
+
+	return index;
+}
+
 int main(int argc, char **argv)
 {
+	int argindex = 0;
 	char *file;
 	struct string_list *filelist = NULL;
 
+	argindex = get_options(argv);
+	argv += argindex;
+	argc -= argindex;
+
 	symlist = sparse_initialize(argc, argv, &filelist);
 
-	print_banner(" Exported Symbols and their Arguments or Members ");
+	print_banner(" ** Exported Symbols ** ");
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		printf("\nfile: %s\n", file);
