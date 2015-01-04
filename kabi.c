@@ -23,12 +23,46 @@
 #include <sparse/expression.h>
 #include <sparse/token.h>
 
-const char *ksymprefix = "__ksymtab_";
+static const char *ksymprefix = "__ksymtab_";
 static struct symbol_list *exported = NULL;
 static struct symbol_list *symlist = NULL;
 static struct symbol_list *structargs = NULL;
 static struct symbol_list *level1_structs = NULL;
+#if 0
 static struct symbol_list *level2_structs = NULL;
+static struct symbol_list **structlist[] = {
+	&structargs,
+	&level1_structs,
+	&level2_structs,
+};
+#endif
+
+enum typemask {
+	SM_UNINITIALIZED = 1 << SYM_UNINITIALIZED,
+	SM_PREPROCESSOR  = 1 << SYM_PREPROCESSOR,
+	SM_BASETYPE	 = 1 << SYM_BASETYPE,
+	SM_NODE		 = 1 << SYM_NODE,
+	SM_PTR		 = 1 << SYM_PTR,
+	SM_FN		 = 1 << SYM_FN,
+	SM_ARRAY	 = 1 << SYM_ARRAY,
+	SM_STRUCT	 = 1 << SYM_STRUCT,
+	SM_UNION	 = 1 << SYM_UNION,
+	SM_ENUM		 = 1 << SYM_ENUM,
+	SM_TYPEDEF	 = 1 << SYM_TYPEDEF,
+	SM_TYPEOF	 = 1 << SYM_TYPEOF,
+	SM_MEMBER	 = 1 << SYM_MEMBER,
+	SM_BITFIELD	 = 1 << SYM_BITFIELD,
+	SM_LABEL	 = 1 << SYM_LABEL,
+	SM_RESTRICT	 = 1 << SYM_RESTRICT,
+	SM_FOULED	 = 1 << SYM_FOULED,
+	SM_KEYWORD	 = 1 << SYM_KEYWORD,
+	SM_BAD		 = 1 << SYM_BAD,
+};
+
+static void show_syms(
+	struct symbol_list *list,
+	struct symbol_list **optlist,
+	enum typemask id);
 
 // find_internal_exported (symbol_list* symlist, char *symname)
 //
@@ -88,17 +122,17 @@ static int lookup_sym(struct symbol_list *list, struct symbol *sym)
 	return 0;
 }
 
-// add_struct - add a symbol of struct type to the structargs symbol list
+// add_uniquesym - add a symbol of struct type to the structargs symbol list
 //
-// sym - pointer to the symbol to add to the global structargs symbol_list.
+// sym - pointer to the symbol to add, if it's not already in the list.
 //
 // list - address of a pointer to a symbol_list to which the symbol will be
-//        added.
+//        added if it's not already there.
 //
 // libsparse calls:
 //        add_symbol
 //
-static void add_struct(struct symbol *sym, struct symbol_list **list)
+static void add_uniquesym(struct symbol *sym, struct symbol_list **list)
 {
 	if (! lookup_sym(*list, sym))
 		add_symbol(list, sym);
@@ -120,18 +154,21 @@ static void add_struct(struct symbol *sym, struct symbol_list **list)
 //      to be added to the list (see sparse/symbol.h).
 //
 // libsparse calls:
-// 	symbol.c::get_type_name()
-// 	show-parse.c::modifier_string()
+//      symbol.c::get_type_name()
+//      show-parse.c::modifier_string()
 //
 static void explore_ctype(
 	struct symbol *sym,
 	struct symbol_list **list,
-	enum type id)
+	enum typemask id)
 {
 	struct symbol *basetype = sym->ctype.base_type;
+	enum typemask tm;
 
 	if (basetype) {
+
 		if (basetype->type) {
+			tm = 1 << basetype->type;
 			const char *typnam = get_type_name(basetype->type);
 
 			if (strcmp(typnam, "basetype") == 0) {
@@ -143,11 +180,12 @@ static void explore_ctype(
 						(basetype->ctype.modifiers);
 			}
 
-			if (list && basetype->type == id)
-				add_struct(basetype, list);
+			if (list && (tm & id))
+				add_uniquesym(basetype, list);
 
 			printf("%s ", typnam);
 		}
+
 		if (basetype->ident)
 			printf("%s ", basetype->ident->name);
 
@@ -155,7 +193,7 @@ static void explore_ctype(
 	}
 }
 
-// show_syms(struct symbol_list *list, symbol_list **optlist, enum type id)
+// show_syms(struct symbol_list *list, symbol_list **optlist, enum typemask id)
 //
 // Dump the list of symbols in the symbol_list
 //
@@ -165,22 +203,23 @@ static void explore_ctype(
 //           made between the symbol's type and the optional id argument
 //           (see below), then the symbol will be added to that optionial list.
 //
-// id - the type of the symbol, see enum type in sparse/symbol.h
+// id - the type of the symbol, see enum typemask above and enum type in
+//      sparse/symbol.h
 //
 static void show_syms(
 	struct symbol_list *list,
 	struct symbol_list **optlist,
-	enum type id)
+	enum typemask id)
 {
 	struct symbol *sym;
 
 	FOR_EACH_PTR(list, sym) {
 		printf("\t\t");
 		explore_ctype(sym, optlist, id);
-		printf("%s\n", sym->ident->name);
+		if (sym->ident)
+			printf("%s\n", sym->ident->name);
 	} END_FOR_EACH_PTR(sym);
 }
-
 
 // show_args(struct symbol *sym)
 //
@@ -191,14 +230,12 @@ static void show_syms(
 //
 static void show_args (struct symbol *sym)
 {
-	struct symbol *basetype;
-
 	if (sym->arg_count)
 		printf("\targ_count: %d ", sym->arg_count);
 
 	if (sym->arguments) {
 		printf("\n\t\targuments:\n");
-		show_syms(sym->arguments, &structargs, SYM_STRUCT);
+		show_syms(sym->arguments, &structargs, (SM_STRUCT | SM_UNION));
 	}
 	else
 		putchar('\n');
@@ -219,7 +256,7 @@ static int starts_with(const char *a, const char *b)
 //
 // implicit inputs:
 //
-// 	symlist - globally declared symbol list, initialized by a call to
+//      symlist - globally declared symbol list, initialized by a call to
 //                sparse() in main().
 //
 //      exported - globally declared symbol list that will contain the
@@ -231,7 +268,7 @@ static int starts_with(const char *a, const char *b)
 //                   of exported functions.
 //
 // libsparse calls:
-// 	add_symbol
+//      add_symbol
 //
 static void show_exported(struct symbol *sym)
 {
@@ -248,11 +285,11 @@ static void show_exported(struct symbol *sym)
 		// Find the internal declaration of the exported symbol and
 		// add it to the "exported" list.
 		//
-		if (exp = find_internal_exported(symlist, symname)) {
+		if ((exp = find_internal_exported(symlist, symname))) {
 			struct symbol *basetype = exp->ctype.base_type;
 
 			add_symbol(&exported, exp);
-			explore_ctype(exp, &structargs, SYM_STRUCT);
+			explore_ctype(exp, &structargs, (SM_STRUCT | SM_UNION));
 
 			// If the exported symbol is a function, print its
 			// args.
@@ -273,37 +310,63 @@ static void process_file()
 	} END_FOR_EACH_PTR(sym);
 }
 
+static void dump_list(
+	struct symbol_list *list,
+	struct symbol_list **optlist,
+	enum typemask id)
+{
+	struct symbol *sym;
+
+	FOR_EACH_PTR(list, sym) {
+		printf("\n%s ", get_type_name(sym->type));
+
+		if (sym->ident->name)
+			printf("%s\n", sym->ident->name);
+
+		if (sym->symbol_list)
+			show_syms(sym->symbol_list, optlist, id);
+
+	} END_FOR_EACH_PTR(sym);
+}
+
+static void repeat_char(char c, int r)
+{
+	while (r--)
+		putchar(c);
+}
+
+static void print_banner(char *banner)
+{
+	int banlen = strlen(banner);
+	putchar('\n');
+	repeat_char('=', banlen);
+	putchar('\n');
+	puts(banner);
+	repeat_char('=', banlen);
+	putchar('\n');
+}
+
 int main(int argc, char **argv)
 {
 	char *file;
 	struct string_list *filelist = NULL;
-	struct symbol *sym;
 
 	symlist = sparse_initialize(argc, argv, &filelist);
 
-	puts("\n************************************************"
-	     "\nExported Symbols and their Arguments and Members"
-	     "\n************************************************");
+	print_banner(" Exported Symbols and their Arguments or Members ");
 
-	FOR_EACH_PTR_NOTAG(filelist, file)  {
+	FOR_EACH_PTR_NOTAG(filelist, file) {
 		printf("\nfile: %s\n", file);
 		symlist = sparse(file);
 		process_file();
 	} END_FOR_EACH_PTR_NOTAG(file);
 
-	puts("\n*************************************************"
-	     "\nStructs passed as arguments to exported functions"
-	     "\n*************************************************");
+	print_banner(" Structs passed as arguments to exported functions ");
+	dump_list(structargs, &level1_structs, (SM_STRUCT | SM_UNION));
 
-	FOR_EACH_PTR(structargs, sym) {
-		if (sym->ident->name) {
-			printf ("%s\n", sym->ident->name);
-		}
-
-		if (sym->symbol_list) {
-			show_syms(sym->symbol_list, NULL, 0);
-		}
-	} END_FOR_EACH_PTR(sym);
+	print_banner(" Structs declared within structs passed as arguments ");
+	dump_list(level1_structs, NULL, 0);
+	putchar('\n');
 
 	return 0;
 }
