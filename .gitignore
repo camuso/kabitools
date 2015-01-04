@@ -30,3 +30,6 @@ cscope.out
 *.i*86
 *.x86_64
 *.hex
+
+# Specific files
+kabi
