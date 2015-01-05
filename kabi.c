@@ -273,8 +273,7 @@ static void show_args (struct symbol *sym)
 
 static int starts_with(const char *a, const char *b)
 {
-	if(strncmp(a, b, strlen(b)) == 0)
-	{
+	if(strncmp(a, b, strlen(b)) == 0) {
 		return 1;
 	}
 	return 0;
