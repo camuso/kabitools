@@ -3,13 +3,42 @@
  * Find all the exported symbols in .i file(s) passed as argument(s) on the
  * command line when invoking this executable.
  *
- * Relies heavily on the sparse project. See https://www.openhub.net/p/sparse
- * Include files for sparse in Fedora are located in /usr/include/sparse when
- * sparse is built and installed.
+ * Relies heavily on the sparse project. See
+ * https://www.openhub.net/p/sparse Include files for sparse in Fedora are
+ * located in /usr/include/sparse when sparse is built and installed.
  *
  * Method for identifying exported symbols was inspired by the spartakus
- * project: http://git.engineering.redhat.com/git/users/sbairagy/spartakus.git
+ * project:
+ * http://git.engineering.redhat.com/git/users/sbairagy/spartakus.git
  *
+ * 1. Find all the exported symbols. They will be listed with a prefix of
+ *    "EXPORTED:". Example, EXPORTED: exported_symbol.
+ * 2. Find all the non-scalar (scalar as an option) args and members of the
+ *    exported symbols. If an argument is used by 
+ *    They will be listed with a prefix of "ARG:".
+ *    Example, ARG: union foo
+ * 3. Recursively list all the members of nonscalar types used by the
+ *    exported symbols. They will be listed with the identifier 
+ *    (ident->name, see sparse/token.h) of the symbol in which they were
+ *    declared. Example, foo: struct bar
+ *
+ * Only unique symbols will be listed, rather than listing them everywhere
+ * they are discovered.
+ *
+ * In cases where a symbol has been
+ *
+ * From sparse/symbol.h:
+ *
+ * 	An identifier with semantic meaning is a "symbol".
+ *
+ * 	There's a 1:n relationship: each symbol is always
+ * 	associated with one identifier, while each identifier
+ * 	can have one or more semantic meanings due to C scope
+ * 	rules.
+ *
+ * 	The progression is symbol -> token -> identifier. The
+ * 	token contains the information on where the symbol was
+ * 	declared.
  */
 
 #include <stdio.h>
@@ -22,6 +51,9 @@
 #include <sparse/symbol.h>
 #include <sparse/expression.h>
 #include <sparse/token.h>
+#include <ptrlist.h>
+
+const char *spacer = "  ";
 
 const char *helptext =
 "\n"
@@ -59,6 +91,22 @@ static struct symbol_list **structlist[] = {
 };
 #endif
 
+// Hierarchical Symbols and List
+//
+struct hiersym {
+	struct symbol *symbol;
+	struct symbol *parent;
+	int level;	// hierarchical level
+	int instr;	// flag indicates signed/unsiged needs "int" string.
+};
+
+DECLARE_PTR_LIST(hiersym_list, struct hiersym);
+
+static inline void add_hiersym(struct symbol_list **list, struct hiersym *hsym)
+{
+	add_ptr_list(list, hsym);
+}
+
 // Verbose printf control
 //
 #define prverb(fmt, ...) \
@@ -89,7 +137,59 @@ enum typemask {
 	SM_BAD		 = 1 << SYM_BAD,
 };
 
+const char *get_modstr(unsigned long mod)
+{
+	int i;
+	struct mod_name {
+		unsigned long mod;
+		const char *name;
+	} *m;
+
+	static struct mod_name mod_names[] = {
+		{MOD_AUTO,		"auto"},
+		{MOD_REGISTER,		"register"},
+		{MOD_STATIC,		"static"},
+		{MOD_EXTERN,		"extern"},
+		{MOD_CONST,		"const"},
+		{MOD_VOLATILE,		"volatile"},
+		{MOD_SIGNED,		"[signed]"},
+		{MOD_UNSIGNED,		"unsigned"},
+		{MOD_CHAR,		"[char]"},
+		{MOD_SHORT,		"short"},
+		{MOD_LONG,		"long"},
+		{MOD_LONGLONG,		"long long"},
+		{MOD_LONGLONGLONG,	"long long long"},
+		{MOD_TYPEDEF,		"typedef"},
+		{MOD_TLS,		"tls"},
+		{MOD_INLINE,		"inline"},
+		{MOD_ADDRESSABLE,	"addressable"},
+		{MOD_NOCAST,		"nocast"},
+		{MOD_NODEREF,		"noderef"},
+		{MOD_ACCESSED,		"accessed"},
+		{MOD_TOPLEVEL,		"toplevel"},
+		{MOD_ASSIGNED,		"assigned"},
+		{MOD_TYPE,		"type"},
+		{MOD_SAFE,		"safe"},
+		{MOD_USERTYPE,		"usertype"},
+		{MOD_NORETURN,		"noreturn"},
+		{MOD_EXPLICITLY_SIGNED,	"explicitly-signed"},
+		{MOD_BITWISE,		"bitwise"},
+		{MOD_PURE,		"pure"},
+	};
+
+	for (i = 0; i < ARRAY_SIZE(mod_names); i++) {
+		m = mod_names + i;
+		if (mod & m->mod)
+			return m->name;
+	}
+}
+
 static void show_syms(
+	struct symbol_list *list,
+	struct symbol_list **optlist,
+	enum typemask id);
+
+static void dump_list(
 	struct symbol_list *list,
 	struct symbol_list **optlist,
 	enum typemask id);
@@ -187,17 +287,27 @@ static void add_uniquesym(struct symbol *sym, struct symbol_list **list)
 //      symbol.c::get_type_name()
 //      show-parse.c::modifier_string()
 //
-static void explore_ctype(
+static int explore_ctype(
 	struct symbol *sym,
 	struct symbol_list **list,
 	enum typemask id)
 {
 	struct symbol *basetype = sym->ctype.base_type;
 	enum typemask tm;
+	static int ptrflag = 0;
+	static int firstpass = 1;
+	static int ret = 0;
 
 	if (basetype) {
 
 		if (basetype->type) {
+
+			if (firstpass) {
+				ptrflag = 0;
+				firstpass = 0;
+				ret = 0;
+			}
+
 			tm = 1 << basetype->type;
 			const char *typnam = get_type_name(basetype->type);
 
@@ -210,17 +320,38 @@ static void explore_ctype(
 						(basetype->ctype.modifiers);
 			}
 
+			if (strcmp(typnam, "function") == 0)
+				typnam = "function returns";
+
 			if (list && (tm & id))
 				add_uniquesym(basetype, list);
 
-			prverb("%s ", typnam);
+			if (strcmp(typnam, "pointer") == 0) {
+				ptrflag = 1;
+				ret= 1;
+			}
+
+			//prverb("%s %d ", typnam, basetype->bit_size);
+
+			if (!ptrflag)
+				prverb("%s ", typnam);
+
+			ptrflag = 0;
+
+			//if (kp_verbose && (tm && (SM_STRUCT | SM_UNION)))
+			//	show_syms(basetype->symbol_list, NULL, 0);
 		}
 
-		if (basetype->ident)
+		if (basetype->ident) {
+			if (ptrflag)
+				putchar('*');
 			prverb("%s ", basetype->ident->name);
+		}
 
 		explore_ctype(basetype, list, id);
 	}
+	firstpass = 1;
+	return ptrflag;
 }
 
 // show_syms(struct symbol_list *list, symbol_list **optlist, enum typemask id)
@@ -244,7 +375,7 @@ static void show_syms(
 	struct symbol *sym;
 
 	FOR_EACH_PTR(list, sym) {
-		prverb("\t\t");
+		prverb("%s", spacer);
 		explore_ctype(sym, optlist, id);
 		if (sym->ident)
 			prverb("%s\n", sym->ident->name);
@@ -260,14 +391,9 @@ static void show_syms(
 //
 static void show_args (struct symbol *sym)
 {
-	if (sym->arg_count)
-		prverb("\targ_count: %d ", sym->arg_count);
-
-	if (sym->arguments) {
-		prverb("\n\t\targuments:\n");
+	if (sym->arguments)
 		show_syms(sym->arguments, &structargs, (SM_STRUCT | SM_UNION));
-	}
-	else if (kp_verbose)
+	if (kp_verbose)
 		putchar('\n');
 }
 
@@ -302,16 +428,11 @@ static int starts_with(const char *a, const char *b)
 static void show_exported(struct symbol *sym)
 {
 	struct symbol *exp;
-	char pre = kp_verbose ? '\n' : '\0';
-	char suf = kp_verbose ? ' '  : '\n';
+	int ptrflag = 0;
 
-	// Symbol name beginning with __ksymtab_ is an exported symbol
-	//
 	if (starts_with(sym->ident->name, ksymprefix)) {
 		int offset = strlen(ksymprefix);
 		char *symname = &sym->ident->name[offset];
-
-		printf("%c%s%c", pre, symname, suf);
 
 		// Find the internal declaration of the exported symbol and
 		// add it to the "exported" list.
@@ -320,7 +441,12 @@ static void show_exported(struct symbol *sym)
 			struct symbol *basetype = exp->ctype.base_type;
 
 			add_symbol(&exported, exp);
-			explore_ctype(exp, &structargs, (SM_STRUCT | SM_UNION));
+			printf("EXPORTED: ");
+			ptrflag = explore_ctype
+				(exp, &structargs, (SM_STRUCT | SM_UNION));
+			if (ptrflag)
+				putchar('*');
+			printf("%s\n", symname);
 
 			// If the exported symbol is a function, print its
 			// args.
@@ -421,19 +547,20 @@ int main(int argc, char **argv)
 
 	symlist = sparse_initialize(argc, argv, &filelist);
 
-	print_banner(" ** Exported Symbols ** ");
+	//print_banner(" ** Exported Symbols ** ");
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
-		printf("\nfile: %s\n", file);
+		printf("\nfile: %s\n\n", file);
 		symlist = sparse(file);
 		process_file();
 	} END_FOR_EACH_PTR_NOTAG(file);
-
+#if 0
 	print_banner(" Structs passed as arguments to exported functions ");
 	dump_list(structargs, &level1_structs, (SM_STRUCT | SM_UNION));
 
 	print_banner(" Structs declared within structs passed as arguments ");
 	dump_list(level1_structs, NULL, 0);
+#endif
 	putchar('\n');
 
 	return 0;
