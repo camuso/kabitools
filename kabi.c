@@ -137,6 +137,13 @@ enum typemask {
 	SM_BAD		 = 1 << SYM_BAD,
 };
 
+enum ctlflags {
+	CTL_POINTER 	= 1 << 0,
+	CTL_EXPORTED 	= 1 << 1,
+	CTL_ARG		= 1 << 2,
+	CTL_FIRSTPASS	= 1 << 3,
+};
+
 const char *get_modstr(unsigned long mod)
 {
 	int i;
@@ -184,6 +191,7 @@ const char *get_modstr(unsigned long mod)
 	}
 }
 
+#if 0
 static void show_syms(
 	struct symbol_list *list,
 	struct symbol_list **optlist,
@@ -193,6 +201,7 @@ static void dump_list(
 	struct symbol_list *list,
 	struct symbol_list **optlist,
 	enum typemask id);
+#endif
 
 // find_internal_exported (symbol_list* symlist, char *symname)
 //
@@ -283,6 +292,8 @@ static void add_uniquesym(struct symbol *sym, struct symbol_list **list)
 // id - if list is not null, this argument identifies the type of symbol
 //      to be added to the list (see sparse/symbol.h).
 //
+// flags - flags to control execution depending on the caller.
+//
 // libsparse calls:
 //      symbol.c::get_type_name()
 //      show-parse.c::modifier_string()
@@ -290,7 +301,8 @@ static void add_uniquesym(struct symbol *sym, struct symbol_list **list)
 static int explore_ctype(
 	struct symbol *sym,
 	struct symbol_list **list,
-	enum typemask id)
+	enum typemask id,
+	enum ctlflags flags)
 {
 	struct symbol *basetype = sym->ctype.base_type;
 	enum typemask tm;
@@ -320,9 +332,6 @@ static int explore_ctype(
 						(basetype->ctype.modifiers);
 			}
 
-			if (strcmp(typnam, "function") == 0)
-				typnam = "function returns";
-
 			if (list && (tm & id))
 				add_uniquesym(basetype, list);
 
@@ -335,23 +344,21 @@ static int explore_ctype(
 
 			if (!ptrflag)
 				prverb("%s ", typnam);
-
-			ptrflag = 0;
+			else
+				ptrflag = 0;
 
 			//if (kp_verbose && (tm && (SM_STRUCT | SM_UNION)))
 			//	show_syms(basetype->symbol_list, NULL, 0);
 		}
 
-		if (basetype->ident) {
-			if (ptrflag)
-				putchar('*');
+		if (basetype->ident)
 			prverb("%s ", basetype->ident->name);
-		}
 
-		explore_ctype(basetype, list, id);
+		explore_ctype(basetype, list, id, flags);
 	}
+
 	firstpass = 1;
-	return ptrflag;
+	return ret;
 }
 
 // show_syms(struct symbol_list *list, symbol_list **optlist, enum typemask id)
@@ -373,12 +380,19 @@ static void show_syms(
 	enum typemask id)
 {
 	struct symbol *sym;
+	char *fmt = "%s\n";
+	int ptrflag;
 
 	FOR_EACH_PTR(list, sym) {
 		prverb("%s", spacer);
-		explore_ctype(sym, optlist, id);
-		if (sym->ident)
-			prverb("%s\n", sym->ident->name);
+		ptrflag = explore_ctype(sym, optlist, id, 0);
+
+		if (sym->ident) {
+			if (ptrflag)
+				fmt = "*%s\n";
+			prverb(fmt, sym->ident->name);
+		}
+
 	} END_FOR_EACH_PTR(sym);
 }
 
@@ -393,15 +407,15 @@ static void show_args (struct symbol *sym)
 {
 	if (sym->arguments)
 		show_syms(sym->arguments, &structargs, (SM_STRUCT | SM_UNION));
-	if (kp_verbose)
-		putchar('\n');
+
+	prverb(");\n");
 }
 
 static int starts_with(const char *a, const char *b)
 {
-	if(strncmp(a, b, strlen(b)) == 0) {
+	if(strncmp(a, b, strlen(b)) == 0)
 		return 1;
-	}
+
 	return 0;
 }
 
@@ -428,6 +442,7 @@ static int starts_with(const char *a, const char *b)
 static void show_exported(struct symbol *sym)
 {
 	struct symbol *exp;
+	enum ctlflags flags = CTL_EXPORTED;
 	int ptrflag = 0;
 
 	if (starts_with(sym->ident->name, ksymprefix)) {
@@ -442,17 +457,20 @@ static void show_exported(struct symbol *sym)
 
 			add_symbol(&exported, exp);
 			printf("EXPORTED: ");
-			ptrflag = explore_ctype
-				(exp, &structargs, (SM_STRUCT | SM_UNION));
+			ptrflag = explore_ctype(exp,
+						&structargs,
+						(SM_STRUCT | SM_UNION),
+						flags);
 			if (ptrflag)
 				putchar('*');
-			printf("%s\n", symname);
+			printf("%s (\n", symname);
 
 			// If the exported symbol is a function, print its
 			// args.
 			//
-			if (basetype->type == SYM_FN)
+			if (basetype->type == SYM_FN) {
 				show_args(basetype);
+			}
 		} else
 			printf("Could not find internal source.\n");
 	}
