@@ -51,7 +51,15 @@
 #include <sparse/symbol.h>
 #include <sparse/expression.h>
 #include <sparse/token.h>
-#include <ptrlist.h>
+#include <sparse/ptrlist.h>
+
+#define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
+
+#define prverb(fmt, ...) \
+do { \
+	if (kp_verbose) \
+		printf(fmt, ##__VA_ARGS__); \
+} while (0)
 
 const char *spacer = "  ";
 
@@ -82,14 +90,10 @@ static struct symbol_list *exported = NULL;
 static struct symbol_list *symlist = NULL;
 static struct symbol_list *structargs = NULL;
 static struct symbol_list *level1_structs = NULL;
-#if 0
-static struct symbol_list *level2_structs = NULL;
-static struct symbol_list **structlist[] = {
-	&structargs,
-	&level1_structs,
-	&level2_structs,
-};
-#endif
+
+static inline int strequ(const char *s1, const char *s2) {
+	return strcmp(s1, s2) == 0;
+}
 
 // Hierarchical Symbols and List
 //
@@ -106,14 +110,6 @@ static inline void add_hiersym(struct symbol_list **list, struct hiersym *hsym)
 {
 	add_ptr_list(list, hsym);
 }
-
-// Verbose printf control
-//
-#define prverb(fmt, ...) \
-do { \
-	if (kp_verbose) \
-		printf(fmt, ##__VA_ARGS__); \
-} while (0)
 
 enum typemask {
 	SM_UNINITIALIZED = 1 << SYM_UNINITIALIZED,
@@ -139,14 +135,33 @@ enum typemask {
 
 enum ctlflags {
 	CTL_POINTER 	= 1 << 0,
-	CTL_EXPORTED 	= 1 << 1,
-	CTL_ARG		= 1 << 2,
-	CTL_FIRSTPASS	= 1 << 3,
+	CTL_ARRAY	= 1 << 1,
+	CTL_STRUCT	= 1 << 2,
+	CTL_FUNCTION	= 1 << 3,
+	CTL_EXPORTED 	= 1 << 4,
+	CTL_ARG		= 1 << 5,
+	CTL_FIRSTPASS	= 1 << 6,
+	CTL_NOOUT	= 1 << 7,
+	CTL_DEBUG	= 1 << 16
 };
 
-const char *get_modstr(unsigned long mod)
+static int count_bits(unsigned long mask)
 {
+	int count = 0;
+
+	do {
+		count += mask & 1;
+	} while (mask >>= 1);
+
+	return count;
+}
+
+static const char *get_modstr(unsigned long mod)
+{
+	static char buffer[100];
+	int len = 0;
 	int i;
+	int onebit = count_bits(mod) == 1;
 	struct mod_name {
 		unsigned long mod;
 		const char *name;
@@ -159,9 +174,9 @@ const char *get_modstr(unsigned long mod)
 		{MOD_EXTERN,		"extern"},
 		{MOD_CONST,		"const"},
 		{MOD_VOLATILE,		"volatile"},
-		{MOD_SIGNED,		"[signed]"},
+		{MOD_SIGNED,		"signed"},
 		{MOD_UNSIGNED,		"unsigned"},
-		{MOD_CHAR,		"[char]"},
+		{MOD_CHAR,		"char"},
 		{MOD_SHORT,		"short"},
 		{MOD_LONG,		"long"},
 		{MOD_LONGLONG,		"long long"},
@@ -184,11 +199,47 @@ const char *get_modstr(unsigned long mod)
 		{MOD_PURE,		"pure"},
 	};
 
+	// Return these type modifiers the way we're accustomed to seeing
+	// them in the source code.
+	//
+	if (mod == MOD_SIGNED)
+		return "int";
+	if (mod == MOD_UNSIGNED)
+		return "unsigned int";
+	if (STD_SIGNED(mod, MOD_CHAR))
+		return "char";
+	if (STD_SIGNED(mod, MOD_LONG))
+		return "long";
+	if (STD_SIGNED(mod, MOD_LONGLONG))
+		return "long long";
+	if (STD_SIGNED(mod, MOD_LONGLONGLONG))
+		return "long long long";
+
+	// More than one of these bits can be set at the same time,
+	// so clear the redundant ones.
+	//
+	if ((mod & MOD_LONGLONGLONG) && (mod & MOD_LONGLONG))
+		mod &= ~MOD_LONGLONG;
+	if ((mod & MOD_LONGLONGLONG) && (mod & MOD_LONG))
+		mod &= ~MOD_LONG;
+	if ((mod & MOD_LONGLONG) && (mod & MOD_LONG))
+		mod &= ~MOD_LONG;
+
+	// Now scan the list for matching bits and copy the corresponding
+	// names into the return buffer.
+	//
 	for (i = 0; i < ARRAY_SIZE(mod_names); i++) {
 		m = mod_names + i;
-		if (mod & m->mod)
-			return m->name;
+		if (mod & m->mod) {
+			char c;
+			const char *name = m->name;
+			while ((c = *name++) != '\0' && len + 2 < sizeof buffer)
+				buffer[len++] = c;
+			buffer[len++] = ' ';
+		}
 	}
+	buffer[len] = 0;
+	return buffer;
 }
 
 #if 0
@@ -298,57 +349,40 @@ static void add_uniquesym(struct symbol *sym, struct symbol_list **list)
 //      symbol.c::get_type_name()
 //      show-parse.c::modifier_string()
 //
-static int explore_ctype(
+static void explore_ctype(
 	struct symbol *sym,
 	struct symbol_list **list,
 	enum typemask id,
-	enum ctlflags flags)
+	enum ctlflags *flags)
 {
 	struct symbol *basetype = sym->ctype.base_type;
 	enum typemask tm;
-	static int ptrflag = 0;
-	static int firstpass = 1;
-	static int ret = 0;
 
 	if (basetype) {
 
 		if (basetype->type) {
-
-			if (firstpass) {
-				ptrflag = 0;
-				firstpass = 0;
-				ret = 0;
-			}
-
 			tm = 1 << basetype->type;
 			const char *typnam = get_type_name(basetype->type);
 
-			if (strcmp(typnam, "basetype") == 0) {
-
+			if (basetype->type == SYM_BASETYPE) {
 				if (! basetype->ctype.modifiers)
 					typnam = "void";
 				else
-					typnam = modifier_string
+					typnam = get_modstr
 						(basetype->ctype.modifiers);
 			}
 
+			if (basetype->type ==SYM_PTR)
+				*flags |= CTL_POINTER;
+			else
+				prverb("%s ", typnam);
+
+			if (basetype->ctype.modifiers
+			 & (MOD_LONGLONG | MOD_LONGLONGLONG))
+				prverb("(%d-bit) ", basetype->bit_size);
+
 			if (list && (tm & id))
 				add_uniquesym(basetype, list);
-
-			if (strcmp(typnam, "pointer") == 0) {
-				ptrflag = 1;
-				ret= 1;
-			}
-
-			//prverb("%s %d ", typnam, basetype->bit_size);
-
-			if (!ptrflag)
-				prverb("%s ", typnam);
-			else
-				ptrflag = 0;
-
-			//if (kp_verbose && (tm && (SM_STRUCT | SM_UNION)))
-			//	show_syms(basetype->symbol_list, NULL, 0);
 		}
 
 		if (basetype->ident)
@@ -356,9 +390,13 @@ static int explore_ctype(
 
 		explore_ctype(basetype, list, id, flags);
 	}
+}
 
-	firstpass = 1;
-	return ret;
+static char *get_prefix(enum ctlflags flags)
+{
+	if (flags & CTL_ARG)
+		return "ARG: ";
+	return NULL;
 }
 
 // show_syms(struct symbol_list *list, symbol_list **optlist, enum typemask id)
@@ -380,15 +418,16 @@ static void show_syms(
 	enum typemask id)
 {
 	struct symbol *sym;
-	char *fmt = "%s\n";
-	int ptrflag;
 
 	FOR_EACH_PTR(list, sym) {
+		enum ctlflags flags = 0;
+		char *fmt = "%s\n";
+
 		prverb("%s", spacer);
-		ptrflag = explore_ctype(sym, optlist, id, 0);
+		explore_ctype(sym, optlist, id, &flags);
 
 		if (sym->ident) {
-			if (ptrflag)
+			if (flags & CTL_POINTER)
 				fmt = "*%s\n";
 			prverb(fmt, sym->ident->name);
 		}
@@ -408,7 +447,7 @@ static void show_args (struct symbol *sym)
 	if (sym->arguments)
 		show_syms(sym->arguments, &structargs, (SM_STRUCT | SM_UNION));
 
-	prverb(");\n");
+	prverb("\n");
 }
 
 static int starts_with(const char *a, const char *b)
@@ -443,7 +482,6 @@ static void show_exported(struct symbol *sym)
 {
 	struct symbol *exp;
 	enum ctlflags flags = CTL_EXPORTED;
-	int ptrflag = 0;
 
 	if (starts_with(sym->ident->name, ksymprefix)) {
 		int offset = strlen(ksymprefix);
@@ -457,13 +495,15 @@ static void show_exported(struct symbol *sym)
 
 			add_symbol(&exported, exp);
 			printf("EXPORTED: ");
-			ptrflag = explore_ctype(exp,
-						&structargs,
-						(SM_STRUCT | SM_UNION),
-						flags);
-			if (ptrflag)
+			explore_ctype(exp,
+					&structargs,
+					(SM_STRUCT | SM_UNION),
+					&flags);
+
+			if (kp_verbose && (flags & CTL_POINTER))
 				putchar('*');
-			printf("%s (\n", symname);
+
+			printf("%s\n", symname);
 
 			// If the exported symbol is a function, print its
 			// args.
@@ -488,13 +528,20 @@ static void process_file()
 static void dump_list(
 	struct symbol_list *list,
 	struct symbol_list **optlist,
-	enum typemask id)
+	enum typemask id,
+	char *prefix)
 {
 	struct symbol *sym;
-	char nl = kp_verbose ? '\n' : '\0';
 
 	FOR_EACH_PTR(list, sym) {
-		printf("%c%s ", nl, get_type_name(sym->type));
+
+		if (kp_verbose)
+			putchar ('\n');
+
+		if (prefix)
+			printf("%s%s ", prefix, get_type_name(sym->type));
+		else
+			printf("%s ", get_type_name(sym->type));
 
 		if (sym->ident->name)
 			printf("%s\n", sym->ident->name);
@@ -503,23 +550,6 @@ static void dump_list(
 			show_syms(sym->symbol_list, optlist, id);
 
 	} END_FOR_EACH_PTR(sym);
-}
-
-static void repeat_char(char c, int r)
-{
-	while (r--)
-		putchar(c);
-}
-
-static void print_banner(char *banner)
-{
-	int banlen = strlen(banner);
-	putchar('\n');
-	repeat_char('=', banlen);
-	putchar('\n');
-	puts(banner);
-	repeat_char('=', banlen);
-	putchar('\n');
 }
 
 static int parse_opt(char opt, int on)
@@ -559,24 +589,24 @@ int main(int argc, char **argv)
 	char *file;
 	struct string_list *filelist = NULL;
 
+	if (argc <= 1) {
+		puts(helptext);
+		exit(0);
+	}
+
 	argindex = get_options(argv);
 	argv += argindex;
 	argc -= argindex;
 
 	symlist = sparse_initialize(argc, argv, &filelist);
 
-	//print_banner(" ** Exported Symbols ** ");
-
 	FOR_EACH_PTR_NOTAG(filelist, file) {
-		printf("\nfile: %s\n\n", file);
+		printf("\nFILE: %s\n\n", file);
 		symlist = sparse(file);
 		process_file();
 	} END_FOR_EACH_PTR_NOTAG(file);
+	dump_list(structargs, &level1_structs, (SM_STRUCT | SM_UNION), "ARG: ");
 #if 0
-	print_banner(" Structs passed as arguments to exported functions ");
-	dump_list(structargs, &level1_structs, (SM_STRUCT | SM_UNION));
-
-	print_banner(" Structs declared within structs passed as arguments ");
 	dump_list(level1_structs, NULL, 0);
 #endif
 	putchar('\n');
