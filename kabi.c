@@ -552,12 +552,12 @@ static void dump_list(
 	} END_FOR_EACH_PTR(sym);
 }
 
-static int parse_opt(char opt, int on)
+static int parse_opt(char opt, int state)
 {
 	int validopt = 1;
 
 	switch (opt) {
-	case 'v' : kp_verbose = on;
+	case 'v' : kp_verbose = state;	// kp_verbose is global to this file
 		   break;
 	case 'h' : puts(helptext);
 		   exit(0);
@@ -571,12 +571,15 @@ static int parse_opt(char opt, int on)
 static int get_options(char **argv)
 {
 	char **args = &argv[1];
-	int on = 0;
+	int state = 0;		// on = 1, off = 0
 	int index = 0;
 
 	if (**args == '-') {
-		on = (*args)[strlen(*args)-1] == '-' ? 0 : 1;
-		index += parse_opt((*args)[1], on);
+
+		// Trailing '-' sets state to OFF (0)
+		//
+		state = (*args)[strlen(*args)-1] != '-';
+		index += parse_opt((*args)[1], state);
 		++args;
 	}
 
@@ -601,7 +604,7 @@ int main(int argc, char **argv)
 	symlist = sparse_initialize(argc, argv, &filelist);
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
-		printf("\nFILE: %s\n\n", file);
+		printf("FILE: %s\n", file);
 		symlist = sparse(file);
 		process_file();
 	} END_FOR_EACH_PTR_NOTAG(file);
