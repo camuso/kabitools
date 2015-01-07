@@ -12,22 +12,25 @@
  * http://git.engineering.redhat.com/git/users/sbairagy/spartakus.git
  *
  * 1. Find all the exported symbols. They will be listed with a prefix of
- *    "EXPORTED:". Example, EXPORTED: exported_symbol.
- * 2. Find all the non-scalar (scalar as an option) args and members of the
- *    exported symbols. If an argument is used by 
- *    They will be listed with a prefix of "ARG:".
- *    Example, ARG: union foo
- * 3. Recursively list all the members of nonscalar types used by the
- *    exported symbols. They will be listed with the identifier 
- *    (ident->name, see sparse/token.h) of the symbol in which they were
- *    declared. Example, foo: struct bar
+ *    "EXPORTED:". Example ...
+ *    EXPORTED: function foo
+ * 2. Find all the non-scalar (scalar as an option) args of the exported
+ *    symbols. These will be listed with a prefix of "ARG:". Example...
+ *    ARG: union fee
+ * 3. List all the members of nonscalar types used by the nonscalar args of
+ *    exported symbols. They will be listed with the prefix "NESTED: "
+ *    Additionally, the symbols in which these nonscalar members were
+ *    declared will also be listed with the prefix "IN: " followed by the
+ *    name (ident->name, see sparse/token.h) of the symbols in which they
+ *    were declared. Example...
+ *    NESTED: struct bar
+ *    IN: struct fee
+ *    IN: union fii
  *
  * Only unique symbols will be listed, rather than listing them everywhere
  * they are discovered.
  *
- * In cases where a symbol has been
- *
- * From sparse/symbol.h:
+ * What is a symbol? From sparse/symbol.h:
  *
  * 	An identifier with semantic meaning is a "symbol".
  *
@@ -44,6 +47,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+//#define NDEBUG	// comment-out to enable runtime asserts
+#include <assert.h>
 
 #include <sparse/lib.h>
 #include <sparse/allocate.h>
@@ -86,30 +91,10 @@ const char *helptext =
 
 static const char *ksymprefix = "__ksymtab_";
 static int kp_verbose = 0;
-static struct symbol_list *exported = NULL;
-static struct symbol_list *symlist = NULL;
-static struct symbol_list *structargs = NULL;
-static struct symbol_list *level1_structs = NULL;
-
-static inline int strequ(const char *s1, const char *s2) {
-	return strcmp(s1, s2) == 0;
-}
-
-// Hierarchical Symbols and List
-//
-struct hiersym {
-	struct symbol *symbol;
-	struct symbol *parent;
-	int level;	// hierarchical level
-	int instr;	// flag indicates signed/unsiged needs "int" string.
-};
-
-DECLARE_PTR_LIST(hiersym_list, struct hiersym);
-
-static inline void add_hiersym(struct symbol_list **list, struct hiersym *hsym)
-{
-	add_ptr_list(list, hsym);
-}
+static struct symbol_list *exported	= NULL;
+static struct symbol_list *symlist	= NULL;
+static struct symbol_list *structargs 	= NULL;
+static struct symbol_list *nested	= NULL;
 
 enum typemask {
 	SM_UNINITIALIZED = 1 << SYM_UNINITIALIZED,
@@ -140,20 +125,29 @@ enum ctlflags {
 	CTL_FUNCTION	= 1 << 3,
 	CTL_EXPORTED 	= 1 << 4,
 	CTL_ARG		= 1 << 5,
-	CTL_FIRSTPASS	= 1 << 6,
+	CTL_NESTED	= 1 << 6,
 	CTL_NOOUT	= 1 << 7,
 	CTL_DEBUG	= 1 << 16
 };
 
-static int count_bits(unsigned long mask)
+static inline int strequ(const char *s1, const char *s2) {
+	return strcmp(s1, s2) == 0;
+}
+
+// Hierarchical Symbols and List
+//
+struct hiersym {
+	struct symbol *symbol;
+	struct symbol *parent;
+	enum ctlflags	flags;
+	int level;		// hierarchical level
+};
+
+DECLARE_PTR_LIST(hiersym_list, struct hiersym);
+
+static inline void add_hiersym(struct symbol_list **list, struct hiersym *hsym)
 {
-	int count = 0;
-
-	do {
-		count += mask & 1;
-	} while (mask >>= 1);
-
-	return count;
+	add_ptr_list(list, hsym);
 }
 
 static const char *get_modstr(unsigned long mod)
@@ -161,7 +155,6 @@ static const char *get_modstr(unsigned long mod)
 	static char buffer[100];
 	int len = 0;
 	int i;
-	int onebit = count_bits(mod) == 1;
 	struct mod_name {
 		unsigned long mod;
 		const char *name;
@@ -347,7 +340,6 @@ static void add_uniquesym(struct symbol *sym, struct symbol_list **list)
 //
 // libsparse calls:
 //      symbol.c::get_type_name()
-//      show-parse.c::modifier_string()
 //
 static void explore_ctype(
 	struct symbol *sym,
@@ -392,10 +384,33 @@ static void explore_ctype(
 	}
 }
 
+#if !defined(NDEBUG)	// see /usr/include/assert.h
+static int count_bits(unsigned long mask)
+{
+	int count = 0;
+
+	do {
+		count += mask & 1;
+	} while (mask >>= 1);
+
+	return count;
+}
+#endif
+
 static char *get_prefix(enum ctlflags flags)
 {
-	if (flags & CTL_ARG)
+	// These flags are mutually exclusive.
+	//
+	unsigned long flg = flags & (CTL_EXPORTED | CTL_ARG | CTL_NESTED);
+
+	assert(count_bits(flg) <= 1);
+
+	switch (flg) {
+	case CTL_ARG:
 		return "ARG: ";
+	case CTL_NESTED:
+		return "NESTED: ";
+	}
 	return NULL;
 }
 
@@ -529,9 +544,10 @@ static void dump_list(
 	struct symbol_list *list,
 	struct symbol_list **optlist,
 	enum typemask id,
-	char *prefix)
+	enum ctlflags flags)
 {
 	struct symbol *sym;
+	char *prefix = get_prefix(flags);
 
 	FOR_EACH_PTR(list, sym) {
 
@@ -608,11 +624,12 @@ int main(int argc, char **argv)
 		symlist = sparse(file);
 		process_file();
 	} END_FOR_EACH_PTR_NOTAG(file);
-	dump_list(structargs, &level1_structs, (SM_STRUCT | SM_UNION), "ARG: ");
-#if 0
-	dump_list(level1_structs, NULL, 0);
-#endif
-	putchar('\n');
+
+	dump_list(structargs, &nested, (SM_STRUCT | SM_UNION), CTL_ARG);
+	dump_list(nested, NULL, 0, CTL_NESTED);
+
+	if (kp_verbose)
+		putchar('\n');
 
 	return 0;
 }
