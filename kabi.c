@@ -60,6 +60,17 @@
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 
+/**
+ * container_of - cast a member of a structure out to the containing structure
+ * @ptr:	the pointer to the member.
+ * @type:	the type of the container struct this is embedded in.
+ * @member:	the name of the member within the struct.
+ *
+ */
+#define container_of(ptr, type, member) ({			\
+	const typeof( ((type *)0)->member ) *__mptr = (ptr);	\
+	(type *)( (char *)__mptr - offsetof(type,member) );})
+
 #define prverb(fmt, ...) \
 do { \
 	if (kp_verbose) \
@@ -126,7 +137,9 @@ enum ctlflags {
 	CTL_EXPORTED 	= 1 << 4,
 	CTL_ARG		= 1 << 5,
 	CTL_NESTED	= 1 << 6,
-	CTL_NOOUT	= 1 << 7,
+	CTL_RECUR	= 1 << 7,
+	CTL_NOOUT	= 1 << 8,
+	CTL_GODEEP	= 1 << 9,
 	CTL_DEBUG	= 1 << 16
 };
 
@@ -138,7 +151,7 @@ static inline int strequ(const char *s1, const char *s2) {
 //
 struct hiersym {
 	struct symbol *symbol;
-	struct symbol *parent;
+	struct string_list *containers;
 	enum ctlflags	flags;
 	int level;		// hierarchical level
 };
@@ -148,6 +161,11 @@ DECLARE_PTR_LIST(hiersym_list, struct hiersym);
 static inline void add_hiersym(struct symbol_list **list, struct hiersym *hsym)
 {
 	add_ptr_list(list, hsym);
+}
+
+static inline void add_string(struct string_list **list, char *string)
+{
+	add_ptr_list(list, string);
 }
 
 static const char *get_modstr(unsigned long mod)
@@ -235,17 +253,17 @@ static const char *get_modstr(unsigned long mod)
 	return buffer;
 }
 
-#if 0
 static void show_syms(
 	struct symbol_list *list,
 	struct symbol_list **optlist,
-	enum typemask id);
+	enum typemask id,
+	enum ctlflags *flags);
 
 static void dump_list(
 	struct symbol_list *list,
 	struct symbol_list **optlist,
-	enum typemask id);
-#endif
+	enum typemask id,
+	enum ctlflags *flags);
 
 // find_internal_exported (symbol_list* symlist, char *symname)
 //
@@ -315,11 +333,22 @@ static int lookup_sym(struct symbol_list *list, struct symbol *sym)
 // libsparse calls:
 //        add_symbol
 //
-static void add_uniquesym(struct symbol *sym, struct symbol_list **list)
+static void add_uniquesym(struct symbol_list **list, struct symbol *sym)
 {
 	if (! lookup_sym(*list, sym))
 		add_symbol(list, sym);
 }
+
+static inline int set_prefix_flag(enum ctlflags *flags, int newflag)
+{
+	if (! newflag & (CTL_EXPORTED | CTL_ARG | CTL_NESTED))
+		return -1;
+
+	*flags &= ~(CTL_EXPORTED | CTL_ARG | CTL_NESTED);
+	*flags |= newflag;
+	return 0;
+}
+
 
 // explore_ctype(struct symbol *sym, symbol_list *list)
 //
@@ -347,10 +376,14 @@ static void explore_ctype(
 	enum typemask id,
 	enum ctlflags *flags)
 {
-	struct symbol *basetype = sym->ctype.base_type;
+	struct ctype *ctype = &sym->ctype;;
+	struct symbol *basetype = ctype->base_type;
 	enum typemask tm;
 
 	if (basetype) {
+
+		//struct symbol *outer = container_of(ctype, struct symbol, ctype);
+		//printf("sym: %p outer: %p\n", sym, outer);
 
 		if (basetype->type) {
 			tm = 1 << basetype->type;
@@ -364,23 +397,33 @@ static void explore_ctype(
 						(basetype->ctype.modifiers);
 			}
 
-			if (basetype->type ==SYM_PTR)
+			if (basetype->type == SYM_PTR)
 				*flags |= CTL_POINTER;
 			else
 				prverb("%s ", typnam);
 
 			if (basetype->ctype.modifiers
-			 & (MOD_LONGLONG | MOD_LONGLONGLONG))
+					& (MOD_LONGLONG | MOD_LONGLONGLONG))
 				prverb("(%d-bit) ", basetype->bit_size);
 
-			if (list && (tm & id))
-				add_uniquesym(basetype, list);
+			if (list && (tm & id)) {
+				if (*flags & CTL_GODEEP)
+					add_symbol(list, basetype);
+				else
+					add_uniquesym(list, basetype);
+				if (*flags & CTL_GODEEP) {
+					int saved_verbose = kp_verbose;
+					kp_verbose = 0;
+					explore_ctype(basetype, &nested, id, flags);
+					kp_verbose = saved_verbose;
+				}
+			}
 		}
 
 		if (basetype->ident)
 			prverb("%s ", basetype->ident->name);
 
-		explore_ctype(basetype, list, id, flags);
+        explore_ctype(basetype, list, id, flags);
 	}
 }
 
@@ -430,23 +473,22 @@ static char *get_prefix(enum ctlflags flags)
 static void show_syms(
 	struct symbol_list *list,
 	struct symbol_list **optlist,
-	enum typemask id)
+	enum typemask id,
+	enum ctlflags *flags)
 {
 	struct symbol *sym;
 
 	FOR_EACH_PTR(list, sym) {
-		enum ctlflags flags = 0;
 		char *fmt = "%s\n";
 
 		prverb("%s", spacer);
-		explore_ctype(sym, optlist, id, &flags);
+		explore_ctype(sym, optlist, id, flags);
 
 		if (sym->ident) {
-			if (flags & CTL_POINTER)
+			if (*flags & CTL_POINTER)
 				fmt = "*%s\n";
 			prverb(fmt, sym->ident->name);
 		}
-
 	} END_FOR_EACH_PTR(sym);
 }
 
@@ -459,9 +501,13 @@ static void show_syms(
 //
 static void show_args (struct symbol *sym)
 {
-	if (sym->arguments)
-		show_syms(sym->arguments, &structargs, (SM_STRUCT | SM_UNION));
+	enum ctlflags flags = CTL_ARG;
 
+	if (sym->arguments)
+		show_syms(sym->arguments,
+				&structargs,
+				(SM_STRUCT | SM_UNION),
+				&flags);
 	prverb("\n");
 }
 
@@ -525,6 +571,7 @@ static void show_exported(struct symbol *sym)
 			//
 			if (basetype->type == SYM_FN) {
 				show_args(basetype);
+				flags = CTL_EXPORTED;
 			}
 		} else
 			printf("Could not find internal source.\n");
@@ -540,14 +587,35 @@ static void process_file()
 	} END_FOR_EACH_PTR(sym);
 }
 
+
+static char *get_container_name(struct symbol **sym)
+{
+	struct ctype *ct = container_of(sym, struct ctype, base_type);
+	struct symbol *c = container_of(ct, struct symbol, ctype);
+
+	return "foo";
+
+	printf("\nsym: %s ct->base_type: %s c: %s\n",
+			(*sym)->ident->name,
+			ct->base_type->ident->name,
+			c->ident->name);
+
+	if (c->ident && c->ident->name)
+		return c->ident->name;
+
+	//printf("\tsym: %p   same_symbol: %p\n", sym, sym->same_symbol);
+
+	//return "";
+}
+
 static void dump_list(
 	struct symbol_list *list,
 	struct symbol_list **optlist,
 	enum typemask id,
-	enum ctlflags flags)
+	enum ctlflags *flags)
 {
 	struct symbol *sym;
-	char *prefix = get_prefix(flags);
+	char *prefix = get_prefix(*flags);
 
 	FOR_EACH_PTR(list, sym) {
 
@@ -555,16 +623,21 @@ static void dump_list(
 			putchar ('\n');
 
 		if (prefix)
-			printf("%s%s ", prefix, get_type_name(sym->type));
+			printf("%s%-7s ", prefix, get_type_name(sym->type));
 		else
-			printf("%s ", get_type_name(sym->type));
+			printf("%-7s ", get_type_name(sym->type));
 
-		if (sym->ident->name)
-			printf("%s\n", sym->ident->name);
+		if (sym->ident->name) {
+			if (*flags & CTL_NESTED) {
+				char *container_name = get_container_name(&sym);
+				printf("%-24s IN: %s\n",
+					sym->ident->name, container_name);
+			} else
+				printf("%s\n", sym->ident->name);
+		}
 
 		if (sym->symbol_list)
-			show_syms(sym->symbol_list, optlist, id);
-
+			show_syms(sym->symbol_list, optlist, id, flags);
 	} END_FOR_EACH_PTR(sym);
 }
 
@@ -607,6 +680,7 @@ int main(int argc, char **argv)
 	int argindex = 0;
 	char *file;
 	struct string_list *filelist = NULL;
+	enum ctlflags flags = 0;
 
 	if (argc <= 1) {
 		puts(helptext);
@@ -625,8 +699,10 @@ int main(int argc, char **argv)
 		process_file();
 	} END_FOR_EACH_PTR_NOTAG(file);
 
-	dump_list(structargs, &nested, (SM_STRUCT | SM_UNION), CTL_ARG);
-	dump_list(nested, NULL, 0, CTL_NESTED);
+	flags = CTL_ARG | CTL_GODEEP;
+	dump_list(structargs, &nested, (SM_STRUCT | SM_UNION), &flags);
+	flags = CTL_NESTED;
+	dump_list(nested, NULL, 0, &flags);
 
 	if (kp_verbose)
 		putchar('\n');
