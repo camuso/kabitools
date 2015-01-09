@@ -47,6 +47,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <asm-generic/errno-base.h>
 //#define NDEBUG	// comment-out to enable runtime asserts
 #include <assert.h>
 
@@ -59,17 +60,6 @@
 #include <sparse/ptrlist.h>
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
-
-/**
- * container_of - cast a member of a structure out to the containing structure
- * @ptr:	the pointer to the member.
- * @type:	the type of the container struct this is embedded in.
- * @member:	the name of the member within the struct.
- *
- */
-#define container_of(ptr, type, member) ({			\
-	const typeof( ((type *)0)->member ) *__mptr = (ptr);	\
-	(type *)( (char *)__mptr - offsetof(type,member) );})
 
 #define prverb(fmt, ...) \
 do { \
@@ -140,27 +130,132 @@ enum ctlflags {
 	CTL_RECUR	= 1 << 7,
 	CTL_NOOUT	= 1 << 8,
 	CTL_GODEEP	= 1 << 9,
-	CTL_DEBUG	= 1 << 16
+	CTL_UNIQUE	= 1 << 10,
+	CTL_DEBUG	= 1 << 16,
 };
 
-static inline int strequ(const char *s1, const char *s2) {
-	return strcmp(s1, s2) == 0;
+// lookup_sym - see if the symbol is already in the list
+//
+// This routine is called before adding a symbol to a list to assure that
+// the symbol is not already in the list.
+//
+// list - pointer to the head of the symbol list
+// sym - pointer to the symbol that is being sought
+//
+// returns 1 if symbol is there, 0 if symbol is not there.
+//
+static int lookup_sym(struct symbol_list *list, struct symbol *sym)
+{
+	struct symbol *temp;
+
+	FOR_EACH_PTR(list, temp) {
+		if (temp == sym)
+			return 1;
+	} END_FOR_EACH_PTR(temp);
+
+	return 0;
 }
 
-// Hierarchical Symbols and List
+// add_uniquesym - add a symbol of struct type to the structargs symbol list
 //
-struct hiersym {
-	struct symbol *symbol;
-	struct string_list *containers;
-	enum ctlflags	flags;
-	int level;		// hierarchical level
-};
-
-DECLARE_PTR_LIST(hiersym_list, struct hiersym);
-
-static inline void add_hiersym(struct symbol_list **list, struct hiersym *hsym)
+// sym - pointer to the symbol to add, if it's not already in the list.
+//
+// list - address of a pointer to a symbol_list to which the symbol will be
+//        added if it's not already there.
+//
+// libsparse calls:
+//        add_symbol
+//
+static void add_uniquesym(struct symbol_list **list, struct symbol *sym)
 {
-	add_ptr_list(list, hsym);
+	if (! lookup_sym(*list, sym))
+		add_symbol(list, sym);
+}
+
+struct containermap {
+	struct symbol *me;
+	enum ctlflags flags;
+	union {
+		struct symbol_list *mycontainerlist;
+		struct symbol *mycontainer;
+	};
+};
+DECLARE_PTR_LIST(containermap_list, struct containermap);
+struct containermap_list *nested_containermaps = NULL;
+
+static struct containermap *alloc_containermap()
+{
+	int csize = sizeof(struct containermap);
+	struct containermap *cptr;
+
+	if(!(cptr = (struct containermap *)malloc(csize)))
+		return NULL;
+	return cptr;
+}
+
+static inline void add_containermap
+			(struct containermap_list **clist,
+			 struct containermap *c)
+{
+	add_ptr_list(clist, c);
+}
+
+static struct symbol_list *get_mycontainerlist
+			(struct containermap_list *clist,
+			 struct symbol *me)
+{
+	struct containermap *temp;
+
+	FOR_EACH_PTR(clist, temp) {
+		if (temp->me == me)
+			return temp->mycontainerlist;
+	} END_FOR_EACH_PTR(temp);
+
+	return NULL;
+}
+
+static void map_mycontainerlist
+			(struct containermap_list **clist,
+			 struct symbol *me,
+			 struct symbol *mycontainer)
+{
+	struct symbol_list *containerlist = get_mycontainerlist(*clist, me);
+
+	if (! containerlist) {
+		struct containermap *newcontainermap = alloc_containermap();
+		newcontainermap->me = me;
+		newcontainermap->flags = CTL_UNIQUE;
+		containerlist = newcontainermap->mycontainerlist;
+		add_containermap(clist, newcontainermap);
+	}
+
+	add_symbol(&containerlist, mycontainer);
+}
+
+static struct symbol *get_mycontainer
+			(struct containermap_list *clist,
+			 struct symbol *me)
+{
+	struct containermap *temp;
+
+	FOR_EACH_PTR(clist, temp) {
+		if (temp->me == me)
+			return temp->mycontainer;
+	} END_FOR_EACH_PTR(temp);
+
+	return NULL;
+}
+
+static void map_mycontainer
+			(struct containermap_list **clist,
+			 struct symbol *me,
+			 struct symbol *mycontainer)
+{
+	struct containermap *newcontainermap = alloc_containermap();
+	newcontainermap->me = me;
+	newcontainermap->mycontainer = mycontainer;
+	newcontainermap->flags = 0;
+	add_containermap(clist, newcontainermap);
 }
 
 static inline void add_string(struct string_list **list, char *string)
@@ -253,18 +348,6 @@ static const char *get_modstr(unsigned long mod)
 	return buffer;
 }
 
-static void show_syms(
-	struct symbol_list *list,
-	struct symbol_list **optlist,
-	enum typemask id,
-	enum ctlflags *flags);
-
-static void dump_list(
-	struct symbol_list *list,
-	struct symbol_list **optlist,
-	enum typemask id,
-	enum ctlflags *flags);
-
 // find_internal_exported (symbol_list* symlist, char *symname)
 //
 // Finds the internal declaration of an exported symbol in the symlist.
@@ -277,9 +360,9 @@ static void dump_list(
 //
 // Returns a pointer to the symbol that corresponds to the exported one.
 //
-static struct symbol *find_internal_exported(
-		struct symbol_list *symlist,
-		char *symname)
+static struct symbol *find_internal_exported
+				(struct symbol_list *symlist,
+				 char *symname)
 {
 	struct symbol *sym = NULL;
 
@@ -301,44 +384,6 @@ fie_foundit:
 	return sym;
 }
 
-// lookup_sym - see if the symbol is already in the list
-//
-// This routine is called before adding a symbol to a list to assure that
-// the symbol is not already in the list.
-//
-// list - pointer to the head of the symbol list
-// sym - pointer to the symbol that is being sought
-//
-// returns 1 if symbol is there, 0 if symbol is not there.
-//
-static int lookup_sym(struct symbol_list *list, struct symbol *sym)
-{
-	struct symbol *temp;
-
-	FOR_EACH_PTR(list, temp) {
-		if (temp == sym)
-			return 1;
-	} END_FOR_EACH_PTR(temp);
-
-	return 0;
-}
-
-// add_uniquesym - add a symbol of struct type to the structargs symbol list
-//
-// sym - pointer to the symbol to add, if it's not already in the list.
-//
-// list - address of a pointer to a symbol_list to which the symbol will be
-//        added if it's not already there.
-//
-// libsparse calls:
-//        add_symbol
-//
-static void add_uniquesym(struct symbol_list **list, struct symbol *sym)
-{
-	if (! lookup_sym(*list, sym))
-		add_symbol(list, sym);
-}
-
 static inline int set_prefix_flag(enum ctlflags *flags, int newflag)
 {
 	if (! newflag & (CTL_EXPORTED | CTL_ARG | CTL_NESTED))
@@ -349,13 +394,36 @@ static inline int set_prefix_flag(enum ctlflags *flags, int newflag)
 	return 0;
 }
 
+static void explore_ctype
+			(struct symbol *container,
+			 struct symbol *sym,
+			 struct symbol_list **list,
+			 enum typemask id,
+			 enum ctlflags *flags);
 
-// explore_ctype(struct symbol *sym, symbol_list *list)
+static void go_deeper
+		(struct symbol *container,
+		 struct symbol *me,
+		 struct symbol_list **list,
+		 enum typemask id,
+		 enum ctlflags *flags)
+{
+	int saved_verbose = kp_verbose;
+	kp_verbose = 0;
+	add_symbol(list, me);
+	map_mycontainer(&nested_containermaps, me,  container);
+	explore_ctype(container, me, &nested, id, flags);
+	kp_verbose = saved_verbose;
+}
+
+// explore_ctype
 //
 // Recursively traverse the ctype tree to get the details about the symbol,
 // i.e. type, name, etc.
 //
-// sym - pointer to symbol whose ctype.base_type tree we will recursively
+// container - struct symbol * that contains the currently explored ctype.
+//
+// sym - struct symbol * whose ctype.base_type tree we will recursively
 //       explore
 //
 // list - address of the pointer to an optional symbol_list to which the
@@ -365,16 +433,17 @@ static inline int set_prefix_flag(enum ctlflags *flags, int newflag)
 // id - if list is not null, this argument identifies the type of symbol
 //      to be added to the list (see sparse/symbol.h).
 //
-// flags - flags to control execution depending on the caller.
+// flags - enum ctlflags * to control execution depending on the caller.
 //
 // libsparse calls:
 //      symbol.c::get_type_name()
 //
-static void explore_ctype(
-	struct symbol *sym,
-	struct symbol_list **list,
-	enum typemask id,
-	enum ctlflags *flags)
+static void explore_ctype
+			(struct symbol *container,
+			 struct symbol *sym,
+			 struct symbol_list **list,
+			 enum typemask id,
+			 enum ctlflags *flags)
 {
 	struct ctype *ctype = &sym->ctype;;
 	struct symbol *basetype = ctype->base_type;
@@ -408,22 +477,21 @@ static void explore_ctype(
 
 			if (list && (tm & id)) {
 				if (*flags & CTL_GODEEP)
-					add_symbol(list, basetype);
+					go_deeper
+						(container,
+						 basetype,
+						 list,
+						 id,
+						 flags);
 				else
 					add_uniquesym(list, basetype);
-				if (*flags & CTL_GODEEP) {
-					int saved_verbose = kp_verbose;
-					kp_verbose = 0;
-					explore_ctype(basetype, &nested, id, flags);
-					kp_verbose = saved_verbose;
-				}
 			}
 		}
 
 		if (basetype->ident)
 			prverb("%s ", basetype->ident->name);
 
-        explore_ctype(basetype, list, id, flags);
+        explore_ctype(container, basetype, list, id, flags);
 	}
 }
 
@@ -461,6 +529,8 @@ static char *get_prefix(enum ctlflags flags)
 //
 // Dump the list of symbols in the symbol_list
 //
+// container - struct symbol * that contains the currently explored ctype.
+//
 // list - a symbol_list of struct symbol
 //
 // optlist - address of the pointer to an optional symbol_list. If a match is
@@ -470,11 +540,14 @@ static char *get_prefix(enum ctlflags flags)
 // id - the type of the symbol, see enum typemask above and enum type in
 //      sparse/symbol.h
 //
-static void show_syms(
-	struct symbol_list *list,
-	struct symbol_list **optlist,
-	enum typemask id,
-	enum ctlflags *flags)
+// flags - enum ctlflags * to control execution flow and other logic.
+//
+static void show_syms
+		(struct symbol *container,
+		 struct symbol_list *list,
+		 struct symbol_list **optlist,
+		 enum typemask id,
+		 enum ctlflags *flags)
 {
 	struct symbol *sym;
 
@@ -482,7 +555,7 @@ static void show_syms(
 		char *fmt = "%s\n";
 
 		prverb("%s", spacer);
-		explore_ctype(sym, optlist, id, flags);
+		explore_ctype(container, sym, optlist, id, flags);
 
 		if (sym->ident) {
 			if (*flags & CTL_POINTER)
@@ -494,20 +567,21 @@ static void show_syms(
 
 // show_args(struct symbol *sym)
 //
-// Determines if the symbol arg is a function. If so, prints the argument
-// list.
+// If the symbol arg is a function, prints the argument list.
 //
-// Returns void
+// sym - struct symbol * to be examined.
 //
 static void show_args (struct symbol *sym)
 {
 	enum ctlflags flags = CTL_ARG;
 
 	if (sym->arguments)
-		show_syms(sym->arguments,
-				&structargs,
-				(SM_STRUCT | SM_UNION),
-				&flags);
+		show_syms
+			(sym,
+			 sym->arguments,
+			 &structargs,
+			 (SM_STRUCT | SM_UNION),
+			 &flags);
 	prverb("\n");
 }
 
@@ -527,14 +601,6 @@ static int starts_with(const char *a, const char *b)
 //
 //      symlist - globally declared symbol list, initialized by a call to
 //                sparse() in main().
-//
-//      exported - globally declared symbol list that will contain the
-//                 pointers to the internally declared struct symbols of
-//                 the exported struct symbols.
-//
-//      structargs - globally declared symbol list that will contain the
-//                   pointers to symbols that were in the argument lists
-//                   of exported functions.
 //
 // libsparse calls:
 //      add_symbol
@@ -556,10 +622,12 @@ static void show_exported(struct symbol *sym)
 
 			add_symbol(&exported, exp);
 			printf("EXPORTED: ");
-			explore_ctype(exp,
-					&structargs,
-					(SM_STRUCT | SM_UNION),
-					&flags);
+			explore_ctype
+				(NULL,
+				 exp,
+				 &structargs,
+				 (SM_STRUCT | SM_UNION),
+				 &flags);
 
 			if (kp_verbose && (flags & CTL_POINTER))
 				putchar('*');
@@ -587,25 +655,17 @@ static void process_file()
 	} END_FOR_EACH_PTR(sym);
 }
 
-
-static char *get_container_name(struct symbol **sym)
+static char *get_container_name(struct symbol *sym)
 {
-	struct ctype *ct = container_of(sym, struct ctype, base_type);
-	struct symbol *c = container_of(ct, struct symbol, ctype);
+	struct symbol *container = get_mycontainer(nested_containermaps, sym);
 
-	return "foo";
+	do {
+		if (container && container->ident)
+			return container->ident->name;
+		container = container->ctype.base_type;
+	} while (container);
 
-	printf("\nsym: %s ct->base_type: %s c: %s\n",
-			(*sym)->ident->name,
-			ct->base_type->ident->name,
-			c->ident->name);
-
-	if (c->ident && c->ident->name)
-		return c->ident->name;
-
-	//printf("\tsym: %p   same_symbol: %p\n", sym, sym->same_symbol);
-
-	//return "";
+	return NULL;
 }
 
 static void dump_list(
@@ -629,7 +689,8 @@ static void dump_list(
 
 		if (sym->ident->name) {
 			if (*flags & CTL_NESTED) {
-				char *container_name = get_container_name(&sym);
+				//char *container_name = get_container_name(&sym);
+				char *container_name = get_container_name(sym);
 				printf("%-24s IN: %s\n",
 					sym->ident->name, container_name);
 			} else
@@ -637,7 +698,7 @@ static void dump_list(
 		}
 
 		if (sym->symbol_list)
-			show_syms(sym->symbol_list, optlist, id, flags);
+			show_syms(sym, sym->symbol_list, optlist, id, flags);
 	} END_FOR_EACH_PTR(sym);
 }
 
