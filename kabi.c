@@ -23,9 +23,7 @@
  *    declared will also be listed with the prefix "IN: " followed by the
  *    name (ident->name, see sparse/token.h) of the symbols in which they
  *    were declared. Example...
- *    NESTED: struct bar
- *    IN: struct fee
- *    IN: union fii
+ *    NESTED: union foo IN: struct bar
  *
  * Only unique symbols will be listed, rather than listing them everywhere
  * they are discovered.
@@ -66,6 +64,18 @@ do { \
 	if (kp_verbose) \
 		printf(fmt, ##__VA_ARGS__); \
 } while (0)
+
+// For this compilation unit only
+//
+#ifdef true
+#undef true
+#endif
+#ifdef false
+#undef false
+#endif
+#define true 1
+#define false 0
+typedef unsigned int bool;
 
 const char *spacer = "  ";
 
@@ -136,27 +146,24 @@ enum ctlflags {
 
 // lookup_sym - see if the symbol is already in the list
 //
-// This routine is called before adding a symbol to a list to assure that
-// the symbol is not already in the list.
-//
 // list - pointer to the head of the symbol list
 // sym - pointer to the symbol that is being sought
 //
 // returns 1 if symbol is there, 0 if symbol is not there.
 //
-static int lookup_sym(struct symbol_list *list, struct symbol *sym)
+static bool lookup_sym(struct symbol_list *list, struct symbol *sym)
 {
 	struct symbol *temp;
 
 	FOR_EACH_PTR(list, temp) {
 		if (temp == sym)
-			return 1;
+			return true;
 	} END_FOR_EACH_PTR(temp);
 
-	return 0;
+	return false;
 }
 
-// add_uniquesym - add a symbol of struct type to the structargs symbol list
+// add_uniquesym - add a symbol if it's not already in the list
 //
 // sym - pointer to the symbol to add, if it's not already in the list.
 //
@@ -384,16 +391,6 @@ fie_foundit:
 	return sym;
 }
 
-static inline int set_prefix_flag(enum ctlflags *flags, int newflag)
-{
-	if (! newflag & (CTL_EXPORTED | CTL_ARG | CTL_NESTED))
-		return -1;
-
-	*flags &= ~(CTL_EXPORTED | CTL_ARG | CTL_NESTED);
-	*flags |= newflag;
-	return 0;
-}
-
 static void explore_ctype
 			(struct symbol *container,
 			 struct symbol *sym,
@@ -585,12 +582,12 @@ static void show_args (struct symbol *sym)
 	prverb("\n");
 }
 
-static int starts_with(const char *a, const char *b)
+static bool starts_with(const char *a, const char *b)
 {
 	if(strncmp(a, b, strlen(b)) == 0)
-		return 1;
+		return true;
 
-	return 0;
+	return false;
 }
 
 // show_exported - show the internal declaration of an exported symbol
@@ -605,45 +602,37 @@ static int starts_with(const char *a, const char *b)
 // libsparse calls:
 //      add_symbol
 //
-static void show_exported(struct symbol *sym)
+static void show_exported(struct symbol *sym, char *symname)
 {
 	struct symbol *exp;
+	enum typemask tm = (SM_STRUCT | SM_UNION);
 	enum ctlflags flags = CTL_EXPORTED;
 
-	if (starts_with(sym->ident->name, ksymprefix)) {
-		int offset = strlen(ksymprefix);
-		char *symname = &sym->ident->name[offset];
 
-		// Find the internal declaration of the exported symbol and
-		// add it to the "exported" list.
+	// Find the internal declaration of the exported
+	// symbol and add it to the "exported" list.
+	//
+	if ((exp = find_internal_exported(symlist, symname))) {
+		struct symbol *basetype = exp->ctype.base_type;
+
+		add_symbol(&exported, exp);
+		printf("EXPORTED: ");
+		explore_ctype(NULL, exp, &structargs, tm, &flags);
+
+		if (kp_verbose && (flags & CTL_POINTER))
+			putchar('*');
+
+		printf("%s\n", symname);
+
+		// If the exported symbol is a function, print its
+		// args.
 		//
-		if ((exp = find_internal_exported(symlist, symname))) {
-			struct symbol *basetype = exp->ctype.base_type;
-
-			add_symbol(&exported, exp);
-			printf("EXPORTED: ");
-			explore_ctype
-				(NULL,
-				 exp,
-				 &structargs,
-				 (SM_STRUCT | SM_UNION),
-				 &flags);
-
-			if (kp_verbose && (flags & CTL_POINTER))
-				putchar('*');
-
-			printf("%s\n", symname);
-
-			// If the exported symbol is a function, print its
-			// args.
-			//
-			if (basetype->type == SYM_FN) {
-				show_args(basetype);
-				flags = CTL_EXPORTED;
-			}
-		} else
-			printf("Could not find internal source.\n");
-	}
+		if (basetype->type == SYM_FN) {
+			show_args(basetype);
+			flags = CTL_EXPORTED;
+		}
+	} else
+		printf("Could not find internal source.\n");
 }
 
 static void process_file()
@@ -651,7 +640,13 @@ static void process_file()
 	struct symbol *sym;
 
 	FOR_EACH_PTR(symlist, sym) {
-		show_exported(sym);
+
+		if (starts_with(sym->ident->name, ksymprefix)) {
+			int offset = strlen(ksymprefix);
+			char *symname = &sym->ident->name[offset];
+			show_exported(sym, symname);
+		}
+
 	} END_FOR_EACH_PTR(sym);
 }
 
@@ -689,7 +684,6 @@ static void dump_list(
 
 		if (sym->ident->name) {
 			if (*flags & CTL_NESTED) {
-				//char *container_name = get_container_name(&sym);
 				char *container_name = get_container_name(sym);
 				printf("%-24s IN: %s\n",
 					sym->ident->name, container_name);
@@ -702,16 +696,16 @@ static void dump_list(
 	} END_FOR_EACH_PTR(sym);
 }
 
-static int parse_opt(char opt, int state)
+static bool parse_opt(char opt, int state)
 {
-	int validopt = 1;
+	bool validopt = true;
 
 	switch (opt) {
 	case 'v' : kp_verbose = state;	// kp_verbose is global to this file
 		   break;
 	case 'h' : puts(helptext);
 		   exit(0);
-	default  : validopt = 0;
+	default  : validopt = false;
 		   break;
 	}
 
