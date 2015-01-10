@@ -137,11 +137,9 @@ enum ctlflags {
 	CTL_EXPORTED 	= 1 << 4,
 	CTL_ARG		= 1 << 5,
 	CTL_NESTED	= 1 << 6,
-	CTL_RECUR	= 1 << 7,
-	CTL_NOOUT	= 1 << 8,
-	CTL_GODEEP	= 1 << 9,
-	CTL_UNIQUE	= 1 << 10,
-	CTL_DEBUG	= 1 << 16,
+	CTL_GODEEP	= 1 << 7,
+	CTL_UNIQUE	= 1 << 8,
+	CTL_LISTED	= 1 << 9,
 };
 
 // lookup_sym - see if the symbol is already in the list
@@ -165,10 +163,10 @@ static bool lookup_sym(struct symbol_list *list, struct symbol *sym)
 
 // add_uniquesym - add a symbol if it's not already in the list
 //
-// sym - pointer to the symbol to add, if it's not already in the list.
-//
 // list - address of a pointer to a symbol_list to which the symbol will be
 //        added if it's not already there.
+//
+// sym - pointer to the symbol to add, if it's not already in the list.
 //
 // libsparse calls:
 //        add_symbol
@@ -246,8 +244,10 @@ static struct symbol *get_mycontainer
 	struct containermap *temp;
 
 	FOR_EACH_PTR(clist, temp) {
-		if (temp->me == me)
+		if (temp->me == me && !(temp->flags & CTL_LISTED)) {
+			temp->flags |= CTL_LISTED;
 			return temp->mycontainer;
+		}
 	} END_FOR_EACH_PTR(temp);
 
 	return NULL;
@@ -273,8 +273,8 @@ static inline void add_string(struct string_list **list, char *string)
 static const char *get_modstr(unsigned long mod)
 {
 	static char buffer[100];
-	int len = 0;
-	int i;
+	unsigned len = 0;
+	unsigned i;
 	struct mod_name {
 		unsigned long mod;
 		const char *name;
@@ -571,14 +571,10 @@ static void show_syms
 static void show_args (struct symbol *sym)
 {
 	enum ctlflags flags = CTL_ARG;
+	enum typemask tm = (SM_STRUCT | SM_UNION);
 
 	if (sym->arguments)
-		show_syms
-			(sym,
-			 sym->arguments,
-			 &structargs,
-			 (SM_STRUCT | SM_UNION),
-			 &flags);
+		show_syms(sym, sym->arguments, &structargs, tm, &flags);
 	prverb("\n");
 }
 
@@ -602,7 +598,7 @@ static bool starts_with(const char *a, const char *b)
 // libsparse calls:
 //      add_symbol
 //
-static void show_exported(struct symbol *sym, char *symname)
+static void show_exported(char *symname)
 {
 	struct symbol *exp;
 	enum typemask tm = (SM_STRUCT | SM_UNION);
@@ -644,7 +640,7 @@ static void process_file()
 		if (starts_with(sym->ident->name, ksymprefix)) {
 			int offset = strlen(ksymprefix);
 			char *symname = &sym->ident->name[offset];
-			show_exported(sym, symname);
+			show_exported(symname);
 		}
 
 	} END_FOR_EACH_PTR(sym);
@@ -654,11 +650,8 @@ static char *get_container_name(struct symbol *sym)
 {
 	struct symbol *container = get_mycontainer(nested_containermaps, sym);
 
-	do {
-		if (container && container->ident)
-			return container->ident->name;
-		container = container->ctype.base_type;
-	} while (container);
+	if (container && container->ident)
+		return container->ident->name;
 
 	return NULL;
 }
