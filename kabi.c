@@ -142,132 +142,184 @@ enum ctlflags {
 	CTL_LISTED	= 1 << 9,
 };
 
-// lookup_sym - see if the symbol is already in the list
-//
-// list - pointer to the head of the symbol list
-// sym - pointer to the symbol that is being sought
-//
-// returns 1 if symbol is there, 0 if symbol is not there.
-//
-static bool lookup_sym(struct symbol_list *list, struct symbol *sym)
-{
-	struct symbol *temp;
-
-	FOR_EACH_PTR(list, temp) {
-		if (temp == sym)
-			return true;
-	} END_FOR_EACH_PTR(temp);
-
-	return false;
-}
-
-// add_uniquesym - add a symbol if it's not already in the list
-//
-// list - address of a pointer to a symbol_list to which the symbol will be
-//        added if it's not already there.
-//
-// sym - pointer to the symbol to add, if it's not already in the list.
-//
-// libsparse calls:
-//        add_symbol
-//
-static void add_uniquesym(struct symbol_list **list, struct symbol *sym)
-{
-	if (! lookup_sym(*list, sym))
-		add_symbol(list, sym);
-}
-
-struct containermap {
-	struct symbol *me;
-	enum ctlflags flags;
-	union {
-		struct symbol_list *mycontainerlist;
-		struct symbol *mycontainer;
-	};
-};
-DECLARE_PTR_LIST(containermap_list, struct containermap);
-struct containermap_list *nested_containermaps = NULL;
-
-static struct containermap *alloc_containermap()
-{
-	int csize = sizeof(struct containermap);
-	struct containermap *cptr;
-
-	if(!(cptr = (struct containermap *)malloc(csize)))
-		return NULL;
-	return cptr;
-}
-
-static inline void add_containermap
-			(struct containermap_list **clist,
-			 struct containermap *c)
-{
-	add_ptr_list(clist, c);
-}
-
-static struct symbol_list *get_mycontainerlist
-			(struct containermap_list *clist,
-			 struct symbol *me)
-{
-	struct containermap *temp;
-
-	FOR_EACH_PTR(clist, temp) {
-		if (temp->me == me)
-			return temp->mycontainerlist;
-	} END_FOR_EACH_PTR(temp);
-
-	return NULL;
-}
-
-static void map_mycontainerlist
-			(struct containermap_list **clist,
-			 struct symbol *me,
-			 struct symbol *mycontainer)
-{
-	struct symbol_list *containerlist = get_mycontainerlist(*clist, me);
-
-	if (! containerlist) {
-		struct containermap *newcontainermap = alloc_containermap();
-		newcontainermap->me = me;
-		newcontainermap->flags = CTL_UNIQUE;
-		containerlist = newcontainermap->mycontainerlist;
-		add_containermap(clist, newcontainermap);
-	}
-
-	add_symbol(&containerlist, mycontainer);
-}
-
-static struct symbol *get_mycontainer
-			(struct containermap_list *clist,
-			 struct symbol *me)
-{
-	struct containermap *temp;
-
-	FOR_EACH_PTR(clist, temp) {
-		if (temp->me == me && !(temp->flags & CTL_LISTED)) {
-			temp->flags |= CTL_LISTED;
-			return temp->mycontainer;
-		}
-	} END_FOR_EACH_PTR(temp);
-
-	return NULL;
-}
-
-static void map_mycontainer
-			(struct containermap_list **clist,
-			 struct symbol *me,
-			 struct symbol *mycontainer)
-{
-	struct containermap *newcontainermap = alloc_containermap();
-	newcontainermap->me = me;
-	newcontainermap->mycontainer = mycontainer;
-	newcontainermap->flags = 0;
-	add_containermap(clist, newcontainermap);
-}
 
 static inline void add_string(struct string_list **list, char *string)
 {
-	add_ptr_list(list, string);
+	// Need to use "notag" call, because bits[1:0] are reserved
+	// for tags of some sort. Pointers to strings do not necessarily
+	// have the low two bits clear, so this "notag" call is provided
+	// for that situation.
+	add_ptr_list_notag(list, string);
+}
+
+struct knode {
+	struct knode *parent;
+	struct knodelist *children;
+	struct symbol *symbol;
+	struct symbol_list *symbol_list;
+	struct string_list *declist;
+	enum ctlflags flags;
+	int level;
+};
+
+DECLARE_PTR_LIST(knodelist, struct knode);
+static struct knodelist *knodes = NULL;
+
+static struct knode *alloc_knode()
+{
+	int knsize = sizeof(struct knode);
+	struct knode *kptr;
+
+	if(!(kptr = (struct knode *)malloc(knsize)))
+		return NULL;
+
+	memset(kptr, 0, knsize);
+	return kptr;
+}
+
+static inline void add_knode (struct knodelist **klist, struct knode *k)
+{
+	add_ptr_list(klist, k);
+}
+
+static struct knode *map_knode(struct knode *parent, struct symbol *symbol)
+{
+	struct knode *newknode = alloc_knode();
+	newknode->parent = parent;
+	newknode->flags = 0;
+	newknode->symbol = symbol;
+	newknode->level = parent->level + 1;
+	add_knode(&parent->children, newknode);
+	return newknode;
+}
+
+static struct symbol *find_internal_exported(struct symbol_list *, char *);
+static bool starts_with(const char *a, const char *b);
+static const char *get_modstr(unsigned long mod);
+
+static void get_declist
+		(struct symbol *sym,
+		 enum ctlflags *flags,
+		 struct string_list **declist)
+{
+	const char strsize = 16;
+	char bitsize[strsize];
+	struct symbol *basetype = sym->ctype.base_type;
+
+	if (basetype) {
+
+		if (basetype->type) {
+			const char *typnam = get_type_name(basetype->type);
+
+			if (basetype->type == SYM_BASETYPE) {
+				if (! basetype->ctype.modifiers)
+					typnam = "void";
+				else
+					typnam = get_modstr
+						(basetype->ctype.modifiers);
+			}
+
+			if (basetype->type == SYM_PTR)
+				*flags |= CTL_POINTER;
+			else
+				add_string(declist, (char *)typnam);
+
+			if (basetype->ctype.modifiers &
+					(MOD_LONGLONG | MOD_LONGLONGLONG)) {
+				sprintf(&bitsize[0], "(%d-bit) ",
+					basetype->bit_size);
+				add_string(declist, bitsize);
+			}
+		}
+
+		if (basetype->ident)
+			add_string(declist, basetype->ident->name);
+
+        	get_declist(basetype, flags, declist);
+	}
+}
+
+static void get_symbols
+		(struct knodelist **klist,
+		 struct knode *parent,
+		 struct symbol_list *list)
+{
+	struct symbol *sym;
+
+	FOR_EACH_PTR(list, sym) {
+
+		struct knode *kn = map_knode(parent, sym);
+		add_knode(&parent->children, kn);
+		get_declist(sym, &kn->flags, &kn->declist);
+
+		if (sym->ident) {
+			if (kn->flags & CTL_POINTER)
+				add_string(&kn->declist, "*");
+			add_string(&kn->declist, sym->ident->name);
+		}
+
+	} END_FOR_EACH_PTR(sym);
+}
+
+static void build_knode
+		(struct knodelist **klist,
+		 struct knode *parent,
+		 char *symname)
+{
+	struct symbol *sym;
+
+	// Find the internal declaration of the exported
+	// symbol and add it to the "exported" list.
+	//
+	if ((sym = find_internal_exported(symlist, symname))) {
+		struct symbol *basetype = sym->ctype.base_type;
+		struct knode *kn = map_knode(parent, sym);
+
+		kn->flags = CTL_EXPORTED;
+		get_declist(sym, &kn->flags, &kn->declist);
+
+		if (kn->flags & CTL_POINTER)
+			add_string(&kn->declist, "*");
+
+		add_string(&kn->declist, symname);
+
+		if (! basetype)
+			return;
+
+		kn = map_knode(kn, basetype);
+
+		switch (basetype->type) {
+
+		case SYM_FN:
+			if (basetype->arguments)
+				get_symbols(klist, kn, basetype->arguments);
+			break;
+
+		case SYM_STRUCT:
+		case SYM_UNION:
+			if (basetype->symbol_list)
+				get_symbols(klist, kn, basetype->symbol_list);
+			break;
+		}
+	}
+}
+
+static void build_tree
+		(struct knodelist **klist,
+		 struct symbol_list *symlist,
+		 struct knode *parent)
+{
+	struct symbol *sym;
+
+	FOR_EACH_PTR(symlist, sym) {
+
+		if (starts_with(sym->ident->name, ksymprefix)) {
+			int offset = strlen(ksymprefix);
+			char *symname = &sym->ident->name[offset];
+			build_knode(klist, parent, symname);
+		}
+
+	} END_FOR_EACH_PTR(sym);
 }
 
 static const char *get_modstr(unsigned long mod)
@@ -391,107 +443,6 @@ fie_foundit:
 	return sym;
 }
 
-static void explore_ctype
-			(struct symbol *container,
-			 struct symbol *sym,
-			 struct symbol_list **list,
-			 enum typemask id,
-			 enum ctlflags *flags);
-
-static void go_deeper
-		(struct symbol *container,
-		 struct symbol *me,
-		 struct symbol_list **list,
-		 enum typemask id,
-		 enum ctlflags *flags)
-{
-	int saved_verbose = kp_verbose;
-	kp_verbose = 0;
-	add_symbol(list, me);
-	map_mycontainer(&nested_containermaps, me,  container);
-	explore_ctype(container, me, &nested, id, flags);
-	kp_verbose = saved_verbose;
-}
-
-// explore_ctype
-//
-// Recursively traverse the ctype tree to get the details about the symbol,
-// i.e. type, name, etc.
-//
-// container - struct symbol * that contains the currently explored ctype.
-//
-// sym - struct symbol * whose ctype.base_type tree we will recursively
-//       explore
-//
-// list - address of the pointer to an optional symbol_list to which the
-//        current sym will be added, if this parameter is not null and if
-//        it matches the id argument.
-//
-// id - if list is not null, this argument identifies the type of symbol
-//      to be added to the list (see sparse/symbol.h).
-//
-// flags - enum ctlflags * to control execution depending on the caller.
-//
-// libsparse calls:
-//      symbol.c::get_type_name()
-//
-static void explore_ctype
-			(struct symbol *container,
-			 struct symbol *sym,
-			 struct symbol_list **list,
-			 enum typemask id,
-			 enum ctlflags *flags)
-{
-	struct ctype *ctype = &sym->ctype;;
-	struct symbol *basetype = ctype->base_type;
-	enum typemask tm;
-
-	if (basetype) {
-
-		//struct symbol *outer = container_of(ctype, struct symbol, ctype);
-		//printf("sym: %p outer: %p\n", sym, outer);
-
-		if (basetype->type) {
-			tm = 1 << basetype->type;
-			const char *typnam = get_type_name(basetype->type);
-
-			if (basetype->type == SYM_BASETYPE) {
-				if (! basetype->ctype.modifiers)
-					typnam = "void";
-				else
-					typnam = get_modstr
-						(basetype->ctype.modifiers);
-			}
-
-			if (basetype->type == SYM_PTR)
-				*flags |= CTL_POINTER;
-			else
-				prverb("%s ", typnam);
-
-			if (basetype->ctype.modifiers
-					& (MOD_LONGLONG | MOD_LONGLONGLONG))
-				prverb("(%d-bit) ", basetype->bit_size);
-
-			if (list && (tm & id)) {
-				if (*flags & CTL_GODEEP)
-					go_deeper
-						(container,
-						 basetype,
-						 list,
-						 id,
-						 flags);
-				else
-					add_uniquesym(list, basetype);
-			}
-		}
-
-		if (basetype->ident)
-			prverb("%s ", basetype->ident->name);
-
-        explore_ctype(container, basetype, list, id, flags);
-	}
-}
-
 #if !defined(NDEBUG)	// see /usr/include/assert.h
 static int count_bits(unsigned long mask)
 {
@@ -522,171 +473,12 @@ static char *get_prefix(enum ctlflags flags)
 	return NULL;
 }
 
-// show_syms(struct symbol_list *list, symbol_list **optlist, enum typemask id)
-//
-// Dump the list of symbols in the symbol_list
-//
-// container - struct symbol * that contains the currently explored ctype.
-//
-// list - a symbol_list of struct symbol
-//
-// optlist - address of the pointer to an optional symbol_list. If a match is
-//           made between the symbol's type and the optional id argument
-//           (see below), then the symbol will be added to that optionial list.
-//
-// id - the type of the symbol, see enum typemask above and enum type in
-//      sparse/symbol.h
-//
-// flags - enum ctlflags * to control execution flow and other logic.
-//
-static void show_syms
-		(struct symbol *container,
-		 struct symbol_list *list,
-		 struct symbol_list **optlist,
-		 enum typemask id,
-		 enum ctlflags *flags)
-{
-	struct symbol *sym;
-
-	FOR_EACH_PTR(list, sym) {
-		char *fmt = "%s\n";
-
-		prverb("%s", spacer);
-		explore_ctype(container, sym, optlist, id, flags);
-
-		if (sym->ident) {
-			if (*flags & CTL_POINTER)
-				fmt = "*%s\n";
-			prverb(fmt, sym->ident->name);
-		}
-	} END_FOR_EACH_PTR(sym);
-}
-
-// show_args(struct symbol *sym)
-//
-// If the symbol arg is a function, prints the argument list.
-//
-// sym - struct symbol * to be examined.
-//
-static void show_args (struct symbol *sym)
-{
-	enum ctlflags flags = CTL_ARG;
-	enum typemask tm = (SM_STRUCT | SM_UNION);
-
-	if (sym->arguments)
-		show_syms(sym, sym->arguments, &structargs, tm, &flags);
-	prverb("\n");
-}
-
 static bool starts_with(const char *a, const char *b)
 {
 	if(strncmp(a, b, strlen(b)) == 0)
 		return true;
 
 	return false;
-}
-
-// show_exported - show the internal declaration of an exported symbol
-//
-// sym - pointer to the symbol list
-//
-// implicit inputs:
-//
-//      symlist - globally declared symbol list, initialized by a call to
-//                sparse() in main().
-//
-// libsparse calls:
-//      add_symbol
-//
-static void show_exported(char *symname)
-{
-	struct symbol *exp;
-	enum typemask tm = (SM_STRUCT | SM_UNION);
-	enum ctlflags flags = CTL_EXPORTED;
-
-
-	// Find the internal declaration of the exported
-	// symbol and add it to the "exported" list.
-	//
-	if ((exp = find_internal_exported(symlist, symname))) {
-		struct symbol *basetype = exp->ctype.base_type;
-
-		add_symbol(&exported, exp);
-		printf("EXPORTED: ");
-		explore_ctype(NULL, exp, &structargs, tm, &flags);
-
-		if (kp_verbose && (flags & CTL_POINTER))
-			putchar('*');
-
-		printf("%s\n", symname);
-
-		// If the exported symbol is a function, print its
-		// args.
-		//
-		if (basetype->type == SYM_FN) {
-			show_args(basetype);
-			flags = CTL_EXPORTED;
-		}
-	} else
-		printf("Could not find internal source.\n");
-}
-
-static void process_file()
-{
-	struct symbol *sym;
-
-	FOR_EACH_PTR(symlist, sym) {
-
-		if (starts_with(sym->ident->name, ksymprefix)) {
-			int offset = strlen(ksymprefix);
-			char *symname = &sym->ident->name[offset];
-			show_exported(symname);
-		}
-
-	} END_FOR_EACH_PTR(sym);
-}
-
-static char *get_container_name(struct symbol *sym)
-{
-	struct symbol *container = get_mycontainer(nested_containermaps, sym);
-
-	if (container && container->ident)
-		return container->ident->name;
-
-	return NULL;
-}
-
-static void dump_list(
-	struct symbol_list *list,
-	struct symbol_list **optlist,
-	enum typemask id,
-	enum ctlflags *flags)
-{
-	struct symbol *sym;
-	char *prefix = get_prefix(*flags);
-
-	FOR_EACH_PTR(list, sym) {
-
-		if (kp_verbose)
-			putchar ('\n');
-
-		if (prefix)
-			printf("%s%-7s ", prefix, get_type_name(sym->type));
-		else
-			printf("%-7s ", get_type_name(sym->type));
-
-		if (sym->ident->name) {
-			if (*flags & CTL_NESTED) {
-				char *container_name = get_container_name(sym);
-				printf("%-24s IN: %s\n",
-					sym->ident->name, container_name);
-			} else
-				printf("%s\n", sym->ident->name);
-		}
-
-		if (sym->symbol_list)
-			show_syms(sym, sym->symbol_list, optlist, id, flags);
-	} END_FOR_EACH_PTR(sym);
 }
 
 static bool parse_opt(char opt, int state)
@@ -723,12 +515,31 @@ static int get_options(char **argv)
 	return index;
 }
 
+static void show_knodes(struct knodelist *klist)
+{
+	struct knode *kn;
+
+	FOR_EACH_PTR(klist, kn) {
+		char *decl;
+
+		FOR_EACH_PTR_NOTAG(kn->declist, decl) {
+			printf("%s ", decl);
+		} END_FOR_EACH_PTR_NOTAG(decl);
+		putchar('\n');
+
+		show_knodes(kn->children);
+
+	} END_FOR_EACH_PTR(kn);
+}
+
 int main(int argc, char **argv)
 {
 	int argindex = 0;
 	char *file;
 	struct string_list *filelist = NULL;
-	enum ctlflags flags = 0;
+	struct knode *kn;
+
+	setbuf(stdout, NULL);
 
 	if (argc <= 1) {
 		puts(helptext);
@@ -741,16 +552,17 @@ int main(int argc, char **argv)
 
 	symlist = sparse_initialize(argc, argv, &filelist);
 
+	kn = alloc_knode();
+	add_knode(&knodes, kn);
+	kn->parent = kn;
+
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		printf("FILE: %s\n", file);
 		symlist = sparse(file);
-		process_file();
+		build_tree(&knodes, symlist, kn);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
-	flags = CTL_ARG | CTL_GODEEP;
-	dump_list(structargs, &nested, (SM_STRUCT | SM_UNION), &flags);
-	flags = CTL_NESTED;
-	dump_list(nested, NULL, 0, &flags);
+	show_knodes(knodes);
 
 	if (kp_verbose)
 		putchar('\n');
