@@ -11,19 +11,11 @@
  * project:
  * http://git.engineering.redhat.com/git/users/sbairagy/spartakus.git
  *
- * 1. Find all the exported symbols. They will be listed with a prefix of
- *    "EXPORTED:". Example ...
- *    EXPORTED: function foo
+ * 1. Find all the exported symbols.
  * 2. Find all the non-scalar (scalar as an option) args of the exported
- *    symbols. These will be listed with a prefix of "ARG:". Example...
- *    ARG: union fee
+ *    symbols.
  * 3. List all the members of nonscalar types used by the nonscalar args of
- *    exported symbols. They will be listed with the prefix "NESTED: "
- *    Additionally, the symbols in which these nonscalar members were
- *    declared will also be listed with the prefix "IN: " followed by the
- *    name (ident->name, see sparse/token.h) of the symbols in which they
- *    were declared. Example...
- *    NESTED: union foo IN: struct bar
+ *    exported symbols.
  *
  * Only unique symbols will be listed, rather than listing them everywhere
  * they are discovered.
@@ -46,7 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <asm-generic/errno-base.h>
-//#define NDEBUG	// comment-out to enable runtime asserts
+#define NDEBUG	// comment-out to enable runtime asserts
 #include <assert.h>
 
 #include <sparse/lib.h>
@@ -152,12 +144,18 @@ static inline void add_string(struct string_list **list, char *string)
 	add_ptr_list_notag(list, string);
 }
 
+static inline int string_list_size(struct string_list *list)
+{
+	return ptr_list_size((struct ptr_list *)(list));
+}
+
 struct knode {
 	struct knode *parent;
 	struct knodelist *children;
 	struct symbol *symbol;
 	struct symbol_list *symbol_list;
 	struct string_list *declist;
+	char *name;
 	enum ctlflags flags;
 	int level;
 };
@@ -182,6 +180,16 @@ static inline void add_knode (struct knodelist **klist, struct knode *k)
 	add_ptr_list(klist, k);
 }
 
+static inline struct knode *last_knode(struct knodelist *head)
+{
+	return last_ptr_list((struct ptr_list *)head);
+}
+
+static inline int knode_list_size(struct knodelist *list)
+{
+	return ptr_list_size((struct ptr_list *)(list));
+}
+
 static struct knode *map_knode(struct knode *parent, struct symbol *symbol)
 {
 	struct knode *newknode = alloc_knode();
@@ -197,10 +205,7 @@ static struct symbol *find_internal_exported(struct symbol_list *, char *);
 static bool starts_with(const char *a, const char *b);
 static const char *get_modstr(unsigned long mod);
 
-static void get_declist
-		(struct symbol *sym,
-		 enum ctlflags *flags,
-		 struct string_list **declist)
+static void get_declist(struct symbol *sym, struct knode *kn)
 {
 	const char strsize = 16;
 	char bitsize[strsize];
@@ -220,94 +225,74 @@ static void get_declist
 			}
 
 			if (basetype->type == SYM_PTR)
-				*flags |= CTL_POINTER;
+				kn->flags |= CTL_POINTER;
 			else
-				add_string(declist, (char *)typnam);
+				add_string(&kn->declist, (char *)typnam);
 
 			if (basetype->ctype.modifiers &
 					(MOD_LONGLONG | MOD_LONGLONGLONG)) {
 				sprintf(&bitsize[0], "(%d-bit) ",
 					basetype->bit_size);
-				add_string(declist, bitsize);
+				add_string(&kn->declist, bitsize);
 			}
 		}
 
 		if (basetype->ident)
-			add_string(declist, basetype->ident->name);
+			add_string(&kn->declist, basetype->ident->name);
 
-        	get_declist(basetype, flags, declist);
+		get_declist(basetype, kn);
 	}
 }
 
-static void get_symbols
-		(struct knodelist **klist,
-		 struct knode *parent,
-		 struct symbol_list *list)
+static void get_symbols(struct knode *parent, struct symbol_list *list)
 {
 	struct symbol *sym;
 
 	FOR_EACH_PTR(list, sym) {
 
 		struct knode *kn = map_knode(parent, sym);
-		add_knode(&parent->children, kn);
-		get_declist(sym, &kn->flags, &kn->declist);
+		get_declist(sym, kn);
 
-		if (sym->ident) {
-			if (kn->flags & CTL_POINTER)
-				add_string(&kn->declist, "*");
+		if (sym->ident)
 			add_string(&kn->declist, sym->ident->name);
-		}
 
 	} END_FOR_EACH_PTR(sym);
 }
 
-static void build_knode
-		(struct knodelist **klist,
-		 struct knode *parent,
-		 char *symname)
+static void build_knode(struct knode *parent, char *symname)
 {
 	struct symbol *sym;
 
-	// Find the internal declaration of the exported
-	// symbol and add it to the "exported" list.
-	//
 	if ((sym = find_internal_exported(symlist, symname))) {
 		struct symbol *basetype = sym->ctype.base_type;
 		struct knode *kn = map_knode(parent, sym);
+		bool haslist = (basetype->arguments || basetype->symbol_list);
+
 
 		kn->flags = CTL_EXPORTED;
-		get_declist(sym, &kn->flags, &kn->declist);
+		get_declist(sym, kn);
+		kn->name = symname;
 
-		if (kn->flags & CTL_POINTER)
-			add_string(&kn->declist, "*");
-
-		add_string(&kn->declist, symname);
-
-		if (! basetype)
+		if (! haslist)
 			return;
-
-		kn = map_knode(kn, basetype);
 
 		switch (basetype->type) {
 
 		case SYM_FN:
 			if (basetype->arguments)
-				get_symbols(klist, kn, basetype->arguments);
+				get_symbols(kn, basetype->arguments);
 			break;
 
 		case SYM_STRUCT:
 		case SYM_UNION:
 			if (basetype->symbol_list)
-				get_symbols(klist, kn, basetype->symbol_list);
+				get_symbols(kn, basetype->symbol_list);
 			break;
 		}
 	}
 }
 
-static void build_tree
-		(struct knodelist **klist,
-		 struct symbol_list *symlist,
-		 struct knode *parent)
+static void build_tree( struct symbol_list *symlist, struct knode *parent)
 {
 	struct symbol *sym;
 
@@ -316,7 +301,7 @@ static void build_tree
 		if (starts_with(sym->ident->name, ksymprefix)) {
 			int offset = strlen(ksymprefix);
 			char *symname = &sym->ident->name[offset];
-			build_knode(klist, parent, symname);
+			build_knode(parent, symname);
 		}
 
 	} END_FOR_EACH_PTR(sym);
@@ -521,13 +506,30 @@ static void show_knodes(struct knodelist *klist)
 
 	FOR_EACH_PTR(klist, kn) {
 		char *decl;
+		int declcount = string_list_size(kn->declist);
+		int counter = 1;
 
 		FOR_EACH_PTR_NOTAG(kn->declist, decl) {
+			if (counter++ == declcount
+			&& kn->flags & CTL_POINTER
+			&& ! kn->name)
+				putchar('*');
 			printf("%s ", decl);
 		} END_FOR_EACH_PTR_NOTAG(decl);
-		putchar('\n');
 
-		show_knodes(kn->children);
+		if (kn->name) {
+			if (kn->flags & CTL_POINTER)
+				putchar('*');
+			printf("%s\n", kn->name);
+		}
+		else if (counter > 1)
+			putchar('\n');
+
+		if(kn == last_knode(klist) && kn->level > 1)
+			return;
+
+		if (kn->children)
+			show_knodes(kn->children);
 
 	} END_FOR_EACH_PTR(kn);
 }
@@ -539,8 +541,9 @@ int main(int argc, char **argv)
 	struct string_list *filelist = NULL;
 	struct knode *kn;
 
+#if !defined(NDEBUG)
 	setbuf(stdout, NULL);
-
+#endif
 	if (argc <= 1) {
 		puts(helptext);
 		exit(0);
@@ -559,7 +562,7 @@ int main(int argc, char **argv)
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		printf("FILE: %s\n", file);
 		symlist = sparse(file);
-		build_tree(&knodes, symlist, kn);
+		build_tree(symlist, kn);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
 	show_knodes(knodes);
