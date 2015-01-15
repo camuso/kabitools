@@ -131,7 +131,7 @@ enum ctlflags {
 	CTL_NESTED	= 1 << 6,
 	CTL_GODEEP	= 1 << 7,
 	CTL_UNIQUE	= 1 << 8,
-	CTL_LISTED	= 1 << 9,
+	CTL_FILE	= 1 << 9,
 };
 
 static inline void add_string(struct string_list **list, char *string)
@@ -203,17 +203,17 @@ static struct knode *map_knode(struct knode *parent, struct symbol *symbol)
 static struct symbol *find_internal_exported(struct symbol_list *, char *);
 static bool starts_with(const char *a, const char *b);
 static const char *get_modstr(unsigned long mod);
+static void get_symbols(struct knode *parent, struct symbol_list *list, int flag);
 
 static void get_declist(struct symbol *sym, struct knode *kn)
 {
-	const char strsize = 16;
-	char bitsize[strsize];
 	struct symbol *basetype = sym->ctype.base_type;
 
 	if (basetype) {
 
 		if (basetype->type) {
 			const char *typnam = get_type_name(basetype->type);
+			enum typemask tm = 1 << basetype->type;
 
 			if (basetype->type == SYM_BASETYPE) {
 				if (! basetype->ctype.modifiers)
@@ -227,6 +227,10 @@ static void get_declist(struct symbol *sym, struct knode *kn)
 				kn->flags |= CTL_POINTER;
 			else
 				add_string(&kn->declist, (char *)typnam);
+
+			//if (tm & (SM_STRUCT | SM_UNION))
+			//if (basetype && basetype->symbol_list)
+			//	get_symbols(kn, basetype->symbol_list, CTL_NESTED);
 		}
 
 		if (basetype->ident)
@@ -241,8 +245,9 @@ static void get_symbols(struct knode *parent, struct symbol_list *list, int flag
 	struct symbol *sym;
 
 	FOR_EACH_PTR(list, sym) {
-
+		struct symbol *basetype = sym->ctype.base_type;
 		struct knode *kn = map_knode(parent, sym);
+
 		kn->flags |= flag;
 		get_declist(sym, kn);
 
@@ -269,7 +274,7 @@ static void build_knode(struct knode *parent, char *symname)
 	}
 }
 
-static void build_tree( struct symbol_list *symlist, struct knode *parent)
+static void build_tree(struct symbol_list *symlist, struct knode *parent)
 {
 	struct symbol *sym;
 
@@ -429,11 +434,17 @@ static char *get_prefix(enum ctlflags flags)
 {
 	// These flags are mutually exclusive.
 	//
-	unsigned long flg = flags & (CTL_EXPORTED | CTL_ARG | CTL_NESTED);
+	unsigned long flg = flags &
+			(CTL_FILE |
+			 CTL_EXPORTED |
+			 CTL_ARG |
+			 CTL_NESTED);
 
 	assert(count_bits(flg) <= 1);
 
 	switch (flg) {
+	case CTL_FILE:
+		return "FILE: ";
 	case CTL_EXPORTED:
 		return "EXPORTED: ";
 	case CTL_ARG:
@@ -513,9 +524,6 @@ static void show_knodes(struct knodelist *klist)
 		else if (counter > 1)
 			putchar('\n');
 
-		if(kn == last_knode(klist) && kn->level > 1)
-			return;
-
 		if (kn->children)
 			show_knodes(kn->children);
 
@@ -548,8 +556,9 @@ int main(int argc, char **argv)
 	kn->parent = kn;
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
-		printf("FILE: %s\n", file);
 		symlist = sparse(file);
+		kn->name = file;
+		kn->flags = CTL_FILE;
 		build_tree(symlist, kn);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
