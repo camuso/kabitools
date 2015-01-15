@@ -134,7 +134,6 @@ enum ctlflags {
 	CTL_LISTED	= 1 << 9,
 };
 
-
 static inline void add_string(struct string_list **list, char *string)
 {
 	// Need to use "notag" call, because bits[1:0] are reserved
@@ -228,13 +227,6 @@ static void get_declist(struct symbol *sym, struct knode *kn)
 				kn->flags |= CTL_POINTER;
 			else
 				add_string(&kn->declist, (char *)typnam);
-
-			if (basetype->ctype.modifiers &
-					(MOD_LONGLONG | MOD_LONGLONGLONG)) {
-				sprintf(&bitsize[0], "(%d-bit) ",
-					basetype->bit_size);
-				add_string(&kn->declist, bitsize);
-			}
 		}
 
 		if (basetype->ident)
@@ -244,13 +236,14 @@ static void get_declist(struct symbol *sym, struct knode *kn)
 	}
 }
 
-static void get_symbols(struct knode *parent, struct symbol_list *list)
+static void get_symbols(struct knode *parent, struct symbol_list *list, int flag)
 {
 	struct symbol *sym;
 
 	FOR_EACH_PTR(list, sym) {
 
 		struct knode *kn = map_knode(parent, sym);
+		kn->flags |= flag;
 		get_declist(sym, kn);
 
 		if (sym->ident)
@@ -266,29 +259,13 @@ static void build_knode(struct knode *parent, char *symname)
 	if ((sym = find_internal_exported(symlist, symname))) {
 		struct symbol *basetype = sym->ctype.base_type;
 		struct knode *kn = map_knode(parent, sym);
-		bool haslist = (basetype->arguments || basetype->symbol_list);
-
 
 		kn->flags = CTL_EXPORTED;
 		get_declist(sym, kn);
 		kn->name = symname;
 
-		if (! haslist)
-			return;
-
-		switch (basetype->type) {
-
-		case SYM_FN:
-			if (basetype->arguments)
-				get_symbols(kn, basetype->arguments);
-			break;
-
-		case SYM_STRUCT:
-		case SYM_UNION:
-			if (basetype->symbol_list)
-				get_symbols(kn, basetype->symbol_list);
-			break;
-		}
+		if (basetype->arguments)
+			get_symbols(kn, basetype->arguments, CTL_ARG);
 	}
 }
 
@@ -311,6 +288,7 @@ static const char *get_modstr(unsigned long mod)
 {
 	static char buffer[100];
 	unsigned len = 0;
+	int bits = 0;
 	unsigned i;
 	struct mod_name {
 		unsigned long mod;
@@ -352,18 +330,20 @@ static const char *get_modstr(unsigned long mod)
 	// Return these type modifiers the way we're accustomed to seeing
 	// them in the source code.
 	//
+	// reported by sparse/show-parse.c::modifier_string()  as ...
+	//
 	if (mod == MOD_SIGNED)
-		return "int";
+		return "int";			// [signed]
 	if (mod == MOD_UNSIGNED)
-		return "unsigned int";
+		return "unsigned int";		// [unsigned]
 	if (STD_SIGNED(mod, MOD_CHAR))
-		return "char";
+		return "char";			// [signed][char]
 	if (STD_SIGNED(mod, MOD_LONG))
-		return "long";
+		return "long";			// [signed][long]
 	if (STD_SIGNED(mod, MOD_LONGLONG))
-		return "long long";
+		return "long long";		// [signed][long long]
 	if (STD_SIGNED(mod, MOD_LONGLONGLONG))
-		return "long long long";
+		return "long long long";	// [signed][long long long]
 
 	// More than one of these bits can be set at the same time,
 	// so clear the redundant ones.
@@ -383,12 +363,16 @@ static const char *get_modstr(unsigned long mod)
 		if (mod & m->mod) {
 			char c;
 			const char *name = m->name;
-			while ((c = *name++) != '\0' && len + 2 < sizeof buffer)
+			while ((c = *name++) != '\0' && len + 1 < sizeof buffer)
 				buffer[len++] = c;
 			buffer[len++] = ' ';
+			bits++;
 		}
 	}
-	buffer[len] = 0;
+	if (bits > 1)
+		buffer[len-1] = 0;
+	else
+		buffer[len] = 0;
 	return buffer;
 }
 
@@ -450,12 +434,14 @@ static char *get_prefix(enum ctlflags flags)
 	assert(count_bits(flg) <= 1);
 
 	switch (flg) {
+	case CTL_EXPORTED:
+		return "EXPORTED: ";
 	case CTL_ARG:
 		return "ARG: ";
 	case CTL_NESTED:
 		return "NESTED: ";
 	}
-	return NULL;
+	return "";
 }
 
 static bool starts_with(const char *a, const char *b)
@@ -508,6 +494,8 @@ static void show_knodes(struct knodelist *klist)
 		char *decl;
 		int declcount = string_list_size(kn->declist);
 		int counter = 1;
+
+		printf("%s", get_prefix(kn->flags));
 
 		FOR_EACH_PTR_NOTAG(kn->declist, decl) {
 			if (counter++ == declcount
