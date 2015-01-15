@@ -38,7 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <asm-generic/errno-base.h>
-#define NDEBUG	// comment-out to enable runtime asserts
+//#define NDEBUG	// comment-out to enable runtime asserts
 #include <assert.h>
 
 #include <sparse/lib.h>
@@ -48,6 +48,13 @@
 #include <sparse/expression.h>
 #include <sparse/token.h>
 #include <sparse/ptrlist.h>
+
+#ifndef NDEBUG
+#define DBG(x) do { x } while(0)
+#else
+#define DBG(x)
+#endif
+
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 
@@ -191,12 +198,18 @@ static inline int knode_list_size(struct knodelist *list)
 
 static struct knode *map_knode(struct knode *parent, struct symbol *symbol)
 {
-	struct knode *newknode = alloc_knode();
+	struct knode *newknode;
+	if (symbol == parent->symbol)
+		return NULL;
+	newknode = alloc_knode();
 	newknode->parent = parent;
 	newknode->flags = 0;
 	newknode->symbol = symbol;
 	newknode->level = parent->level + 1;
+	if(symbol->ident)
+		newknode->name = symbol->ident->name;
 	add_knode(&parent->children, newknode);
+	DBG(if (newknode->level > 50) exit(0););
 	return newknode;
 }
 
@@ -204,6 +217,31 @@ static struct symbol *find_internal_exported(struct symbol_list *, char *);
 static bool starts_with(const char *a, const char *b);
 static const char *get_modstr(unsigned long mod);
 static void get_symbols(struct knode *parent, struct symbol_list *list, int flag);
+static void get_declist(struct symbol *sym, struct knode *kn);
+
+static char *pad_out(int padsize, char padchar)
+{
+	char buf[BUFSIZ];
+	while(padsize--)
+		buf[padsize] = padchar;
+}
+
+static void dump_knode(struct knode *kn)
+{
+	printf("k:%p p:%p l:%2d s:%p name:%s parent:%s\n",
+		kn, kn->parent, kn->level,
+		kn->symbol, kn->name, kn->parent->name);
+}
+
+static void go_deeper(struct knode *parent, struct symbol *sym, enum ctlflags flags)
+{
+	struct knode *kn = map_knode(parent, sym);
+	kn->flags |= flags;
+	get_declist(sym, kn);
+
+	if (sym->ident)
+		add_string(&kn->declist, sym->ident->name);
+}
 
 static void get_declist(struct symbol *sym, struct knode *kn)
 {
@@ -228,9 +266,10 @@ static void get_declist(struct symbol *sym, struct knode *kn)
 			else
 				add_string(&kn->declist, (char *)typnam);
 
-			//if (tm & (SM_STRUCT | SM_UNION))
-			//if (basetype && basetype->symbol_list)
-			//	get_symbols(kn, basetype->symbol_list, CTL_NESTED);
+			DBG(if (basetype->ident) puts(basetype->ident->name););
+			if ((tm & (SM_STRUCT | SM_UNION))
+			&& (basetype && basetype->symbol_list))
+				get_symbols(kn, basetype->symbol_list, CTL_NESTED);
 		}
 
 		if (basetype->ident)
@@ -245,10 +284,13 @@ static void get_symbols(struct knode *parent, struct symbol_list *list, int flag
 	struct symbol *sym;
 
 	FOR_EACH_PTR(list, sym) {
-		struct symbol *basetype = sym->ctype.base_type;
 		struct knode *kn = map_knode(parent, sym);
 
+		if(! kn)
+			return;
+
 		kn->flags |= flag;
+		DBG(dump_knode(kn););
 		get_declist(sym, kn);
 
 		if (sym->ident)
