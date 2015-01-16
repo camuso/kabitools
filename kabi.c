@@ -38,7 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <asm-generic/errno-base.h>
-//#define NDEBUG	// comment-out to enable runtime asserts
+#define NDEBUG	// comment-out to enable runtime asserts and debug code
 #include <assert.h>
 
 #include <sparse/lib.h>
@@ -206,8 +206,6 @@ static struct knode *map_knode(struct knode *parent, struct symbol *symbol)
 	newknode->flags = 0;
 	newknode->symbol = symbol;
 	newknode->level = parent->level + 1;
-	if(symbol->ident)
-		newknode->name = symbol->ident->name;
 	add_knode(&parent->children, newknode);
 	DBG(if (newknode->level > 50) exit(0););
 	return newknode;
@@ -219,6 +217,7 @@ static const char *get_modstr(unsigned long mod);
 static void get_symbols(struct knode *parent, struct symbol_list *list, int flag);
 static void get_declist(struct symbol *sym, struct knode *kn);
 
+#if !defined(NDEBUG)
 static char *pad_out(int padsize, char padchar)
 {
 	char buf[BUFSIZ];
@@ -233,15 +232,21 @@ static void dump_knode(struct knode *kn)
 		kn->symbol, kn->name, kn->parent->name);
 }
 
-static void go_deeper(struct knode *parent, struct symbol *sym, enum ctlflags flags)
+static void dump_strings(struct string_list *list)
 {
-	struct knode *kn = map_knode(parent, sym);
-	kn->flags |= flags;
-	get_declist(sym, kn);
-
-	if (sym->ident)
-		add_string(&kn->declist, sym->ident->name);
+	char *str;
+	FOR_EACH_PTR_NOTAG(list, str) {
+		printf("%s ", str);
+	} END_FOR_EACH_PTR_NOTAG(str);
+	putchar('\n');
 }
+
+static void prdecl(char *pfx, struct string_list *list)
+{
+	printf("%s: ", pfx);
+	dump_strings(list);
+}
+#endif
 
 static void get_declist(struct symbol *sym, struct knode *kn)
 {
@@ -266,10 +271,8 @@ static void get_declist(struct symbol *sym, struct knode *kn)
 			else
 				add_string(&kn->declist, (char *)typnam);
 
-			DBG(if (basetype->ident) puts(basetype->ident->name););
-			if ((tm & (SM_STRUCT | SM_UNION))
-			&& (basetype && basetype->symbol_list))
-				get_symbols(kn, basetype->symbol_list, CTL_NESTED);
+			if (tm & (SM_STRUCT | SM_UNION))
+				add_symbol(&kn->symbol_list, basetype);
 		}
 
 		if (basetype->ident)
@@ -290,11 +293,15 @@ static void get_symbols(struct knode *parent, struct symbol_list *list, int flag
 			return;
 
 		kn->flags |= flag;
+
 		DBG(dump_knode(kn););
 		get_declist(sym, kn);
 
 		if (sym->ident)
 			add_string(&kn->declist, sym->ident->name);
+
+		if (kn->symbol_list)
+			get_symbols(kn, kn->symbol_list, CTL_NESTED);
 
 	} END_FOR_EACH_PTR(sym);
 }
