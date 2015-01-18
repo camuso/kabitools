@@ -1,4 +1,4 @@
-/* kabi.c
+;/* kabi.c
  *
  * Find all the exported symbols in .i file(s) passed as argument(s) on the
  * command line when invoking this executable.
@@ -38,7 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <asm-generic/errno-base.h>
-#define NDEBUG	// comment-out to enable runtime asserts
+#define NDEBUG	// comment-out to enable runtime asserts and debug code
 #include <assert.h>
 
 #include <sparse/lib.h>
@@ -48,6 +48,13 @@
 #include <sparse/expression.h>
 #include <sparse/token.h>
 #include <sparse/ptrlist.h>
+
+#ifndef NDEBUG
+#define DBG(x) do { x } while(0)
+#else
+#define DBG(x)
+#endif
+
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 
@@ -127,11 +134,12 @@ enum ctlflags {
 	CTL_STRUCT	= 1 << 2,
 	CTL_FUNCTION	= 1 << 3,
 	CTL_EXPORTED 	= 1 << 4,
-	CTL_ARG		= 1 << 5,
-	CTL_NESTED	= 1 << 6,
-	CTL_GODEEP	= 1 << 7,
-	CTL_UNIQUE	= 1 << 8,
-	CTL_FILE	= 1 << 9,
+	CTL_RETURN	= 1 << 5,
+	CTL_ARG		= 1 << 6,
+	CTL_NESTED	= 1 << 7,
+	CTL_GODEEP	= 1 << 8,
+	CTL_UNIQUE	= 1 << 9,
+	CTL_FILE	= 1 << 10,
 };
 
 static inline void add_string(struct string_list **list, char *string)
@@ -155,6 +163,7 @@ struct knode {
 	struct symbol_list *symbol_list;
 	struct string_list *declist;
 	char *name;
+	char *typnam;
 	enum ctlflags flags;
 	int level;
 };
@@ -191,69 +200,267 @@ static inline int knode_list_size(struct knodelist *list)
 
 static struct knode *map_knode(struct knode *parent, struct symbol *symbol)
 {
-	struct knode *newknode = alloc_knode();
+	struct knode *newknode;
+	if (symbol == parent->symbol) {
+		DBG(printf("%s: parent symbol: %p same as this one: %p\n",\
+		    __func__, parent->symbol, symbol););
+		return NULL;
+	}
+	newknode = alloc_knode();
 	newknode->parent = parent;
 	newknode->flags = 0;
 	newknode->symbol = symbol;
 	newknode->level = parent->level + 1;
 	add_knode(&parent->children, newknode);
+	DBG(if (newknode->level > 400) exit(0););
 	return newknode;
+}
+
+struct used {
+	struct symbol *symbol;
+	struct knodelist *users;
+};
+
+DECLARE_PTR_LIST(usedlist, struct used);
+static struct usedlist *redlist = NULL;
+
+static struct used *alloc_used()
+{
+	int usize = sizeof(struct used);
+	struct used *uptr;
+
+	if(!(uptr = (struct used *)malloc(usize)))
+		return NULL;
+
+	memset(uptr, 0, usize);
+	return uptr;
+}
+
+static inline void add_used(struct usedlist **list, struct used *u)
+{
+	add_ptr_list(list, u);
+}
+
+static struct used *lookup_used(struct usedlist *list, struct symbol *sym)
+{
+	struct used *temp;
+	FOR_EACH_PTR(list, temp) {
+		if (temp->symbol == sym)
+			return temp;
+	} END_FOR_EACH_PTR(temp);
+	return NULL;
+}
+
+static void add_new_used
+		(struct usedlist **list,
+		 struct knode *parent,
+		 struct symbol *sym)
+{
+	struct used *newused = alloc_used();
+	newused->symbol = sym;
+	add_knode(&newused->users, parent);
+	add_used(list, newused);
+}
+
+static bool add_to_used
+		(struct usedlist **list,
+		 struct knode *parent,
+		 struct symbol *sym)
+{
+	struct used *user;
+
+	if ((user = lookup_used(*list, sym))) {
+		add_knode(&user->users, parent);
+		return true;
+	} else {
+		add_new_used(list, parent, sym);
+		return false;
+	}
 }
 
 static struct symbol *find_internal_exported(struct symbol_list *, char *);
 static bool starts_with(const char *a, const char *b);
 static const char *get_modstr(unsigned long mod);
 static void get_symbols(struct knode *parent, struct symbol_list *list, int flag);
+static void get_declist(struct knode *kn, struct symbol *sym);
 
-static void get_declist(struct symbol *sym, struct knode *kn)
+#if !defined(NDEBUG)
+static char *pad_out(int padsize, char padchar)
+{
+	static char buf[BUFSIZ];
+	memset(buf, 0, BUFSIZ);
+	while(padsize--)
+		buf[padsize] = padchar;
+	return buf;
+}
+
+static void dump_knode(struct knode *kn, const char *caller)
+{
+	char *knpnstr = kn->parent->name ? "p->name: " : " ";
+	printf("%s: kn:%p pkn:%p sym:%p p->psym:%p LEVEL:%2d %s%s\n",
+		caller,
+		kn,
+		kn->parent,
+		kn->symbol,
+		kn->parent->parent->symbol,
+		kn->level,
+		knpnstr,
+		kn->parent->name ? kn->parent->name : "");
+}
+
+static void dump_strings(struct string_list *list)
+{
+	char *str;
+	FOR_EACH_PTR_NOTAG(list, str) {
+		printf("%s ", str);
+	} END_FOR_EACH_PTR_NOTAG(str);
+	putchar('\n');
+}
+
+static void prdecl(char *pfx, struct string_list *list)
+{
+	printf("%s: ", pfx);
+	dump_strings(list);
+}
+
+static void dump_symlist(char *pfx, struct symbol_list *list)
+{
+	struct symbol *sym;
+	printf("%s: ", pfx);
+	FOR_EACH_PTR(list, sym) {
+		printf("%p ", sym);
+	} END_FOR_EACH_PTR(sym);
+	putchar('\n');
+}
+#endif
+
+static struct symbol *find_symbol_match(struct symbol_list *list, struct symbol *sym)
+{
+	struct symbol *temp;
+	FOR_EACH_PTR(list, temp) {
+		if (sym == temp)
+			return temp;
+	} END_FOR_EACH_PTR(temp);
+	return NULL;
+}
+
+static struct symbol *get_nth_symbol(struct symbol_list *list, int index)
+{
+	struct symbol *temp;
+	int count = 0;
+	if (index > symbol_list_size(list))
+		return NULL;
+	FOR_EACH_PTR(list, temp) {
+		if (count++ == index)
+			return temp;
+	} END_FOR_EACH_PTR(temp);
+	return NULL;
+}
+
+static void proc_symlist
+	(struct knode *parent,
+	 struct symbol_list *list,
+	 enum ctlflags flags)
+{
+	struct symbol *sym;
+	DBG(printf("%s: parent:%p list:%p flags:%02x\n",\
+		   __func__, parent, list, flags););
+	FOR_EACH_PTR(list, sym) {
+		DBG(printf(".call get_symbols(parent:%p list:%p listsize:%d flags:%02x\n",\
+			parent, sym->symbol_list,
+			symbol_list_size(list), flags););
+		//get_symbols(parent, sym->ident->symbols->symbol_list, flags);
+		get_symbols(parent, sym->symbol_list, flags);
+	} END_FOR_EACH_PTR(sym);
+}
+
+static void get_declist(struct knode *kn, struct symbol *sym)
 {
 	struct symbol *basetype = sym->ctype.base_type;
+	const char *typnam;
 
-	if (basetype) {
+	if (! basetype)
+		goto out;
 
-		if (basetype->type) {
-			const char *typnam = get_type_name(basetype->type);
-			enum typemask tm = 1 << basetype->type;
+	if (basetype->type) {
+		enum typemask tm = 1 << basetype->type;
+		typnam = get_type_name(basetype->type);
 
-			if (basetype->type == SYM_BASETYPE) {
-				if (! basetype->ctype.modifiers)
-					typnam = "void";
-				else
-					typnam = get_modstr
-						(basetype->ctype.modifiers);
-			}
-
-			if (basetype->type == SYM_PTR)
-				kn->flags |= CTL_POINTER;
+		if (basetype->type == SYM_BASETYPE) {
+			if (! basetype->ctype.modifiers)
+				typnam = "void";
 			else
-				add_string(&kn->declist, (char *)typnam);
-
-			//if (tm & (SM_STRUCT | SM_UNION))
-			//if (basetype && basetype->symbol_list)
-			//	get_symbols(kn, basetype->symbol_list, CTL_NESTED);
+				typnam = get_modstr(basetype->ctype.modifiers);
 		}
 
-		if (basetype->ident)
-			add_string(&kn->declist, basetype->ident->name);
+		if (basetype->type == SYM_PTR)
+			kn->flags |= CTL_POINTER;
+		else
+			add_string(&kn->declist, (char *)typnam);
 
-		get_declist(basetype, kn);
+		if ((tm & (SM_STRUCT | SM_UNION))
+		&& (basetype->symbol_list)) {
+			DBG(prdecl("get_decl found symlist", kn->declist););
+			DBG(if (basetype->ident) printf("%s: typnam: %s\n",\
+				__func__, basetype->ident->name););
+			add_symbol(&kn->symbol_list, basetype);
+		}
+
 	}
+
+	if (basetype->ident)
+		kn->typnam = basetype->ident->name;
+	else
+		kn->typnam = (char *)typnam;
+
+	get_declist(kn, basetype);
+out:
+	return;
 }
 
 static void get_symbols(struct knode *parent, struct symbol_list *list, int flag)
 {
 	struct symbol *sym;
 
+	DBG(puts("================================================="););
+	DBG(printf("%s: caller: %p list_size: %d\n",
+			__func__, __builtin_return_address(0),
+			symbol_list_size(list)););
+
 	FOR_EACH_PTR(list, sym) {
+		DBG(puts("++++++++++++++++++++++++++++++++++++++++++++++++++"););
+		struct knode *kn;
+		struct used *user;
 		struct symbol *basetype = sym->ctype.base_type;
-		struct knode *kn = map_knode(parent, sym);
 
+		if ((parent->symbol == sym)) {
+			DBG(printf("%s: parent->symbol:%p == sym:%p\n",\
+				__func__, parent->symbol, sym););
+			return;
+		}
+
+		if (add_to_used(&redlist, parent, sym))
+			return;
+
+		kn = map_knode(parent, sym);
 		kn->flags |= flag;
-		get_declist(sym, kn);
+		get_declist(kn, sym);
 
-		if (sym->ident)
-			add_string(&kn->declist, sym->ident->name);
+		DBG(if (basetype->ident) printf("%s: typnam: %s\n",\
+			__func__, basetype->ident->name););
 
+		if (sym->ident) {
+			kn->name = sym->ident->name;
+			DBG(printf("%s: name: %s\n", __func__, kn->name););
+		}
+
+		DBG(dump_knode(kn, __func__););
+
+		if ((kn->symbol_list && ! parent->typnam)
+		|| (parent->typnam && strcmp(parent->typnam, kn->typnam)))
+			proc_symlist(kn, kn->symbol_list, CTL_NESTED);
+
+		DBG(puts("--------------------------------------------------"););
 	} END_FOR_EACH_PTR(sym);
 }
 
@@ -266,8 +473,11 @@ static void build_knode(struct knode *parent, char *symname)
 		struct knode *kn = map_knode(parent, sym);
 
 		kn->flags = CTL_EXPORTED;
-		get_declist(sym, kn);
 		kn->name = symname;
+		get_declist(kn, basetype);
+
+		if (kn->symbol_list)
+			proc_symlist(kn, kn->symbol_list, CTL_RETURN | CTL_GODEEP);
 
 		if (basetype->arguments)
 			get_symbols(kn, basetype->arguments, CTL_ARG);
@@ -435,9 +645,10 @@ static char *get_prefix(enum ctlflags flags)
 	// These flags are mutually exclusive.
 	//
 	unsigned long flg = flags &
-			(CTL_FILE |
-			 CTL_EXPORTED |
-			 CTL_ARG |
+			(CTL_FILE 	|
+			 CTL_EXPORTED 	|
+			 CTL_RETURN	|
+			 CTL_ARG 	|
 			 CTL_NESTED);
 
 	assert(count_bits(flg) <= 1);
@@ -447,6 +658,8 @@ static char *get_prefix(enum ctlflags flags)
 		return "FILE: ";
 	case CTL_EXPORTED:
 		return "EXPORTED: ";
+	case CTL_RETURN:
+		return "RETURN: ";
 	case CTL_ARG:
 		return "ARG: ";
 	case CTL_NESTED:
@@ -554,6 +767,8 @@ int main(int argc, char **argv)
 	kn = alloc_knode();
 	add_knode(&knodes, kn);
 	kn->parent = kn;
+	kn->typnam = "notype";
+	kn->name = "treetop";
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		symlist = sparse(file);
