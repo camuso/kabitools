@@ -351,7 +351,6 @@ static void get_symbols(struct knode *parent, struct symbol_list *list, int flag
 	FOR_EACH_PTR(list, sym) {
 		struct knode *kn;
 		struct used *user;
-		struct symbol *basetype = sym->ctype.base_type;
 
 		if (parent->symbol == sym)
 			return;
