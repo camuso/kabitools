@@ -93,7 +93,8 @@ const char *helptext =
 "\n";
 
 static const char *ksymprefix = "__ksymtab_";
-static int kp_verbose = 0;
+static int kp_verbose = false;
+static int filelist = true;
 static struct symbol_list *exported	= NULL;
 static struct symbol_list *symlist	= NULL;
 static struct symbol_list *structargs 	= NULL;
@@ -156,7 +157,7 @@ struct knode {
 	struct symbol_list *symbol_list;
 	struct string_list *declist;
 	char *name;
-	char *typnam;
+	char *typnam;		// only exists to prevent infinite recursion
 	enum ctlflags flags;
 	int level;
 };
@@ -265,11 +266,30 @@ static bool add_to_used
 	}
 }
 
+static void dump_declist(struct knode *kn)
+{
+	char *str;
+	FOR_EACH_PTR_NOTAG(kn->declist, str) {
+		printf("%s ", str);
+	} END_FOR_EACH_PTR_NOTAG(str);
+
+	if (kn->flags & CTL_POINTER)
+		putchar('*');
+
+	if (kn->name)
+		puts(kn->name);
+	else
+		putchar('\n');
+}
+
 static struct symbol *find_internal_exported(struct symbol_list *, char *);
 static bool starts_with(const char *a, const char *b);
 static const char *get_modstr(unsigned long mod);
-static void get_symbols(struct knode *parent, struct symbol_list *list, int flag);
 static void get_declist(struct knode *kn, struct symbol *sym);
+static void get_symbols
+		(struct knode *parent,
+		 struct symbol_list *list,
+		 enum ctlflags flags);
 
 static struct symbol *find_symbol_match(struct symbol_list *list, struct symbol *sym)
 {
@@ -295,9 +315,9 @@ static struct symbol *get_nth_symbol(struct symbol_list *list, int index)
 }
 
 static void proc_symlist
-	(struct knode *parent,
-	 struct symbol_list *list,
-	 enum ctlflags flags)
+		(struct knode *parent,
+		 struct symbol_list *list,
+		 enum ctlflags flags)
 {
 	struct symbol *sym;
 	FOR_EACH_PTR(list, sym) {
@@ -334,8 +354,10 @@ static void get_declist(struct knode *kn, struct symbol *sym)
 			add_symbol(&kn->symbol_list, basetype);
 	}
 
-	if (basetype->ident)
+	if (basetype->ident) {
 		kn->typnam = basetype->ident->name;
+		add_string(&kn->declist, basetype->ident->name);
+	}
 	else
 		kn->typnam = (char *)typnam;
 
@@ -344,7 +366,10 @@ out:
 	return;
 }
 
-static void get_symbols(struct knode *parent, struct symbol_list *list, int flag)
+static void get_symbols
+		(struct knode *parent,
+		 struct symbol_list *list,
+		 enum ctlflags flags)
 {
 	struct symbol *sym;
 
@@ -359,12 +384,19 @@ static void get_symbols(struct knode *parent, struct symbol_list *list, int flag
 			return;
 
 		kn = map_knode(parent, sym);
-		kn->flags |= flag;
+		kn->flags |= flags;
 		get_declist(kn, sym);
 
 		if (sym->ident)
 			kn->name = sym->ident->name;
 
+		// If these conditions are not met, recursion into the lower
+		// list will be infinite. This most often occurs when a struct
+		// has members that point back to itself, as in ..
+		// struct foo {
+		// 	foo *next;
+		// 	foo *prev;
+		// };
 		if ((kn->symbol_list && ! parent->typnam)
 		|| (parent->typnam && strcmp(parent->typnam, kn->typnam)))
 			proc_symlist(kn, kn->symbol_list, CTL_NESTED);
@@ -591,6 +623,7 @@ static bool parse_opt(char opt, int state)
 	switch (opt) {
 	case 'v' : kp_verbose = state;	// kp_verbose is global to this file
 		   break;
+	case 'f' : filelist = state;
 	case 'h' : puts(helptext);
 		   exit(0);
 	default  : validopt = false;
@@ -616,6 +649,60 @@ static int get_options(char **argv)
 	}
 
 	return index;
+}
+
+static void format_declist(struct knode *kn, bool usespace)
+{
+	char *decl;
+	int declcount = string_list_size(kn->declist);
+	int counter = 1;
+	char *fmt = usespace ? " %s " : "%s ";
+
+	FOR_EACH_PTR_NOTAG(kn->declist, decl) {
+		if (counter++ == declcount
+		&& kn->flags & CTL_POINTER
+		&& ! kn->name)
+			putchar('*');
+		printf(fmt, decl);
+	} END_FOR_EACH_PTR_NOTAG(decl);
+
+	if (kn->name) {
+		if (kn->flags & CTL_POINTER)
+			putchar('*');
+		printf("%s\n", kn->name);
+	}
+	else if (counter > 1)
+		putchar('\n');
+}
+
+static void show_flagged_knodes(struct knodelist *klist, enum ctlflags flags)
+{
+	struct knode *kn;
+	flags |= CTL_FILE;
+
+	FOR_EACH_PTR(klist, kn) {
+
+		struct knode *child;
+
+		if (kn->flags & CTL_FILE) {
+			printf("%s %s\n", get_prefix(kn->flags), kn->name);
+			show_flagged_knodes(kn->children, flags);
+			continue;
+		}
+
+		if  (! (kn->flags & flags))
+			continue;
+
+		printf("%s", get_prefix(kn->flags));
+		format_declist(kn, false);
+
+		FOR_EACH_PTR(kn->children, child) {
+			format_declist(child, true);
+		} END_FOR_EACH_PTR(child);
+
+		if (kn->children)
+			show_flagged_knodes(kn->children, flags);
+	} END_FOR_EACH_PTR(kn);
 }
 
 static void show_knodes(struct knodelist *klist)
@@ -658,6 +745,8 @@ int main(int argc, char **argv)
 	struct string_list *filelist = NULL;
 	struct knode *kn;
 
+	setbuf(stdout, NULL);
+
 	if (argc <= 1) {
 		puts(helptext);
 		exit(0);
@@ -672,8 +761,6 @@ int main(int argc, char **argv)
 	kn = alloc_knode();
 	add_knode(&knodes, kn);
 	kn->parent = kn;
-	kn->typnam = "notype";
-	kn->name = "treetop";
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		symlist = sparse(file);
@@ -682,7 +769,9 @@ int main(int argc, char **argv)
 		build_tree(symlist, kn);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
-	show_knodes(knodes);
+	show_flagged_knodes(knodes, (CTL_EXPORTED | CTL_RETURN));
+	show_flagged_knodes(knodes, CTL_ARG);
+	//show_knodes(knodes);
 
 	if (kp_verbose)
 		putchar('\n');
