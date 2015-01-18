@@ -25,7 +25,14 @@ usage() {
 # [ $# -gt 0 ] || usage
 [ "$1" == "-h" ] || [ "$!" == "--help" ] && usage
 
-find ./ -name \*.i -exec sh -c \
-	'grep -qm1 "__ksymtab_" $1; \
-	[ $? -eq 0 ] && ./redhat/kabi/kabi-parser $1 2>/dev/null' \
-	sh '{}' \; | tee -a ./redhat/kabi/kabi-parser.log
+cat /dev/null > ./redhat/kabi/kabi-parser.log
+
+files=$(find ./ -type f -name \*.i)
+./redhat/kabi/kabi-parser $files | tee -a ./redhat/kabi/kabi-parser.log
+
+# One file at a time method. Save as possible future option
+#
+#find ./ -name \*.i -exec sh -c \
+#	'grep -qm1 "__ksymtab_" $1; \
+#	[ $? -eq 0 ] && ./redhat/kabi/kabi-parser $1 2>/dev/null' \
+#	sh '{}' \; | tee -a ./redhat/kabi/kabi-parser.log
