@@ -93,8 +93,9 @@ const char *helptext =
 "\n";
 
 static const char *ksymprefix = "__ksymtab_";
-static int kp_verbose = false;
-static int filelist = true;
+static bool kp_verbose = false;
+static bool filelist = false;
+static int hiwater = 0;
 static struct symbol_list *exported	= NULL;
 static struct symbol_list *symlist	= NULL;
 static struct symbol_list *structargs 	= NULL;
@@ -201,6 +202,8 @@ static struct knode *map_knode(struct knode *parent, struct symbol *symbol)
 	newknode->symbol = symbol;
 	newknode->level = parent->level + 1;
 	add_knode(&parent->children, newknode);
+	if (newknode->level > hiwater)
+		hiwater = newknode->level;
 	return newknode;
 }
 
@@ -280,6 +283,15 @@ static void dump_declist(struct knode *kn)
 		puts(kn->name);
 	else
 		putchar('\n');
+}
+
+static char *pad_out(int padsize, char padchar)
+{
+	static char buf[BUFSIZ];
+	memset(buf, 0, BUFSIZ);
+	while(padsize--)
+		buf[padsize] = padchar;
+	return buf;
 }
 
 static struct symbol *find_internal_exported(struct symbol_list *, char *);
@@ -678,7 +690,6 @@ static void format_declist(struct knode *kn, bool usespace)
 static void show_flagged_knodes(struct knodelist *klist, enum ctlflags flags)
 {
 	struct knode *kn;
-	flags |= CTL_FILE;
 
 	FOR_EACH_PTR(klist, kn) {
 
@@ -690,18 +701,20 @@ static void show_flagged_knodes(struct knodelist *klist, enum ctlflags flags)
 			continue;
 		}
 
-		if  (! (kn->flags & flags))
+		if  (! ((kn->flags & flags) | (flags & CTL_RETURN)))
 			continue;
 
 		printf("%s", get_prefix(kn->flags));
 		format_declist(kn, false);
 
+		if (kn->flags & CTL_RETURN) {
+			printf("%s ", get_prefix(kn->flags));
+			format_declist(kn, false);
+		}
+
 		FOR_EACH_PTR(kn->children, child) {
 			format_declist(child, true);
 		} END_FOR_EACH_PTR(child);
-
-		if (kn->children)
-			show_flagged_knodes(kn->children, flags);
 	} END_FOR_EACH_PTR(kn);
 }
 
@@ -714,7 +727,9 @@ static void show_knodes(struct knodelist *klist)
 		int declcount = string_list_size(kn->declist);
 		int counter = 1;
 
-		printf("%s", get_prefix(kn->flags));
+		printf("%s ", pad_out(kn->level, ' '));
+
+		printf("%s%-2d ", get_prefix(kn->flags), kn->level);
 
 		FOR_EACH_PTR_NOTAG(kn->declist, decl) {
 			if (counter++ == declcount
@@ -745,7 +760,7 @@ int main(int argc, char **argv)
 	struct string_list *filelist = NULL;
 	struct knode *kn;
 
-	setbuf(stdout, NULL);
+	//setbuf(stdout, NULL);
 
 	if (argc <= 1) {
 		puts(helptext);
@@ -769,9 +784,11 @@ int main(int argc, char **argv)
 		build_tree(symlist, kn);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
-	show_flagged_knodes(knodes, (CTL_EXPORTED | CTL_RETURN));
-	show_flagged_knodes(knodes, CTL_ARG);
-	//show_knodes(knodes);
+	//show_flagged_knodes(knodes, (CTL_EXPORTED | CTL_RETURN));
+	//show_flagged_knodes(knodes, CTL_ARG);
+
+	printf("\nhiwater: %d\n", hiwater);
+	show_knodes(knodes);
 
 	if (kp_verbose)
 		putchar('\n');
