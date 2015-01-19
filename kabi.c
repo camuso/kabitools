@@ -67,6 +67,13 @@ do { \
 #endif
 #define true 1
 #define false 0
+
+#if !defined(NDEBUG)
+#define DBG(x) x
+#else
+#define DBG(x)
+#endif
+
 typedef unsigned int bool;
 
 const char *spacer = "  ";
@@ -94,12 +101,9 @@ const char *helptext =
 
 static const char *ksymprefix = "__ksymtab_";
 static bool kp_verbose = false;
-static bool filelist = false;
+static bool showusers = false;
 static int hiwater = 0;
-static struct symbol_list *exported	= NULL;
 static struct symbol_list *symlist	= NULL;
-static struct symbol_list *structargs 	= NULL;
-static struct symbol_list *nested	= NULL;
 
 enum typemask {
 	SM_UNINITIALIZED = 1 << SYM_UNINITIALIZED,
@@ -272,6 +276,8 @@ static bool add_to_used
 static void dump_declist(struct knode *kn)
 {
 	char *str;
+	struct knode *parent = kn->parent;
+
 	FOR_EACH_PTR_NOTAG(kn->declist, str) {
 		printf("%s ", str);
 	} END_FOR_EACH_PTR_NOTAG(str);
@@ -280,9 +286,24 @@ static void dump_declist(struct knode *kn)
 		putchar('*');
 
 	if (kn->name)
-		puts(kn->name);
-	else
-		putchar('\n');
+		printf("%s ", kn->name);
+
+	if ((kn == parent)
+	|| (parent->flags & CTL_FILE))
+		goto out;
+
+	if (parent->typnam)
+		printf ("IN: %s ", parent->typnam);
+
+	if (parent->name)
+		if (parent->flags & CTL_POINTER)
+			putchar('*');
+		printf ("%s", parent->name);
+
+//	if (parent->name && parent->typnam && !(parent->flags & CTL_FUNCTION))
+//		printf("IN: %s %s", parent->typnam, parent->name);
+out:
+	putchar('\n');
 }
 
 static char *pad_out(int padsize, char padchar)
@@ -340,7 +361,7 @@ static void proc_symlist
 static void get_declist(struct knode *kn, struct symbol *sym)
 {
 	struct symbol *basetype = sym->ctype.base_type;
-	const char *typnam;
+	const char *typnam = "\0";
 
 	if (! basetype)
 		goto out;
@@ -362,8 +383,13 @@ static void get_declist(struct knode *kn, struct symbol *sym)
 			add_string(&kn->declist, (char *)typnam);
 
 		if ((tm & (SM_STRUCT | SM_UNION))
-		&& (basetype->symbol_list))
+		&& (basetype->symbol_list)) {
 			add_symbol(&kn->symbol_list, basetype);
+			kn->flags |= CTL_STRUCT;
+		}
+
+		if (tm & SM_FN)
+			kn->flags |= CTL_FUNCTION;
 	}
 
 	if (basetype->ident) {
@@ -387,12 +413,17 @@ static void get_symbols
 
 	FOR_EACH_PTR(list, sym) {
 		struct knode *kn;
-		struct used *user;
+		struct symbol *basetype = sym->ctype.base_type;
+		enum typemask tm;
+
+		if (basetype)
+			tm = 1 << basetype->type;
 
 		if (parent->symbol == sym)
 			return;
 
-		if (add_to_used(&redlist, parent, sym))
+		if ((tm & (SM_STRUCT | SM_UNION))
+				&& add_to_used(&redlist, parent, sym))
 			return;
 
 		kn = map_knode(parent, sym);
@@ -426,10 +457,13 @@ static void build_knode(struct knode *parent, char *symname)
 
 		kn->flags = CTL_EXPORTED;
 		kn->name = symname;
-		get_declist(kn, basetype);
+		get_declist(kn, sym);
 
-		if (kn->symbol_list)
-			proc_symlist(kn, kn->symbol_list, CTL_RETURN | CTL_GODEEP);
+		if (kn->symbol_list) {
+			struct knode *bkn = map_knode(kn, basetype);
+			bkn->flags = CTL_RETURN;
+			get_declist(bkn, basetype);
+		}
 
 		if (basetype->arguments)
 			get_symbols(kn, basetype->arguments, CTL_ARG);
@@ -628,17 +662,18 @@ static bool starts_with(const char *a, const char *b)
 	return false;
 }
 
-static bool parse_opt(char opt, int state)
+static int parse_opt(char opt, int state)
 {
-	bool validopt = true;
+	int validopt = 1;
 
 	switch (opt) {
 	case 'v' : kp_verbose = state;	// kp_verbose is global to this file
 		   break;
-	case 'f' : filelist = state;
+	case 'u' : showusers = state;
+		   break;
 	case 'h' : puts(helptext);
 		   exit(0);
-	default  : validopt = false;
+	default  : validopt = 0;
 		   break;
 	}
 
@@ -647,21 +682,21 @@ static bool parse_opt(char opt, int state)
 
 static int get_options(char **argv)
 {
-	char **args = &argv[1];
 	int state = 0;		// on = 1, off = 0
 	int index = 0;
 
-	if (**args == '-') {
-
+	for (index = 0; *argv[0] == '-'; ++index) {
+		int i;
 		// Trailing '-' sets state to OFF (0)
-		//
-		state = (*args)[strlen(*args)-1] != '-';
-		index += parse_opt((*args)[1], state);
-		++args;
-	}
+		char *argstr = &(*argv++)[1];
+		state = argstr[strlen(argstr)] != '-';
 
+		for (i = 0; argstr[i]; ++i)
+			parse_opt(argstr[i], state);
+	}
 	return index;
 }
+
 
 static void format_declist(struct knode *kn, bool usespace)
 {
@@ -701,7 +736,7 @@ static void show_flagged_knodes(struct knodelist *klist, enum ctlflags flags)
 			continue;
 		}
 
-		if  (! ((kn->flags & flags) | (flags & CTL_RETURN)))
+		if  (!((kn->flags & flags) | (flags & CTL_RETURN)))
 			continue;
 
 		printf("%s", get_prefix(kn->flags));
@@ -718,37 +753,46 @@ static void show_flagged_knodes(struct knodelist *klist, enum ctlflags flags)
 	} END_FOR_EACH_PTR(kn);
 }
 
+static void show_users(struct knodelist *klist, int level)
+{
+	struct knode *kn;
+
+	FOR_EACH_PTR(klist, kn) {
+
+		if (kn->flags & CTL_STRUCT) {
+			printf("%s USER: ", pad_out(level+10, ' '));
+			dump_declist(kn);
+		}
+	}END_FOR_EACH_PTR(kn);
+}
+
 static void show_knodes(struct knodelist *klist)
 {
 	struct knode *kn;
 
 	FOR_EACH_PTR(klist, kn) {
-		char *decl;
-		int declcount = string_list_size(kn->declist);
-		int counter = 1;
+		char *pfx = get_prefix(kn->flags);
 
-		printf("%s ", pad_out(kn->level, ' '));
+		if (!kp_verbose && kn->flags & CTL_NESTED)
+			return;
 
-		printf("%s%-2d ", get_prefix(kn->flags), kn->level);
+		if (kp_verbose)
+			printf("%s%s%-2d ",
+			       pad_out(kn->level, ' ' ), pfx, kn->level);
+		else
+			printf("%s%s ", pad_out(kn->level, ' ' ), pfx);
 
-		FOR_EACH_PTR_NOTAG(kn->declist, decl) {
-			if (counter++ == declcount
-			&& kn->flags & CTL_POINTER
-			&& ! kn->name)
-				putchar('*');
-			printf("%s ", decl);
-		} END_FOR_EACH_PTR_NOTAG(decl);
+		dump_declist(kn);
 
-		if (kn->name) {
-			if (kn->flags & CTL_POINTER)
-				putchar('*');
-			printf("%s\n", kn->name);
+		if (showusers && (kn->flags & CTL_NESTED)) {
+			struct used *u = lookup_used(redlist, kn->symbol);
+			if (u)
+				show_users(u->users, kn->level);
 		}
-		else if (counter > 1)
-			putchar('\n');
 
-		if (kn->children)
+		if (kn->children) {
 			show_knodes(kn->children);
+		}
 
 	} END_FOR_EACH_PTR(kn);
 }
@@ -760,14 +804,14 @@ int main(int argc, char **argv)
 	struct string_list *filelist = NULL;
 	struct knode *kn;
 
-	//setbuf(stdout, NULL);
+	DBG(setbuf(stdout, NULL);)
 
 	if (argc <= 1) {
 		puts(helptext);
 		exit(0);
 	}
 
-	argindex = get_options(argv);
+	argindex = get_options(&argv[1]);
 	argv += argindex;
 	argc -= argindex;
 
@@ -787,7 +831,7 @@ int main(int argc, char **argv)
 	//show_flagged_knodes(knodes, (CTL_EXPORTED | CTL_RETURN));
 	//show_flagged_knodes(knodes, CTL_ARG);
 
-	printf("\nhiwater: %d\n", hiwater);
+	DBG(printf("\nhiwater: %d\n", hiwater);)
 	show_knodes(knodes);
 
 	if (kp_verbose)
