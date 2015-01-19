@@ -8,7 +8,8 @@ cmdline=kabilist-search
 usagestr=$(
 cat <<EOF
 
-kabilist-search
+$0 [OPTION]
+  -v  - verbose output
 \0
 EOF
 )
@@ -18,8 +19,19 @@ usage() {
 	exit
 }
 
-#[ $# -gt 1 ] || usage
+[ $# -gt 1 ] || usage
 
+while getopts v OPTION; do
+    case "$OPTION" in
+
+        v )
+
+        * )
+            echo "unrecognized option"
+            echo "$usage"
+            exit 1
+    esac
+done
 pattern="$1"
 
 while read line; do
@@ -30,4 +42,6 @@ while read line; do
 		echo "$srchline IN $exported"
 	fi
 done < ./redhat/kabi/kabi-parser.log
+
+
 
