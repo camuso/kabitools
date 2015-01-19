@@ -14,18 +14,6 @@ print "$srchstr\n";
 open (FILE, "<$filnam");
 while (<FILE>) {
 	chomp;
-	#my @lin = split(":");
-
-	#print $lin[0], "\n";
-	#print Dumper $lin[1];
-
-	#if (!defined $lin[0]) {
-	#	next;
-	#}
-
-	#$lin[0] =~ s/^\s+//;;
-
-	#if ($lin[0] eq $srchstr) {
 	if (index($_, $srchstr) != -1) {
 		print "$_\n";
 	}
