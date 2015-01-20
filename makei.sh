@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# makei
+# makei.sh
 #
 
 cmdline=makei
@@ -8,7 +8,7 @@ cmdline=makei
 usagestr=$(
 cat <<EOF
 
-makei directory
+makei.sh <directory>
 
 \tCreate .i files from all the c files in a directory tree.
 \0
@@ -68,17 +68,3 @@ echo ""
 
 make -k -j$cpucount $files 2>/dev/null
 
-exit 0
-
-# Deprecated code that built the .i files one at a time.
-#
-find $dirspec -name \*.c -exec sh -c \
-	'path=$(dirname $1); \
-	file=$(basename $1); \
-	suffix=${file#*.}; \
-	[ "$suffix" != "c" ] && exit; \
-	stem=${file%.*}; \
-	echo -n "$path/$stem.i: "; \
-	make "$path/$stem.i"' \
-	sh '{}' \;
-set +x
