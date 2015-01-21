@@ -38,7 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <asm-generic/errno-base.h>
-#define NDEBUG	// comment out to enable asserts
+//#define NDEBUG	// comment out to enable asserts
 #include <assert.h>
 
 #include <sparse/lib.h>
@@ -295,13 +295,11 @@ static void dump_declist(struct knode *kn)
 	if (parent->typnam)
 		printf ("IN: %s ", parent->typnam);
 
-	if (parent->name)
+	if (parent->name) {
 		if (parent->flags & CTL_POINTER)
 			putchar('*');
 		printf ("%s", parent->name);
-
-//	if (parent->name && parent->typnam && !(parent->flags & CTL_FUNCTION))
-//		printf("IN: %s %s", parent->typnam, parent->name);
+	}
 out:
 	putchar('\n');
 }
@@ -447,14 +445,18 @@ static void get_symbols
 	} END_FOR_EACH_PTR(sym);
 }
 
-static void build_knode(struct knode *parent, char *symname)
+static void build_knode(struct knode *parent, char *symname, char *file)
 {
 	struct symbol *sym;
 
 	if ((sym = find_internal_exported(symlist, symname))) {
 		struct symbol *basetype = sym->ctype.base_type;
-		struct knode *kn = map_knode(parent, sym);
+		struct knode *kn = map_knode(parent, NULL);
 
+		kn->name = file;
+		kn->flags = CTL_FILE;
+
+		kn = map_knode(kn, sym);
 		kn->flags = CTL_EXPORTED;
 		kn->name = symname;
 		get_declist(kn, sym);
@@ -470,16 +472,20 @@ static void build_knode(struct knode *parent, char *symname)
 	}
 }
 
-static void build_tree(struct symbol_list *symlist, struct knode *parent)
+static void build_tree
+		(struct symbol_list *symlist,
+		 struct knode *parent,
+		 char *file)
 {
 	struct symbol *sym;
 
 	FOR_EACH_PTR(symlist, sym) {
 
-		if (starts_with(sym->ident->name, ksymprefix)) {
+		if (sym->ident &&
+		    starts_with(sym->ident->name, ksymprefix)) {
 			int offset = strlen(ksymprefix);
 			char *symname = &sym->ident->name[offset];
-			build_knode(parent, symname);
+			build_knode(parent, symname, file);
 		}
 
 	} END_FOR_EACH_PTR(sym);
@@ -596,6 +602,10 @@ static struct symbol *find_internal_exported
 	struct symbol *sym = NULL;
 
 	FOR_EACH_PTR(symlist, sym) {
+
+		if (!(sym && sym->ident))
+			continue;
+
 		if (! strcmp(sym->ident->name, symname)) {
 			switch (sym->ctype.base_type->type) {
 			case SYM_BASETYPE:
@@ -815,17 +825,18 @@ int main(int argc, char **argv)
 	argv += argindex;
 	argc -= argindex;
 
+	DBG(puts("got the files");)
 	symlist = sparse_initialize(argc, argv, &filelist);
 
+	DBG(puts("created the symlist");)
 	kn = alloc_knode();
 	add_knode(&knodes, kn);
 	kn->parent = kn;
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
+		DBG(printf("sparse file: %s\n", file);)
 		symlist = sparse(file);
-		kn->name = file;
-		kn->flags = CTL_FILE;
-		build_tree(symlist, kn);
+		build_tree(symlist, kn, file);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
 	//show_flagged_knodes(knodes, (CTL_EXPORTED | CTL_RETURN));
