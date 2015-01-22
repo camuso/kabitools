@@ -102,8 +102,8 @@ const char *helptext =
 "\n";
 
 static const char *ksymprefix = "__ksymtab_";
-static bool kp_verbose = false;
-static bool showusers = false;
+static bool kp_verbose = true;
+static bool showusers = true;
 static int hiwater = 0;
 static struct symbol_list *symlist	= NULL;
 
@@ -681,7 +681,7 @@ static int get_options(char **argv)
 		int i;
 		// Trailing '-' sets state to OFF (0)
 		char *argstr = &(*argv++)[1];
-		state = argstr[strlen(argstr)] != '-';
+		state = argstr[strlen(argstr)-1] != '-';
 
 		for (i = 0; argstr[i]; ++i)
 			parse_opt(argstr[i], state);
