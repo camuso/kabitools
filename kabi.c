@@ -38,7 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <asm-generic/errno-base.h>
-//#define NDEBUG	// comment out to enable asserts
+#define NDEBUG	// comment out to enable asserts
 #include <assert.h>
 
 #include <sparse/lib.h>
@@ -70,8 +70,10 @@ do { \
 
 #if !defined(NDEBUG)
 #define DBG(x) x
+#define RUN(x)
 #else
 #define DBG(x)
+#define RUN(x) x
 #endif
 
 typedef unsigned int bool;
@@ -137,7 +139,7 @@ enum ctlflags {
 	CTL_ARG		= 1 << 6,
 	CTL_NESTED	= 1 << 7,
 	CTL_GODEEP	= 1 << 8,
-	CTL_UNIQUE	= 1 << 9,
+	CTL_DONE	= 1 << 9,
 	CTL_FILE	= 1 << 10,
 };
 
@@ -162,7 +164,8 @@ struct knode {
 	struct symbol_list *symbol_list;
 	struct string_list *declist;
 	char *name;
-	char *typnam;		// only exists to prevent infinite recursion
+	char *typnam;
+	char *file;
 	enum ctlflags flags;
 	int level;
 };
@@ -202,12 +205,12 @@ static struct knode *map_knode(struct knode *parent, struct symbol *symbol)
 	struct knode *newknode;
 	newknode = alloc_knode();
 	newknode->parent = parent;
+	newknode->file = parent->file;
 	newknode->flags = 0;
 	newknode->symbol = symbol;
 	newknode->level = parent->level + 1;
 	add_knode(&parent->children, newknode);
-	if (newknode->level > hiwater)
-		hiwater = newknode->level;
+	DBG(hiwater= newknode->level > hiwater ? newknode->level : hiwater;)
 	return newknode;
 }
 
@@ -332,19 +335,6 @@ static struct symbol *find_symbol_match(struct symbol_list *list, struct symbol 
 	return NULL;
 }
 
-static struct symbol *get_nth_symbol(struct symbol_list *list, int index)
-{
-	struct symbol *temp;
-	int count = 0;
-	if (index > symbol_list_size(list))
-		return NULL;
-	FOR_EACH_PTR(list, temp) {
-		if (count++ == index)
-			return temp;
-	} END_FOR_EACH_PTR(temp);
-	return NULL;
-}
-
 static void proc_symlist
 		(struct knode *parent,
 		 struct symbol_list *list,
@@ -362,7 +352,7 @@ static void get_declist(struct knode *kn, struct symbol *sym)
 	const char *typnam = "\0";
 
 	if (! basetype)
-		goto out;
+		return;
 
 	if (basetype->type) {
 		enum typemask tm = 1 << basetype->type;
@@ -393,13 +383,10 @@ static void get_declist(struct knode *kn, struct symbol *sym)
 	if (basetype->ident) {
 		kn->typnam = basetype->ident->name;
 		add_string(&kn->declist, basetype->ident->name);
-	}
-	else
+	} else
 		kn->typnam = (char *)typnam;
 
 	get_declist(kn, basetype);
-out:
-	return;
 }
 
 static void get_symbols
@@ -431,21 +418,20 @@ static void get_symbols
 		if (sym->ident)
 			kn->name = sym->ident->name;
 
-		// If these conditions are not met, recursion into the lower
-		// list will be infinite. This most often occurs when a struct
-		// has members that point back to itself, as in ..
-		// struct foo {
-		// 	foo *next;
-		// 	foo *prev;
+		// Avoid redundancies as well as the possibility of infinite
+		// recursion. Infinite recursion most often occurs when a
+		// struct has members that point back to itself, as in ..
+		// struct list_head {
+		// 	struct list_head *next;
+		// 	struct list_head *prev;
 		// };
-		if ((kn->symbol_list && ! parent->typnam)
-		|| (parent->typnam && strcmp(parent->typnam, kn->typnam)))
+		if (!(add_to_used(&redlist, parent, sym)))
 			proc_symlist(kn, kn->symbol_list, CTL_NESTED);
 
 	} END_FOR_EACH_PTR(sym);
 }
 
-static void build_knode(struct knode *parent, char *symname, char *file)
+static void build_branch(struct knode *parent, char *symname, char *file)
 {
 	struct symbol *sym;
 
@@ -453,10 +439,6 @@ static void build_knode(struct knode *parent, char *symname, char *file)
 		struct symbol *basetype = sym->ctype.base_type;
 		struct knode *kn = map_knode(parent, NULL);
 
-		kn->name = file;
-		kn->flags = CTL_FILE;
-
-		kn = map_knode(kn, sym);
 		kn->flags = CTL_EXPORTED;
 		kn->name = symname;
 		get_declist(kn, sym);
@@ -485,7 +467,7 @@ static void build_tree
 		    starts_with(sym->ident->name, ksymprefix)) {
 			int offset = strlen(ksymprefix);
 			char *symname = &sym->ident->name[offset];
-			build_knode(parent, symname, file);
+			build_branch(parent, symname, file);
 		}
 
 	} END_FOR_EACH_PTR(sym);
@@ -707,62 +689,6 @@ static int get_options(char **argv)
 	return index;
 }
 
-
-static void format_declist(struct knode *kn, bool usespace)
-{
-	char *decl;
-	int declcount = string_list_size(kn->declist);
-	int counter = 1;
-	char *fmt = usespace ? " %s " : "%s ";
-
-	FOR_EACH_PTR_NOTAG(kn->declist, decl) {
-		if (counter++ == declcount
-		&& kn->flags & CTL_POINTER
-		&& ! kn->name)
-			putchar('*');
-		printf(fmt, decl);
-	} END_FOR_EACH_PTR_NOTAG(decl);
-
-	if (kn->name) {
-		if (kn->flags & CTL_POINTER)
-			putchar('*');
-		printf("%s\n", kn->name);
-	}
-	else if (counter > 1)
-		putchar('\n');
-}
-
-static void show_flagged_knodes(struct knodelist *klist, enum ctlflags flags)
-{
-	struct knode *kn;
-
-	FOR_EACH_PTR(klist, kn) {
-
-		struct knode *child;
-
-		if (kn->flags & CTL_FILE) {
-			printf("%s %s\n", get_prefix(kn->flags), kn->name);
-			show_flagged_knodes(kn->children, flags);
-			continue;
-		}
-
-		if  (!((kn->flags & flags) | (flags & CTL_RETURN)))
-			continue;
-
-		printf("%s", get_prefix(kn->flags));
-		format_declist(kn, false);
-
-		if (kn->flags & CTL_RETURN) {
-			printf("%s ", get_prefix(kn->flags));
-			format_declist(kn, false);
-		}
-
-		FOR_EACH_PTR(kn->children, child) {
-			format_declist(child, true);
-		} END_FOR_EACH_PTR(child);
-	} END_FOR_EACH_PTR(kn);
-}
-
 static void show_users(struct knodelist *klist, int level)
 {
 	struct knode *kn;
@@ -783,6 +709,10 @@ static void show_knodes(struct knodelist *klist)
 	FOR_EACH_PTR(klist, kn) {
 		char *pfx = get_prefix(kn->flags);
 
+		// Top of the tree has no name, just descendants
+		if (kn->parent == kn)
+			goto nextlevel;
+
 		if (!kp_verbose && kn->flags & CTL_NESTED)
 			return;
 
@@ -799,7 +729,7 @@ static void show_knodes(struct knodelist *klist)
 			if (u)
 				show_users(u->users, kn->level);
 		}
-
+nextlevel:
 		if (kn->children) {
 			show_knodes(kn->children);
 		}
@@ -836,18 +766,15 @@ int main(int argc, char **argv)
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		DBG(printf("sparse file: %s\n", file);)
 		symlist = sparse(file);
+		kn = map_knode(kn, NULL);
+		kn->name = file;
+		kn->flags = CTL_FILE;
+		kn->level = 0;
 		build_tree(symlist, kn, file);
 	} END_FOR_EACH_PTR_NOTAG(file);
-
-	//show_flagged_knodes(knodes, (CTL_EXPORTED | CTL_RETURN));
-	//show_flagged_knodes(knodes, CTL_ARG);
 
 	DBG(printf("\nhiwater: %d\n", hiwater);)
 	show_knodes(knodes);
 
-	if (kp_verbose)
-		putchar('\n');
-
 	return 0;
 }
-
