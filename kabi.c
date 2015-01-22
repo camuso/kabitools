@@ -11,10 +11,10 @@
  * project:
  * http://git.engineering.redhat.com/git/users/sbairagy/spartakus.git
  *
- * 1. Find all the exported symbols.
- * 2. Find all the non-scalar (scalar as an option) args of the exported
- *    symbols.
- * 3. List all the members of nonscalar types used by the nonscalar args of
+ * 1. Gather all the exported symbols
+ * 2. Gather all the args of the exported symbols.
+ * 3. Recursively descend into the compound types in the arg lists to
+ *    acquire all information on compound types that can affect the
  *    exported symbols.
  *
  * Only unique symbols will be listed, rather than listing them everywhere
@@ -51,12 +51,6 @@
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 
-#define prverb(fmt, ...) \
-do { \
-	if (kp_verbose) \
-		printf(fmt, ##__VA_ARGS__); \
-} while (0)
-
 // For this compilation unit only
 //
 #ifdef true
@@ -80,30 +74,31 @@ typedef unsigned int bool;
 
 const char *spacer = "  ";
 
-const char *helptext =
-"\n"
-"kabi [options] filespec\n"
-"\n"
-"Parses \".i\" (intermediate, c-preprocessed) files for exported symbols and\n"
-"symbols of structs and unions that are used by the exported symbols.\n"
-"\n"
-"Options:\n"
-"	-v	verbose, lists all the arguments of functions and members\n"
-"		of structs and unions.\n"
-"\n"
-"	-v-	concise (default), lists only the exported symbols and\n"
-"		symbols for structs and unions that are used by the exported\n"
-"		symbols.\n"
-"\n"
-"	-h	This help message.\n"
-"\n"
-"filespec:\n"
-"		file or files (wildcards ok) to be processed\n"
-"\n";
+const char *helptext ="\
+\n\
+kabi [options] filespec\n\
+\n\
+Parses \".i\" (intermediate, c-preprocessed) files for exported symbols and\n\
+symbols of structs and unions that are used by the exported symbols.\n\
+\n\
+Options:\n\
+    -v        Verbose (default): Lists all the arguments of functions and\n\
+              recursively descends into compound types to gather all the\n\
+              information about them.\n\
+\n\
+    -v-       Concise: Lists only the exported functions and their args.\n\
+\n\
+    -f file   Send output to file instead of stdout\n\
+\n\
+    -h        This help message.\n\
+\n\
+    filespec  File or files (wildcards ok) to be processed\n\
+\n";
 
 static const char *ksymprefix = "__ksymtab_";
 static bool kp_verbose = true;
 static bool showusers = true;
+static char *userfile = NULL;
 static int hiwater = 0;
 static struct symbol_list *symlist	= NULL;
 
@@ -755,6 +750,7 @@ int main(int argc, char **argv)
 	argv += argindex;
 	argc -= argindex;
 
+	showusers = kp_verbose;
 	DBG(puts("got the files");)
 	symlist = sparse_initialize(argc, argv, &filelist);
 
