@@ -97,7 +97,7 @@ Options:\n\
 
 static const char *ksymprefix = "__ksymtab_";
 static bool kp_verbose = true;
-static bool showusers = true;
+static bool showusers = false;
 static char *userfile = NULL;
 static int hiwater = 0;
 static struct symbol_list *symlist	= NULL;
@@ -195,15 +195,19 @@ static inline int knode_list_size(struct knodelist *list)
 	return ptr_list_size((struct ptr_list *)(list));
 }
 
-static struct knode *map_knode(struct knode *parent, struct symbol *symbol)
+static struct knode *map_knode
+		(struct knode *parent,
+		 struct symbol *symbol,
+		 enum ctlflags flags)
 {
 	struct knode *newknode;
 	newknode = alloc_knode();
 	newknode->parent = parent;
 	newknode->file = parent->file;
-	newknode->flags = 0;
+	newknode->flags |= flags;
 	newknode->symbol = symbol;
-	newknode->level = parent->level + 1;
+	if (flags & CTL_NESTED)
+		newknode->level = parent->level + 1;
 	add_knode(&parent->children, newknode);
 	DBG(hiwater= newknode->level > hiwater ? newknode->level : hiwater;)
 	return newknode;
@@ -406,8 +410,7 @@ static void get_symbols
 				&& add_to_used(&redlist, parent, sym))
 			return;
 
-		kn = map_knode(parent, sym);
-		kn->flags |= flags;
+		kn = map_knode(parent, sym, flags);
 		get_declist(kn, sym);
 
 		if (sym->ident)
@@ -432,15 +435,13 @@ static void build_branch(struct knode *parent, char *symname, char *file)
 
 	if ((sym = find_internal_exported(symlist, symname))) {
 		struct symbol *basetype = sym->ctype.base_type;
-		struct knode *kn = map_knode(parent, NULL);
+		struct knode *kn = map_knode(parent, NULL, CTL_EXPORTED);
 
-		kn->flags = CTL_EXPORTED;
 		kn->name = symname;
 		get_declist(kn, sym);
 
 		if (kn->symbol_list) {
-			struct knode *bkn = map_knode(kn, basetype);
-			bkn->flags = CTL_RETURN;
+			struct knode *bkn = map_knode(kn, basetype, CTL_RETURN);
 			get_declist(bkn, basetype);
 		}
 
@@ -711,9 +712,9 @@ static void show_knodes(struct knodelist *klist)
 		if (!kp_verbose && kn->flags & CTL_NESTED)
 			return;
 
-		if (kp_verbose)
+		if ((kp_verbose) && (kn->flags & CTL_NESTED))
 			printf("%s%s%-2d ",
-			       pad_out(kn->level, ' ' ), pfx, kn->level);
+				pad_out(kn->level, ' ' ), pfx, kn->level);
 		else
 			printf("%s%s ", pad_out(kn->level, ' ' ), pfx);
 
@@ -750,7 +751,6 @@ int main(int argc, char **argv)
 	argv += argindex;
 	argc -= argindex;
 
-	showusers = kp_verbose;
 	DBG(puts("got the files");)
 	symlist = sparse_initialize(argc, argv, &filelist);
 
@@ -762,9 +762,8 @@ int main(int argc, char **argv)
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		DBG(printf("sparse file: %s\n", file);)
 		symlist = sparse(file);
-		kn = map_knode(kn, NULL);
+		kn = map_knode(kn, NULL, CTL_FILE);
 		kn->name = file;
-		kn->flags = CTL_FILE;
 		kn->level = 0;
 		build_tree(symlist, kn, file);
 	} END_FOR_EACH_PTR_NOTAG(file);
