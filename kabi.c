@@ -48,6 +48,7 @@
 #include <sparse/expression.h>
 #include <sparse/token.h>
 #include <sparse/ptrlist.h>
+#include <sqlite3.h>
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 
@@ -98,9 +99,20 @@ Options:\n\
 static const char *ksymprefix = "__ksymtab_";
 static bool kp_verbose = true;
 static bool showusers = false;
-static char *userfile = NULL;
-static int hiwater = 0;
-static struct symbol_list *symlist	= NULL;
+DBG(static int hiwater = 0;)
+static struct symbol_list *symlist = NULL;
+struct sqlite3 *db = NULL;
+
+// sqlite3 table definition
+const char *createtable = "create table kt(\
+key integer primary key, \
+parentdecl text \
+decl text, \
+name text, \
+typnam text, \
+file text, \
+level int, \
+flags int);";
 
 enum typemask {
 	SM_UNINITIALIZED = 1 << SYM_UNINITIALIZED,
@@ -275,32 +287,43 @@ static bool add_to_used
 	}
 }
 
-static void dump_declist(struct knode *kn)
+static void compose_decl(struct knode *kn, char *sbuf)
 {
 	char *str;
-	struct knode *parent = kn->parent;
+
+	memset(sbuf, 0, sizeof(*sbuf));
 
 	FOR_EACH_PTR_NOTAG(kn->declist, str) {
-		printf("%s ", str);
+		strcat(sbuf, str);
+		strcat(sbuf, " ");
 	} END_FOR_EACH_PTR_NOTAG(str);
 
 	if (kn->flags & CTL_POINTER)
-		putchar('*');
+		strcat(sbuf, "*");
 
 	if (kn->name)
-		printf("%s ", kn->name);
+		strcat(sbuf, kn->name);
+}
+
+static void dump_declist(struct knode *kn)
+{
+	char *sbuf = calloc(256, 1);
+	struct knode *parent = kn->parent;
+
+	compose_decl(kn, sbuf);
+
+	printf("%s ", sbuf);
+
+	if (!parent)
+		goto out;
 
 	if ((kn == parent)
 	|| (parent->flags & CTL_FILE))
 		goto out;
 
-	if (parent->typnam)
-		printf ("IN: %s ", parent->typnam);
-
-	if (parent->name) {
-		if (parent->flags & CTL_POINTER)
-			putchar('*');
-		printf ("%s", parent->name);
+	if (parent->declist) {
+		compose_decl(parent, sbuf);
+		printf ("IN: %s ", sbuf);
 	}
 out:
 	putchar('\n');
@@ -733,6 +756,21 @@ nextlevel:
 	} END_FOR_EACH_PTR(kn);
 }
 
+static bool init_sqlite()
+{
+	sqlite3_open("kabitree.sql", &db);
+	if (!db) {
+		puts("Unable to open database: kabitree.sql");
+		return false;
+	}
+
+	puts("Opened database kabitree.sql");
+	sqlite3_exec(db, createtable, NULL, NULL, NULL);
+	sqlite3_exec(db, "pragma synchronous = off", NULL, NULL, NULL);
+
+	return true;
+}
+
 int main(int argc, char **argv)
 {
 	int argindex = 0;
@@ -769,7 +807,10 @@ int main(int argc, char **argv)
 	} END_FOR_EACH_PTR_NOTAG(file);
 
 	DBG(printf("\nhiwater: %d\n", hiwater);)
+
+	init_sqlite();
 	show_knodes(knodes);
+	sqlite3_close(db);
 
 	return 0;
 }
