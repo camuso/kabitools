@@ -33,3 +33,4 @@ cscope.out
 
 # Specific files
 kabi
+*.sql
