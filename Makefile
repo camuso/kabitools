@@ -11,6 +11,6 @@ targets += kabi.c
 
 kabi.o : kabi.c
 	echo "hostprogs-y: $(hostprogs-y)"
-	cc $(HOST_EXTRACFLAGS) -o kabi kabi.c -lsparse
+	cc $(HOST_EXTRACFLAGS) -o kabi kabi.c -lsparse -lsqlite3
 
 
