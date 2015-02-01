@@ -38,7 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <asm-generic/errno-base.h>
-//#define NDEBUG	// comment out to enable asserts
+#define NDEBUG	// comment out to enable asserts
 #include <assert.h>
 
 #include <sparse/lib.h>
@@ -321,7 +321,10 @@ bool sql_init(const char *sqlfilename,
 	      const char *table_name)
 {
 	char *zsql;
-	int rval = sqlite3_open(sqlfilename, &db);
+	int rval;
+
+	remove(sqlfilename);
+	rval = sqlite3_open(sqlfilename, &db);
 
 	if (rval != SQLITE_OK) {
 		fprintf(stderr, "Unable to open database: %s\n", sqlfilename);
@@ -329,9 +332,6 @@ bool sql_init(const char *sqlfilename,
 	}
 
 	fprintf(stderr, "Opened database: %s\n", sqlfilename);
-
-	zsql = sqlite3_mprintf("drop table %q", table_name);
-	sql_exec(zsql);
 	zsql = sqlite3_mprintf("create table %q(%q)",
 			       table_name, table_schema);
 	if (!sql_exec(zsql))
@@ -345,6 +345,19 @@ bool sql_init(const char *sqlfilename,
 inline void sql_close(sqlite3 *db)
 {
 	sqlite3_close(db);
+}
+
+// In order to satisfy searches that only contain some of the words in
+// the decl field of the kt (kabi table) in the database file
+// (kabitree.sql), create a virtual table of the decl field.
+// Partial searches can then be conducted from the virtual table as
+// follows.
+//	select decl from declaration where decl match "device"
+static void create_decl_vt()
+{
+	sql_exec("create virtual table declaration "
+		 "using fts3(id,decl)");
+	sql_exec("insert into declaration(id,decl) select id,decl from kt");
 }
 
 /*****************************************************
@@ -481,7 +494,7 @@ static bool add_to_used
 ** Output formatting
 ******************************************************/
 
-static void compose_decl(struct knode *kn, char *sbuf)
+static void compose_declaration(struct knode *kn, char *sbuf)
 {
 	char *str;
 
@@ -499,13 +512,13 @@ static void compose_decl(struct knode *kn, char *sbuf)
 		strcat(sbuf, kn->name);
 }
 
-static void dump_declist(struct knode *kn)
+static void format_declaration(struct knode *kn)
 {
-	char *sbuf = calloc(STRBUFSIZ, 1);
 	char *zsql;
+	char *sbuf = calloc(STRBUFSIZ, 1);
 	struct knode *parent = kn->parent;
 
-	compose_decl(kn, sbuf);
+	compose_declaration(kn, sbuf);
 	printf("%s ", sbuf);
 	zsql = sqlite3_mprintf("update %q set decl='%q' where id==%d",
 		sql_get_table(), sbuf, kn);
@@ -519,13 +532,12 @@ static void dump_declist(struct knode *kn)
 		goto out;
 
 	if (parent->declist) {
-		compose_decl(parent, sbuf);
+		compose_declaration(parent, sbuf);
 		printf ("IN: %s ", sbuf);
 		sql_extract_field("decl", parent, sbuf);
 		zsql = sqlite3_mprintf
 			("update %q set parentdecl='%q' where id==%d",
 			 sql_get_table(), sbuf, kn);
-		//printf("\nzsql: %s\n", )
 		sql_exec(zsql);
 	}
 out:
@@ -881,7 +893,7 @@ static void show_users(struct knodelist *klist, int level)
 
 		if (kn->flags & CTL_STRUCT) {
 			printf("%s USER: ", pad_out(level+10, ' '));
-			dump_declist(kn);
+			format_declaration(kn);
 		}
 	}END_FOR_EACH_PTR(kn);
 }
@@ -915,7 +927,7 @@ static void show_knodes(struct knodelist *klist)
 		else
 			printf("%s%s ", pad_out(kn->level, ' ' ), pfx);
 
-		dump_declist(kn);
+		format_declaration(kn);
 
 		if (showusers && (kn->flags & CTL_NESTED)) {
 			struct used *u = lookup_used(redlist, kn->symbol);
@@ -1012,6 +1024,7 @@ int main(int argc, char **argv)
 
 	sql_init(kabi_sql_filename, kabi_table_schema, kabi_table_name);
 	show_knodes(knodes);
+	create_decl_vt();
 	sql_close(db);
 
 	return 0;
