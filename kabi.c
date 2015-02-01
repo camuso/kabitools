@@ -38,7 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <asm-generic/errno-base.h>
-#define NDEBUG	// comment out to enable asserts
+//#define NDEBUG	// comment out to enable asserts
 #include <assert.h>
 
 #include <sparse/lib.h>
@@ -51,6 +51,7 @@
 #include <sqlite3.h>
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
+#define STRBUFSIZ 256
 
 // For this compilation unit only
 //
@@ -73,14 +74,18 @@
 
 typedef unsigned int bool;
 
-const char *spacer = "  ";
+/*****************************************************
+** Global declarations
+******************************************************/
 
-const char *helptext ="\
+static const char *helptext ="\
 \n\
 kabi [options] filespec\n\
 \n\
 Parses \".i\" (intermediate, c-preprocessed) files for exported symbols and\n\
 symbols of structs and unions that are used by the exported symbols.\n\
+\n\
+    filespec  File or files (wildcards ok) to be processed\n\
 \n\
 Options:\n\
     -v        Verbose (default): Lists all the arguments of functions and\n\
@@ -89,11 +94,11 @@ Options:\n\
 \n\
     -v-       Concise: Lists only the exported functions and their args.\n\
 \n\
-    -f file   Send output to file instead of stdout\n\
+    -u        Lists users of every compound type\n\
+\n\
+    -u-       Turn off lists of users (default)\n\
 \n\
     -h        This help message.\n\
-\n\
-    filespec  File or files (wildcards ok) to be processed\n\
 \n";
 
 static const char *ksymprefix = "__ksymtab_";
@@ -101,18 +106,28 @@ static bool kp_verbose = true;
 static bool showusers = false;
 DBG(static int hiwater = 0;)
 static struct symbol_list *symlist = NULL;
-struct sqlite3 *db = NULL;
 
-// sqlite3 table definition
-const char *createtable = "create table kt(\
+
+/*****************************************************
+** global sqlite3 data
+******************************************************/
+
+const char *kabi_table_schema = "\
 key integer primary key, \
-parentdecl text \
-decl text, \
-name text, \
-typnam text, \
-file text, \
+id integer, \
+parentid integer, \
 level int, \
-flags int);";
+flags int, \
+prefix text, \
+decl text, \
+parentdecl text";
+
+const char *kabi_table_name = "kt";
+const char *kabi_sql_filename = "kabitree.sql";
+
+/*****************************************************
+** enumerated flags and masks
+******************************************************/
 
 enum typemask {
 	SM_UNINITIALIZED = 1 << SYM_UNINITIALIZED,
@@ -150,6 +165,10 @@ enum ctlflags {
 	CTL_FILE	= 1 << 10,
 };
 
+/*****************************************************
+** sparse wrappers
+******************************************************/
+
 static inline void add_string(struct string_list **list, char *string)
 {
 	// Need to use "notag" call, because bits[1:0] are reserved
@@ -163,6 +182,174 @@ static inline int string_list_size(struct string_list *list)
 {
 	return ptr_list_size((struct ptr_list *)(list));
 }
+
+/*****************************************************
+** SQLite utilities and wrappers
+******************************************************/
+// if this were c++, db and table would be private members
+// of a sql class, accessible only by member function calls.
+// Move these utilities and wrappers into their own file,
+// with their own header to achieve the encapsulation.
+static struct sqlite3 *db = NULL;
+
+inline struct sqlite3 *sql_get_db()
+{
+	return db;
+}
+
+static char *table;
+// initialize the global name of the table
+inline void sql_set_table(const char *tablename)
+{
+	table = (char *)tablename;
+}
+
+inline const char *sql_get_table()
+{
+	return (const char *)table;
+}
+
+bool sql_exec(const char *stmt)
+{
+	char *errmsg;
+	int ret = sqlite3_exec(db, stmt, 0, 0, &errmsg);
+
+	if (ret != SQLITE_OK) {
+		fprintf(stderr,
+			"\nsql_exec: Error in statement: %s [%s].\n",
+			stmt, errmsg);
+		sqlite3_free(errmsg);
+		getchar();
+		return false;
+	}
+	sqlite3_free(errmsg);
+	return true;
+}
+
+int sql_process_field(void *output, int argc, char **argv, char **colnames)
+{
+	strcpy(output, argv[0]);
+	return 0;
+}
+
+bool sql_extract_field(char *field, void *id, char *output)
+{
+	char *errmsg;
+	char *zsql = sqlite3_mprintf("select %q from %q where id==%d",
+				     field, sql_get_table(), id);
+
+	int retval = sqlite3_exec
+			(db, zsql, sql_process_field, (void *)output, &errmsg);
+
+	if (retval != SQLITE_OK) {
+		fprintf(stderr,
+			"\nError in statement: %s [%s].\n", zsql, errmsg);
+		sqlite3_free(errmsg);
+		getchar();
+		return false;
+	}
+	return true;
+}
+
+bool sql_prepare_update_field(sqlite3_stmt **stmt)
+{
+	char sbuf[STRBUFSIZ];
+	sprintf(sbuf, "update \"%s\" set ?=?,? where id==?", table);
+	int retval = sqlite3_prepare_v2(db, sbuf, -1, stmt, 0);
+	if (retval != SQLITE_OK)
+		fprintf(stderr, "Could not update requested field\n");
+	return retval == SQLITE_OK;
+}
+
+bool sql_bind_update_field(sqlite3_stmt *stmt, char *field)
+{
+	int retval = sqlite3_bind_text
+			(stmt, 1, field, strlen(field), SQLITE_TRANSIENT);
+	if (retval != SQLITE_OK) {
+		fprintf(stderr, "Unable to bind field: %s\n", field);
+		return false;
+	}
+	return true;
+}
+
+bool sql_bind_update_int_field(sqlite3_stmt *stmt, char *field, int intval)
+{
+	int retval = sqlite3_bind_int(stmt, 2, intval);
+	if (retval != SQLITE_OK) {
+		fprintf(stderr, "Can't bind %s with %d\n", field, intval);
+		return false;
+	}
+	return sql_bind_update_field(stmt, field);
+}
+
+bool sql_bind_update_text_field(sqlite3_stmt *stmt, char *field, char *txtval)
+{
+	int retval = sqlite3_bind_text
+			(stmt, 3, txtval, strlen(field), SQLITE_TRANSIENT);
+	if (retval != SQLITE_OK) {
+		fprintf(stderr, "Can't bind %s with %s\n", field, txtval);
+		return false;
+	}
+	return sql_bind_update_field(stmt, field);
+}
+
+bool sql_step(sqlite3_stmt *stmt)
+{
+	if (sqlite3_step(stmt) != SQLITE_DONE) {
+		fprintf (stderr, "Could not step statement.\n");
+		return false;
+	}
+	return true;
+}
+
+inline void sql_reset(sqlite3_stmt *stmt)
+{
+	sqlite3_reset(stmt);
+}
+
+inline bool sql_finalize(sqlite3_stmt *stmt)
+{
+	return sqlite3_finalize(stmt) == SQLITE_OK;
+}
+
+// sql_init, if successful, initializes the global sqlite3 *db
+// Send table schema as a string of comma separated fieldnames paired
+// with their data type, e.g.
+// "field1 txt,field2 integer"
+bool sql_init(const char *sqlfilename,
+	      const char *table_schema,
+	      const char *table_name)
+{
+	char *zsql;
+	int rval = sqlite3_open(sqlfilename, &db);
+
+	if (rval != SQLITE_OK) {
+		fprintf(stderr, "Unable to open database: %s\n", sqlfilename);
+		return false;
+	}
+
+	fprintf(stderr, "Opened database: %s\n", sqlfilename);
+
+	zsql = sqlite3_mprintf("drop table %q", table_name);
+	sql_exec(zsql);
+	zsql = sqlite3_mprintf("create table %q(%q)",
+			       table_name, table_schema);
+	if (!sql_exec(zsql))
+		return false;
+
+	sql_set_table(table_name);
+	sqlite3_free(zsql);
+	return sql_exec("pragma synchronous = off");
+}
+
+inline void sql_close(sqlite3 *db)
+{
+	sqlite3_close(db);
+}
+
+/*****************************************************
+** knode declaration and utilities
+******************************************************/
 
 struct knode {
 	struct knode *parent;
@@ -225,6 +412,9 @@ static struct knode *map_knode
 	return newknode;
 }
 
+/*****************************************************
+** used declaration and utilities
+******************************************************/
 struct used {
 	struct symbol *symbol;
 	struct knodelist *users;
@@ -287,11 +477,15 @@ static bool add_to_used
 	}
 }
 
+/*****************************************************
+** Output formatting
+******************************************************/
+
 static void compose_decl(struct knode *kn, char *sbuf)
 {
 	char *str;
 
-	memset(sbuf, 0, sizeof(*sbuf));
+	memset(sbuf, 0, STRBUFSIZ);
 
 	FOR_EACH_PTR_NOTAG(kn->declist, str) {
 		strcat(sbuf, str);
@@ -307,12 +501,15 @@ static void compose_decl(struct knode *kn, char *sbuf)
 
 static void dump_declist(struct knode *kn)
 {
-	char *sbuf = calloc(256, 1);
+	char *sbuf = calloc(STRBUFSIZ, 1);
+	char *zsql;
 	struct knode *parent = kn->parent;
 
 	compose_decl(kn, sbuf);
-
 	printf("%s ", sbuf);
+	zsql = sqlite3_mprintf("update %q set decl='%q' where id==%d",
+		sql_get_table(), sbuf, kn);
+	sql_exec(zsql);
 
 	if (!parent)
 		goto out;
@@ -324,8 +521,16 @@ static void dump_declist(struct knode *kn)
 	if (parent->declist) {
 		compose_decl(parent, sbuf);
 		printf ("IN: %s ", sbuf);
+		sql_extract_field("decl", parent, sbuf);
+		zsql = sqlite3_mprintf
+			("update %q set parentdecl='%q' where id==%d",
+			 sql_get_table(), sbuf, kn);
+		//printf("\nzsql: %s\n", )
+		sql_exec(zsql);
 	}
 out:
+	free(sbuf);
+	sqlite3_free(zsql);
 	putchar('\n');
 }
 
@@ -338,6 +543,10 @@ static char *pad_out(int padsize, char padchar)
 	return buf;
 }
 
+/*****************************************************
+** sparse probing and mining
+******************************************************/
+
 static struct symbol *find_internal_exported(struct symbol_list *, char *);
 static bool starts_with(const char *a, const char *b);
 static const char *get_modstr(unsigned long mod);
@@ -346,16 +555,6 @@ static void get_symbols
 		(struct knode *parent,
 		 struct symbol_list *list,
 		 enum ctlflags flags);
-
-static struct symbol *find_symbol_match(struct symbol_list *list, struct symbol *sym)
-{
-	struct symbol *temp;
-	FOR_EACH_PTR(list, temp) {
-		if (sym == temp)
-			return temp;
-	} END_FOR_EACH_PTR(temp);
-	return NULL;
-}
 
 static void proc_symlist
 		(struct knode *parent,
@@ -452,7 +651,7 @@ static void get_symbols
 	} END_FOR_EACH_PTR(sym);
 }
 
-static void build_branch(struct knode *parent, char *symname, char *file)
+static void build_branch(struct knode *parent, char *symname)
 {
 	struct symbol *sym;
 
@@ -473,10 +672,15 @@ static void build_branch(struct knode *parent, char *symname, char *file)
 	}
 }
 
-static void build_tree
-		(struct symbol_list *symlist,
-		 struct knode *parent,
-		 char *file)
+static bool starts_with(const char *a, const char *b)
+{
+	if(strncmp(a, b, strlen(b)) == 0)
+		return true;
+
+	return false;
+}
+
+static void build_tree(struct symbol_list *symlist, struct knode *parent)
 {
 	struct symbol *sym;
 
@@ -486,7 +690,7 @@ static void build_tree
 		    starts_with(sym->ident->name, ksymprefix)) {
 			int offset = strlen(ksymprefix);
 			char *symname = &sym->ident->name[offset];
-			build_branch(parent, symname, file);
+			build_branch(parent, symname);
 		}
 
 	} END_FOR_EACH_PTR(sym);
@@ -624,6 +828,10 @@ fie_foundit:
 	return sym;
 }
 
+/*****************************************************
+** Output utilities
+******************************************************/
+
 #if !defined(NDEBUG)	// see /usr/include/assert.h
 static int count_bits(unsigned long mask)
 {
@@ -665,13 +873,66 @@ static char *get_prefix(enum ctlflags flags)
 	return "";
 }
 
-static bool starts_with(const char *a, const char *b)
+static void show_users(struct knodelist *klist, int level)
 {
-	if(strncmp(a, b, strlen(b)) == 0)
-		return true;
+	struct knode *kn;
 
-	return false;
+	FOR_EACH_PTR(klist, kn) {
+
+		if (kn->flags & CTL_STRUCT) {
+			printf("%s USER: ", pad_out(level+10, ' '));
+			dump_declist(kn);
+		}
+	}END_FOR_EACH_PTR(kn);
 }
+
+static void show_knodes(struct knodelist *klist)
+{
+	struct knode *kn;
+	char *zsql;
+
+	FOR_EACH_PTR(klist, kn) {
+		char *pfx = get_prefix(kn->flags);
+
+		// Top of the tree has no name, just descendants
+		if (kn->parent == kn)
+			goto nextlevel;
+
+		if (!kp_verbose && kn->flags & CTL_NESTED)
+			return;
+
+		zsql = sqlite3_mprintf
+			("insert into %q (id,parentid,level,flags, prefix) "
+			"values(%d, %d, %d, %d, '%q');",
+			sql_get_table(),
+			kn, kn->parent, kn->level, kn->flags, pfx);
+		sql_exec(zsql);
+		sqlite3_free(zsql);
+
+		if ((kp_verbose) && (kn->flags & CTL_NESTED))
+			printf("%s%s%-2d ",
+				pad_out(kn->level, ' ' ), pfx, kn->level);
+		else
+			printf("%s%s ", pad_out(kn->level, ' ' ), pfx);
+
+		dump_declist(kn);
+
+		if (showusers && (kn->flags & CTL_NESTED)) {
+			struct used *u = lookup_used(redlist, kn->symbol);
+			if (u)
+				show_users(u->users, kn->level);
+		}
+nextlevel:
+		if (kn->children) {
+			show_knodes(kn->children);
+		}
+
+	} END_FOR_EACH_PTR(kn);
+}
+
+/*****************************************************
+** Command line option parsing
+******************************************************/
 
 static int parse_opt(char opt, int state)
 {
@@ -708,68 +969,9 @@ static int get_options(char **argv)
 	return index;
 }
 
-static void show_users(struct knodelist *klist, int level)
-{
-	struct knode *kn;
-
-	FOR_EACH_PTR(klist, kn) {
-
-		if (kn->flags & CTL_STRUCT) {
-			printf("%s USER: ", pad_out(level+10, ' '));
-			dump_declist(kn);
-		}
-	}END_FOR_EACH_PTR(kn);
-}
-
-static void show_knodes(struct knodelist *klist)
-{
-	struct knode *kn;
-
-	FOR_EACH_PTR(klist, kn) {
-		char *pfx = get_prefix(kn->flags);
-
-		// Top of the tree has no name, just descendants
-		if (kn->parent == kn)
-			goto nextlevel;
-
-		if (!kp_verbose && kn->flags & CTL_NESTED)
-			return;
-
-		if ((kp_verbose) && (kn->flags & CTL_NESTED))
-			printf("%s%s%-2d ",
-				pad_out(kn->level, ' ' ), pfx, kn->level);
-		else
-			printf("%s%s ", pad_out(kn->level, ' ' ), pfx);
-
-		dump_declist(kn);
-
-		if (showusers && (kn->flags & CTL_NESTED)) {
-			struct used *u = lookup_used(redlist, kn->symbol);
-			if (u)
-				show_users(u->users, kn->level);
-		}
-nextlevel:
-		if (kn->children) {
-			show_knodes(kn->children);
-		}
-
-	} END_FOR_EACH_PTR(kn);
-}
-
-static bool init_sqlite()
-{
-	sqlite3_open("kabitree.sql", &db);
-	if (!db) {
-		puts("Unable to open database: kabitree.sql");
-		return false;
-	}
-
-	puts("Opened database kabitree.sql");
-	sqlite3_exec(db, createtable, NULL, NULL, NULL);
-	sqlite3_exec(db, "pragma synchronous = off", NULL, NULL, NULL);
-
-	return true;
-}
+/*****************************************************
+** main
+******************************************************/
 
 int main(int argc, char **argv)
 {
@@ -803,14 +1005,14 @@ int main(int argc, char **argv)
 		kn = map_knode(kn, NULL, CTL_FILE);
 		kn->name = file;
 		kn->level = 0;
-		build_tree(symlist, kn, file);
+		build_tree(symlist, kn);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
 	DBG(printf("\nhiwater: %d\n", hiwater);)
 
-	init_sqlite();
+	sql_init(kabi_sql_filename, kabi_table_schema, kabi_table_name);
 	show_knodes(knodes);
-	sqlite3_close(db);
+	sql_close(db);
 
 	return 0;
 }
