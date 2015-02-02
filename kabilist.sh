@@ -6,87 +6,123 @@
 usagestr=$(
 cat <<EOF
 
-$0 [OPTIONS]
+$0 -d <directory> -o <textfile> [-s subdir -b datafile -e errfile -v -h]
 
-  - Creates a list of all exported functions and their arguments
-    in ./redhat/kabi/kabi-parser.log. Destroys the contents of
-    any previous log, so mv or cp it if you want to save it.
+  - Creates a SQLite database and a text file listing all exported
+    functions, their arguments, their return values, and any data
+    structures explicitly or implicitly used by them.
 
-  -d directory - Required. Directory at top of tree to be checked
-  -o outfile   - Required. The output file. Contents of existing
-                 file will be detroyed.
-  -v           - Vverbose output
+    This script uses the kabi-parser executable and expects it to be in
+    the redhat/kabi/ directory.
+
+  -d directory - Required. Directory at top of tree to be parsed.
+  -s subdir    - Optional directory from which to start parsing, relative
+                 to the top of the tree defined by the required \"directory\"
+		 argument above.
+                 Default is from the top of the kernel tree.
+  -o textfile  - Optional text file. Default is ../kabilist.log relative to
+                 the top of the kernel tree.
+                 If it already exists, the text file will be destroyed and
+                 rebuilt.
+  -b datafile  - Optional database file. The default is ../kabitree.sql
+                 relative to the top of the kernel tree.
+                 If it already exists, the database file will be destroyed
+		 and rebuilt.
+  -e errfile   - Optional error file. By default, errors are sent
+                 to /dev/null
+  -v           - Verbose output
   -h           - This help message
 
 \0
 EOF
 )
 
+currentdir=$PWD
+verbose=false
+directory=""
+subdir="./"
+textfile="../kabilist.log"
+datafile="../kabitree.sql"
+errfile="/dev/null"
+
+
 usage() {
 	echo -e "$usagestr"
+	cd $currentdir
 	exit
 }
 
 nodir() {
-	echo -e "\n\tPlease specify a directory at the top of the kernel\n\
-		tree\n\\n\
-		$ kabilist -d <directory> -o <output file>\n\n"
+	echo -e "\n\tPlease specify a directory in the kernel tree."
+	usage
+}
+
+noparser() {
+	echo -e "\n\t\$directory/kabi-parser does not exist.\n\n"
 	exit
 }
 
-nofil() {
-	echo -e "\n\tPlease specify an ouput file to contain the output.\n\n\
-		$ kabilist -d <directory> -o <output file>\n\n"
-	exit
+noexistdir() {
+	echo -e "\n\tDirectory $1 does not exist\n\n"
+	nodir
 }
 
-verbose=false
-directory=""
-outfile=""
-
-while getopts "vd:o:" OPTION; do
+while getopts "vhd:s:o:b:e:" OPTION; do
     case "$OPTION" in
 
-        d ) 	directory="$OPTARG"
+	d )	directory="$OPTARG"
 		[ "$directory" ] || nodir
 		;;
-        o )	outfile="$OPTARG"
-		[ "$outfile" ] || nofil
+	s )	subdir="$OPTARG"
 		;;
-        v )	verbose=true
+	o )	textfile="$OPTARG"
+		;;
+	b )	datafile="$OPTARG"
+		;;
+	e )	errfile="$OPTARG"
+		;;
+	v )	verbose=true
 		;;
 	h )	usage
 		;;
-        * ) 	echo -e "\n\tunrecognized option: "$OPTARG"\n"
-            	usage
-            	exit 1
-	    	;;
+	* )	echo -e "\n\tunrecognized option: "$OPTARG"\n"
+		usage
+		exit 1
+		;;
     esac
 done
 
 [ "$directory" ] || nodir
-[ "$outfile" ] || nofil
 
-cat /dev/null > $outfile
+[ -e "$directory/redhat/kabi/kabi-parser" ] || noparser
+[ -d "$directory" ] || noexistdir $directory
 
-# One file at a time method.
+cd $directory
+echo "executing from $PWD"
+
+cat /dev/null > $textfile
+[ -d "$subdir" ] || noexistdir $subdir
+[ -e "$datafile" ] && rm -vf $datafile
 
 if  $verbose ; then
-	find $directory -name \*.i -exec sh -c \
+	find $subdir -name \*.i -exec sh -c \
 		'grep -qm1 "__ksymtab_" $2; \
 		if [ $? -eq 0 ]; then \
-			$1/redhat/kabi/kabi-parser $2; \
+			redhat/kabi/kabi-parser -k $1 $2 2>$3; \
 		fi' \
-		sh $directory '{}'  \; | tee -a "$outfile"
+		sh $datafile '{}' $errfile  \; | tee -a "$textfile"
 else
-	find $directory -name \*.i -exec sh -c \
+	find $subdir -name \*.i -exec sh -c \
 		'grep -qm1 "__ksymtab_" $2; \
 		if [ $? -eq 0 ]; then \
 			echo $2; \
-			$1/redhat/kabi/kabi-parser $2 >> $3; \
+			redhat/kabi/kabi-parser -k $1 $2 >> $3 2>$4; \
 		fi' \
-		sh $directory '{}' $outfile \;
+		sh $datafile '{}' $textfile $errfile \;
 fi
+
+cd -
+echo "returned to $PWD"
 
 #files=$(find ./ -type f -name \*.i)
 #./redhat/kabi/kabi-parser $files | tee -a ./redhat/kabi/kabi-parser.log
