@@ -194,6 +194,9 @@ static inline int string_list_size(struct string_list *list)
 // Move these utilities and wrappers into their own file,
 // with their own header to achieve the encapsulation.
 static struct sqlite3 *db = NULL;
+static sqlite3_stmt *stmt_row;
+static sqlite3_stmt *stmt_decl;
+static sqlite3_stmt *stmt_parentdecl;
 
 inline struct sqlite3 *sql_get_db()
 {
@@ -222,7 +225,6 @@ bool sql_exec(const char *stmt)
 			"\nsql_exec: Error in statement: %s [%s].\n",
 			stmt, errmsg);
 		sqlite3_free(errmsg);
-		getchar();
 		return false;
 	}
 	sqlite3_free(errmsg);
@@ -248,58 +250,32 @@ bool sql_extract_field(char *field, void *id, char *output)
 		fprintf(stderr,
 			"\nError in statement: %s [%s].\n", zsql, errmsg);
 		sqlite3_free(errmsg);
-		getchar();
 		return false;
 	}
 	return true;
 }
 
-bool sql_prepare_update_field(sqlite3_stmt **stmt)
+bool sql_prepare_update_field
+		(sqlite3_stmt **stmt, char *field, char *val)
 {
-	char sbuf[STRBUFSIZ];
-	sprintf(sbuf, "update \"%s\" set ?=?,? where id==?", table);
-	int retval = sqlite3_prepare_v2(db, sbuf, -1, stmt, 0);
+	char *zsql;
+	zsql = sqlite3_mprintf("update %q set %q=%q where id==:id",
+			       sql_get_table(), field, val);
+	int retval = sqlite3_prepare_v2(db, zsql, strlen(zsql), stmt, 0);
 	if (retval != SQLITE_OK)
-		fprintf(stderr, "Could not update requested field\n");
+		fprintf(stderr, "Could not prepare update requested field. "
+			"[%s]\n", sqlite3_errstr(retval));
+	sqlite3_free(zsql);
 	return retval == SQLITE_OK;
-}
-
-bool sql_bind_update_field(sqlite3_stmt *stmt, char *field)
-{
-	int retval = sqlite3_bind_text
-			(stmt, 1, field, strlen(field), SQLITE_TRANSIENT);
-	if (retval != SQLITE_OK) {
-		fprintf(stderr, "Unable to bind field: %s\n", field);
-		return false;
-	}
-	return true;
-}
-
-bool sql_bind_update_int_field(sqlite3_stmt *stmt, char *field, int intval)
-{
-	int retval = sqlite3_bind_int(stmt, 2, intval);
-	if (retval != SQLITE_OK) {
-		fprintf(stderr, "Can't bind %s with %d\n", field, intval);
-		return false;
-	}
-	return sql_bind_update_field(stmt, field);
-}
-
-bool sql_bind_update_text_field(sqlite3_stmt *stmt, char *field, char *txtval)
-{
-	int retval = sqlite3_bind_text
-			(stmt, 3, txtval, strlen(field), SQLITE_TRANSIENT);
-	if (retval != SQLITE_OK) {
-		fprintf(stderr, "Can't bind %s with %s\n", field, txtval);
-		return false;
-	}
-	return sql_bind_update_field(stmt, field);
 }
 
 bool sql_step(sqlite3_stmt *stmt)
 {
-	if (sqlite3_step(stmt) != SQLITE_DONE) {
-		fprintf (stderr, "Could not step statement.\n");
+	int retval = sqlite3_step(stmt);
+
+	if(retval != SQLITE_DONE) {
+		fprintf (stderr, "Could not step statement. [%s]\n",
+			 sqlite3_errstr(retval));
 		return false;
 	}
 	return true;
@@ -344,7 +320,8 @@ bool sql_init(const char *sqlfilename,
 	fprintf(stderr, "Created new table: %s\n", table_name);
 	fprintf(stderr, "Schema: %s\n", table_schema);
 	sqlite3_free(zsql);
-	return sql_exec("pragma synchronous = off");
+	return sql_exec("pragma synchronous = off;"
+			"pragma journal_mode = off;");
 }
 
 bool sql_open(const char *sqlfilename, const char *tablename)
@@ -366,20 +343,32 @@ inline void sql_close(sqlite3 *db)
 	sqlite3_close(db);
 }
 
-// In order to satisfy searches that only contain some of the words in
-// the decl field of the kabi table in the database file.
-// (kabitree.sql), create a virtual table of the decl field.
-// Partial searches can then be conducted from the virtual table as
-// follows.
-//	select decl from declaration where decl match "device"
-static void create_decl_vt(const char *table_name)
+static void sql_prepare_kabi_stmts()
 {
 	char *zsql;
-	sql_exec("create virtual table declaration using fts3(id,decl)");
-	zsql = sqlite3_mprintf("insert into declaration(id,decl) "
-			       "select id,decl from '%q'", table_name);
-	sql_exec(zsql);
+	int len;
+	int retval;
+	zsql = sqlite3_mprintf
+			("insert into %q (id,parentid,level,flags,prefix) "
+			 "values (:id,:parentid,:level,:flags,:prefix)",
+			 sql_get_table());
+	len = strlen(zsql);
+	retval = sqlite3_prepare_v2(db, zsql, len, &stmt_row, 0);
+
+	if (retval != SQLITE_OK)
+		fprintf(stderr, "Could not prepare stmt_row. "
+			"[%s]\n", sqlite3_errstr(retval));
+
 	sqlite3_free(zsql);
+	sql_prepare_update_field(&stmt_decl, "decl", ":decl");
+	sql_prepare_update_field(&stmt_parentdecl, "parentdecl", ":parentdecl");
+}
+
+static void sql_finalize_kabi_stmts()
+{
+	sql_finalize(stmt_row);
+	sql_finalize(stmt_decl);
+	sql_finalize(stmt_parentdecl);
 }
 
 /*****************************************************
@@ -536,15 +525,19 @@ static void compose_declaration(struct knode *kn, char *sbuf)
 
 static void format_declaration(struct knode *kn)
 {
-	char *zsql;
+	int idx;
 	char *sbuf = calloc(STRBUFSIZ, 1);
 	struct knode *parent = kn->parent;
 
 	compose_declaration(kn, sbuf);
 	printf("%s ", sbuf);
-	zsql = sqlite3_mprintf("update %q set decl='%q' where id==%d",
-		sql_get_table(), sbuf, kn);
-	sql_exec(zsql);
+
+	idx = sqlite3_bind_parameter_index(stmt_decl, ":decl");
+	sqlite3_bind_text(stmt_decl, idx, sbuf, strlen(sbuf), 0);
+	idx = sqlite3_bind_parameter_index(stmt_decl, ":id");
+	sqlite3_bind_int(stmt_decl, idx, (long int)kn);
+	sql_step(stmt_decl);
+	sql_reset(stmt_decl);
 
 	if (!parent)
 		goto out;
@@ -556,15 +549,17 @@ static void format_declaration(struct knode *kn)
 	if (parent->declist) {
 		compose_declaration(parent, sbuf);
 		printf ("IN: %s ", sbuf);
-		sql_extract_field("decl", parent, sbuf);
-		zsql = sqlite3_mprintf
-			("update %q set parentdecl='%q' where id==%d",
-			 sql_get_table(), sbuf, kn);
-		sql_exec(zsql);
+
+		idx = sqlite3_bind_parameter_index
+				(stmt_parentdecl, ":parentdecl");
+		sqlite3_bind_text(stmt_parentdecl, idx, sbuf, strlen(sbuf), 0);
+		idx = sqlite3_bind_parameter_index(stmt_parentdecl, ":id");
+		sqlite3_bind_int(stmt_parentdecl, idx, (long int)kn);
+		sql_step(stmt_parentdecl);
+		sql_reset(stmt_parentdecl);
 	}
 out:
 	free(sbuf);
-	sqlite3_free(zsql);
 	putchar('\n');
 }
 
@@ -923,10 +918,10 @@ static void show_users(struct knodelist *klist, int level)
 static void show_knodes(struct knodelist *klist)
 {
 	struct knode *kn;
-	char *zsql;
 
 	FOR_EACH_PTR(klist, kn) {
 		char *pfx = get_prefix(kn->flags);
+		int idx;
 
 		// Top of the tree has no name, just descendants
 		if (kn->parent == kn)
@@ -935,13 +930,18 @@ static void show_knodes(struct knodelist *klist)
 		if (!kp_verbose && kn->flags & CTL_NESTED)
 			return;
 
-		zsql = sqlite3_mprintf
-			("insert into %q (id,parentid,level,flags, prefix) "
-			"values(%d, %d, %d, %d, '%q');",
-			sql_get_table(),
-			kn, kn->parent, kn->level, kn->flags, pfx);
-		sql_exec(zsql);
-		sqlite3_free(zsql);
+		idx = sqlite3_bind_parameter_index(stmt_row, ":id");
+		sqlite3_bind_int(stmt_row, idx, (long int)kn);
+		idx = sqlite3_bind_parameter_index(stmt_row, ":parentid");
+		sqlite3_bind_int(stmt_row, idx, (long int)kn->parent);
+		idx = sqlite3_bind_parameter_index(stmt_row, ":level");
+		sqlite3_bind_int(stmt_row, idx, kn->level);
+		idx = sqlite3_bind_parameter_index(stmt_row, ":flags");
+		sqlite3_bind_int(stmt_row, idx, kn->flags);
+		idx = sqlite3_bind_parameter_index(stmt_row, ":prefix");
+		sqlite3_bind_text(stmt_row, idx, pfx, strlen(pfx), 0);
+		sql_step(stmt_row);
+		sql_reset(stmt_row);
 
 		if ((kp_verbose) && (kn->flags & CTL_NESTED))
 			printf("%s%s%-2d ",
@@ -1067,8 +1067,9 @@ int main(int argc, char **argv)
 	if (!sql_open(kabi_sql_filename, kabi_table_name))
 		sql_init(kabi_sql_filename, kabi_table_schema, kabi_table_name);
 
+	sql_prepare_kabi_stmts();
 	show_knodes(knodes);
-	// create_decl_vt(sql_get_table());
+	sql_finalize_kabi_stmts();
 	sql_close(db);
 
 	return 0;
