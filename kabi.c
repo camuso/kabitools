@@ -88,6 +88,9 @@ symbols of structs and unions that are used by the exported symbols.\n\
     filespec  File or files (wildcards ok) to be processed\n\
 \n\
 Options:\n\
+    -k        Name of the database file to write or update.\n\
+              Defaut is \"../kabitree.sql\"\n\
+\n\
     -v        Verbose (default): Lists all the arguments of functions and\n\
               recursively descends into compound types to gather all the\n\
               information about them.\n\
@@ -122,8 +125,8 @@ prefix text, \
 decl text, \
 parentdecl text";
 
-const char *kabi_table_name = "kt";
-const char *kabi_sql_filename = "kabitree.sql";
+static const char *kabi_table_name = "kabitree";
+static char *kabi_sql_filename = NULL;
 
 /*****************************************************
 ** enumerated flags and masks
@@ -323,23 +326,39 @@ bool sql_init(const char *sqlfilename,
 	char *zsql;
 	int rval;
 
-	remove(sqlfilename);
 	rval = sqlite3_open(sqlfilename, &db);
 
 	if (rval != SQLITE_OK) {
-		fprintf(stderr, "Unable to open database: %s\n", sqlfilename);
+		fprintf(stderr, "Unable to create database: %s\n", sqlfilename);
 		return false;
 	}
 
-	fprintf(stderr, "Opened database: %s\n", sqlfilename);
+	fprintf(stderr, "Created new database file: %s\n", sqlfilename);
+
 	zsql = sqlite3_mprintf("create table %q(%q)",
 			       table_name, table_schema);
 	if (!sql_exec(zsql))
 		return false;
 
 	sql_set_table(table_name);
+	fprintf(stderr, "Created new table: %s\n", table_name);
+	fprintf(stderr, "Schema: %s\n", table_schema);
 	sqlite3_free(zsql);
 	return sql_exec("pragma synchronous = off");
+}
+
+bool sql_open(const char *sqlfilename, const char *tablename)
+{
+	int rval = sqlite3_open_v2
+			(sqlfilename, &db, SQLITE_OPEN_READWRITE, NULL);
+
+	if (rval != SQLITE_OK) {
+		fprintf(stderr, "sqlite3_open_v2() returned %s\n",
+			sqlite3_errstr(rval));
+		return false;
+	}
+	sql_set_table(tablename);
+	return true;
 }
 
 inline void sql_close(sqlite3 *db)
@@ -348,16 +367,19 @@ inline void sql_close(sqlite3 *db)
 }
 
 // In order to satisfy searches that only contain some of the words in
-// the decl field of the kt (kabi table) in the database file
+// the decl field of the kabi table in the database file.
 // (kabitree.sql), create a virtual table of the decl field.
 // Partial searches can then be conducted from the virtual table as
 // follows.
 //	select decl from declaration where decl match "device"
-static void create_decl_vt()
+static void create_decl_vt(const char *table_name)
 {
-	sql_exec("create virtual table declaration "
-		 "using fts3(id,decl)");
-	sql_exec("insert into declaration(id,decl) select id,decl from kt");
+	char *zsql;
+	sql_exec("create virtual table declaration using fts3(id,decl)");
+	zsql = sqlite3_mprintf("insert into declaration(id,decl) "
+			       "select id,decl from '%q'", table_name);
+	sql_exec(zsql);
+	sqlite3_free(zsql);
 }
 
 /*****************************************************
@@ -946,37 +968,54 @@ nextlevel:
 ** Command line option parsing
 ******************************************************/
 
-static int parse_opt(char opt, int state)
+static int parse_opt(char opt, int state, char *argv)
 {
-	int validopt = 1;
+	int optstatus = 1;
 
 	switch (opt) {
 	case 'v' : kp_verbose = state;	// kp_verbose is global to this file
 		   break;
 	case 'u' : showusers = state;
 		   break;
+	case 'k' : kabi_sql_filename = argv;
+		   optstatus = 2;
+		   break;
 	case 'h' : puts(helptext);
 		   exit(0);
-	default  : validopt = 0;
+	default  : optstatus = -1;
 		   break;
 	}
 
-	return validopt;
+	return optstatus;
 }
 
 static int get_options(char **argv)
 {
 	int state = 0;		// on = 1, off = 0
 	int index = 0;
+	int optstatus = 0;
 
 	for (index = 0; *argv[0] == '-'; ++index) {
 		int i;
-		// Trailing '-' sets state to OFF (0)
+
+		// Point to the first character of the actual option
 		char *argstr = &(*argv++)[1];
+
+		// Trailing '-' sets state to OFF (0) for switches.
 		state = argstr[strlen(argstr)-1] != '-';
 
 		for (i = 0; argstr[i]; ++i)
-			parse_opt(argstr[i], state);
+			optstatus = parse_opt(argstr[i], state, *argv);
+
+		// If we consumed the next string in the argument,
+		// advance the argument pointer and the index,
+		// because we consumed two args: the switch that
+		// indicated another string to consume and the
+		// string we consumed.
+		if(optstatus == 2) {
+			++argv;
+			++index;
+		}
 	}
 	return index;
 }
@@ -1003,6 +1042,9 @@ int main(int argc, char **argv)
 	argv += argindex;
 	argc -= argindex;
 
+	if (!kabi_sql_filename)
+		kabi_sql_filename = "../kabitree.sql";
+
 	DBG(puts("got the files");)
 	symlist = sparse_initialize(argc, argv, &filelist);
 
@@ -1022,9 +1064,11 @@ int main(int argc, char **argv)
 
 	DBG(printf("\nhiwater: %d\n", hiwater);)
 
-	sql_init(kabi_sql_filename, kabi_table_schema, kabi_table_name);
+	if (!sql_open(kabi_sql_filename, kabi_table_name))
+		sql_init(kabi_sql_filename, kabi_table_schema, kabi_table_name);
+
 	show_knodes(knodes);
-	create_decl_vt();
+	// create_decl_vt(sql_get_table());
 	sql_close(db);
 
 	return 0;
