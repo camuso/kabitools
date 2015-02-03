@@ -110,6 +110,7 @@ static bool showusers = false;
 DBG(static int hiwater = 0;)
 static struct symbol_list *symlist = NULL;
 static bool kabiflag = false;
+static bool nodb = true;
 
 
 /*****************************************************
@@ -219,7 +220,12 @@ inline const char *sql_get_table()
 bool sql_exec(const char *stmt)
 {
 	char *errmsg;
-	int ret = sqlite3_exec(db, stmt, 0, 0, &errmsg);
+	int ret;
+
+	if (nodb)
+		return true;
+
+	ret = sqlite3_exec(db, stmt, 0, 0, &errmsg);
 
 	if (ret != SQLITE_OK) {
 		fprintf(stderr,
@@ -241,6 +247,10 @@ int sql_process_field(void *output, int argc, char **argv, char **colnames)
 bool sql_extract_field(char *field, void *id, char *output)
 {
 	char *errmsg;
+
+	if (nodb)
+		return true;
+
 	char *zsql = sqlite3_mprintf("select %q from %q where id==%d",
 				     field, sql_get_table(), id);
 
@@ -253,6 +263,7 @@ bool sql_extract_field(char *field, void *id, char *output)
 		sqlite3_free(errmsg);
 		return false;
 	}
+
 	return true;
 }
 
@@ -260,6 +271,10 @@ bool sql_prepare_update_field
 		(sqlite3_stmt **stmt, char *field, char *val)
 {
 	char *zsql;
+
+	if (nodb)
+		return true;
+
 	zsql = sqlite3_mprintf("update %q set %q=%q where id==:id",
 			       sql_get_table(), field, val);
 	int retval = sqlite3_prepare_v2(db, zsql, strlen(zsql), stmt, 0);
@@ -267,28 +282,39 @@ bool sql_prepare_update_field
 		fprintf(stderr, "Could not prepare update requested field. "
 			"[%s]\n", sqlite3_errstr(retval));
 	sqlite3_free(zsql);
+
 	return retval == SQLITE_OK;
 }
 
 bool sql_step(sqlite3_stmt *stmt)
 {
-	int retval = sqlite3_step(stmt);
+	int retval;
+
+	if (nodb)
+		return true;
+
+	retval = sqlite3_step(stmt);
 
 	if(retval != SQLITE_DONE) {
 		fprintf (stderr, "Could not step statement. [%s]\n",
 			 sqlite3_errstr(retval));
 		return false;
 	}
+
 	return true;
 }
 
 inline void sql_reset(sqlite3_stmt *stmt)
 {
+	if (nodb)
+		return;
 	sqlite3_reset(stmt);
 }
 
 inline bool sql_finalize(sqlite3_stmt *stmt)
 {
+	if (nodb)
+		return true;
 	return sqlite3_finalize(stmt) == SQLITE_OK;
 }
 
@@ -302,6 +328,9 @@ bool sql_init(const char *sqlfilename,
 {
 	char *zsql;
 	int rval;
+
+	if (nodb)
+		return true;
 
 	rval = sqlite3_open(sqlfilename, &db);
 
@@ -329,7 +358,12 @@ bool sql_init(const char *sqlfilename,
 
 bool sql_open(const char *sqlfilename, const char *tablename)
 {
-	int rval = sqlite3_open_v2
+	int rval;
+
+	if (nodb)
+		return true;
+
+	rval = sqlite3_open_v2
 			(sqlfilename, &db, SQLITE_OPEN_READWRITE, NULL);
 
 	if (rval != SQLITE_OK) {
@@ -344,6 +378,8 @@ bool sql_open(const char *sqlfilename, const char *tablename)
 
 inline void sql_close(sqlite3 *db)
 {
+	if (nodb)
+		return;
 	sqlite3_close(db);
 }
 
@@ -352,6 +388,10 @@ static void sql_prepare_kabi_stmts()
 	char *zsql;
 	int len;
 	int retval;
+
+	if (nodb)
+		return;
+
 	zsql = sqlite3_mprintf
 			("insert into %q (id,parentid,level,flags,prefix) "
 			 "values (:id,:parentid,:level,:flags,:prefix)",
@@ -370,6 +410,8 @@ static void sql_prepare_kabi_stmts()
 
 static void sql_finalize_kabi_stmts()
 {
+	if (nodb)
+		return;
 	sql_finalize(stmt_row);
 	sql_finalize(stmt_decl);
 	sql_finalize(stmt_parentdecl);
@@ -434,7 +476,7 @@ static struct knode *map_knode
 	newknode->file = parent->file;
 	newknode->flags |= flags;
 	newknode->symbol = symbol;
-	if (flags & CTL_NESTED)
+	//if (flags & CTL_NESTED)
 		newknode->level = parent->level + 1;
 	add_knode(&parent->children, newknode);
 	DBG(hiwater= newknode->level > hiwater ? newknode->level : hiwater;)
@@ -535,7 +577,7 @@ static void format_declaration(struct knode *kn)
 	struct knode *parent = kn->parent;
 
 	compose_declaration(kn, sbuf);
-	printf("%s ", sbuf);
+	printf(", %s", sbuf);
 
 	idx = sqlite3_bind_parameter_index(stmt_decl, ":decl");
 	sqlite3_bind_text(stmt_decl, idx, sbuf, strlen(sbuf), 0);
@@ -544,16 +586,25 @@ static void format_declaration(struct knode *kn)
 	sql_step(stmt_decl);
 	sql_reset(stmt_decl);
 
+#if 0
 	if (!parent)
 		goto out;
 
-	if ((kn == parent)
-	|| (parent->flags & CTL_FILE))
+	if ((kn == parent) || (parent->flags & CTL_FILE))
 		goto out;
+#endif
+	if (kn == parent)
+		goto out;
+
+	if (!parent || (kn->flags & CTL_FILE)) {
+		printf(", ");
+		goto out;
+	}
 
 	if (parent->declist) {
 		compose_declaration(parent, sbuf);
-		printf ("IN: %s ", sbuf);
+		printf (", %s", sbuf);
+		// printf("IN: %s ", sbuf);
 
 		idx = sqlite3_bind_parameter_index
 				(stmt_parentdecl, ":parentdecl");
@@ -563,6 +614,8 @@ static void format_declaration(struct knode *kn)
 		sql_step(stmt_parentdecl);
 		sql_reset(stmt_parentdecl);
 	}
+	else
+		printf(", %s", parent->name);
 out:
 	free(sbuf);
 	putchar('\n');
@@ -896,15 +949,15 @@ static char *get_prefix(enum ctlflags flags)
 
 	switch (flg) {
 	case CTL_FILE:
-		return "FILE: ";
+		return "FILE";
 	case CTL_EXPORTED:
-		return "EXPORTED: ";
+		return "EXPORTED";
 	case CTL_RETURN:
-		return "RETURN: ";
+		return "RETURN";
 	case CTL_ARG:
-		return "ARG: ";
+		return "ARG";
 	case CTL_NESTED:
-		return "NESTED: ";
+		return "NESTED";
 	}
 	return "";
 }
@@ -950,12 +1003,16 @@ static void show_knodes(struct knodelist *klist)
 		sql_step(stmt_row);
 		sql_reset(stmt_row);
 
+		printf("%p, %p,%2d, %08x, %s",
+		       kn, kn->parent, kn->level, kn->flags, pfx);
+
+#if 0
 		if ((kp_verbose) && (kn->flags & CTL_NESTED))
 			printf("%s%s%-2d ",
 				pad_out(kn->level, ' ' ), pfx, kn->level);
 		else
 			printf("%s%s ", pad_out(kn->level, ' ' ), pfx);
-
+#endif
 		format_declaration(kn);
 
 		if (showusers && (kn->flags & CTL_NESTED)) {
@@ -986,6 +1043,8 @@ static int parse_opt(char opt, int state, char *argv)
 		   break;
 	case 'k' : kabi_sql_filename = argv;
 		   optstatus = 2;
+		   break;
+	case 'n' : nodb = true;
 		   break;
 	case 'h' : puts(helptext);
 		   exit(0);
