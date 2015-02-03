@@ -104,6 +104,8 @@ cat /dev/null > $textfile
 [ -d "$subdir" ] || noexistdir $subdir
 [ -e "$datafile" ] && rm -vf $datafile
 
+START=$(date +%s)
+
 if  $verbose ; then
 	find $subdir -name \*.i -exec sh -c \
 		'grep -qm1 "__ksymtab_" $1; \
@@ -123,12 +125,20 @@ fi
 
 echo "Importing text file: $textfile to database: $datafile ..."
 sqlite3 $datafile <<EOF
-create table kabitree (id,parentid,level,flags,prefix,decl,parentdecl);
+create table kabitree (id integer64, parentid integer64, level integer, flags integer, prefix text, decl text, parentdecl text);
 .separator ','
 .import $textfile kabitree
 EOF
 
 cd -
 echo "returned to $PWD"
+END=$(date +%s)
+DIFF=$(( $END - $START ))
+
+minutes=$(( $DIFF / 60 ))
+seconds=$(( $DIFF % 60 ))
+echo
+echo "Elapsed time: $minutes minutes and $seconds seconds"
+echo
 exit
 
