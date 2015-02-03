@@ -67,7 +67,7 @@ noexistdir() {
 	nodir
 }
 
-while getopts "vhd:s:o:b:e:" OPTION; do
+while getopts "vhqd:s:o:b:e:" OPTION; do
     case "$OPTION" in
 
 	d )	directory="$OPTARG"
@@ -82,6 +82,8 @@ while getopts "vhd:s:o:b:e:" OPTION; do
 	e )	errfile="$OPTARG"
 		;;
 	v )	verbose=true
+		;;
+	q )	notext=true
 		;;
 	h )	usage
 		;;
@@ -103,13 +105,14 @@ echo "executing from $PWD"
 cat /dev/null > $textfile
 [ -d "$subdir" ] || noexistdir $subdir
 [ -e "$datafile" ] && rm -vf $datafile
+$notext && textfile="/dev/null"
 
 cd -
 if  $verbose ; then
 	find $subdir -name \*.i -exec sh -c \
 		'grep -qm1 "__ksymtab_" $2; \
 		if [ $? -eq 0 ]; then \
-			redhat/kabi/kabi-parser -k $1 $2 2>$3; \
+			redhat/kabi/kabi-parser -v- -k $1 $2 2>$3; \
 		fi' \
 		sh $datafile '{}' $errfile  \; | tee -a "$textfile"
 else
@@ -117,7 +120,7 @@ else
 		'grep -qm1 "__ksymtab_" $2; \
 		if [ $? -eq 0 ]; then \
 			echo $2; \
-			redhat/kabi/kabi-parser -k $1 $2 >> $3 2>$4; \
+			redhat/kabi/kabi-parser -v- -k $1 $2 >> $3 2>$4; \
 		fi' \
 		sh $datafile '{}' $textfile $errfile \;
 fi
