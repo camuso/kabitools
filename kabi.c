@@ -1,4 +1,4 @@
-;/* kabi.c
+/* kabi.c
  *
  * Find all the exported symbols in .i file(s) passed as argument(s) on the
  * command line when invoking this executable.
@@ -37,7 +37,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <asm-generic/errno-base.h>
 #define NDEBUG	// comment out to enable asserts
 #include <assert.h>
 
@@ -48,7 +47,6 @@
 #include <sparse/expression.h>
 #include <sparse/token.h>
 #include <sparse/ptrlist.h>
-#include <sqlite3.h>
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
@@ -88,8 +86,6 @@ symbols of structs and unions that are used by the exported symbols.\n\
     filespec  File or files (wildcards ok) to be processed\n\
 \n\
 Options:\n\
-    -k        Name of the database file to write or update.\n\
-              Defaut is \"../kabitree.sql\"\n\
 \n\
     -v        Verbose (default): Lists all the arguments of functions and\n\
               recursively descends into compound types to gather all the\n\
@@ -227,8 +223,7 @@ static struct knode *map_knode
 	newknode->file = parent->file;
 	newknode->flags |= flags;
 	newknode->symbol = symbol;
-	//if (flags & CTL_NESTED)
-		newknode->level = parent->level + 1;
+	newknode->level = parent->level + 1;
 	add_knode(&parent->children, newknode);
 	DBG(hiwater= newknode->level > hiwater ? newknode->level : hiwater;)
 	return newknode;
@@ -819,9 +814,8 @@ int main(int argc, char **argv)
 	DBG(printf("\nhiwater: %d\n", hiwater);)
 
 	if (! kabiflag)
-		goto out;
+		return 1;
 
 	show_knodes(knodes);
-out:
 	return 0;
 }
