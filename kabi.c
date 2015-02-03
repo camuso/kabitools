@@ -110,25 +110,6 @@ static bool showusers = false;
 DBG(static int hiwater = 0;)
 static struct symbol_list *symlist = NULL;
 static bool kabiflag = false;
-static bool nodb = true;
-
-
-/*****************************************************
-** global sqlite3 data
-******************************************************/
-
-const char *kabi_table_schema = "\
-key integer primary key, \
-id integer, \
-parentid integer, \
-level int, \
-flags int, \
-prefix text, \
-decl text, \
-parentdecl text";
-
-static const char *kabi_table_name = "kabitree";
-static char *kabi_sql_filename = NULL;
 
 /*****************************************************
 ** enumerated flags and masks
@@ -186,236 +167,6 @@ static inline void add_string(struct string_list **list, char *string)
 static inline int string_list_size(struct string_list *list)
 {
 	return ptr_list_size((struct ptr_list *)(list));
-}
-
-/*****************************************************
-** SQLite utilities and wrappers
-******************************************************/
-// if this were c++, db and table would be private members
-// of a sql class, accessible only by member function calls.
-// Move these utilities and wrappers into their own file,
-// with their own header to achieve the encapsulation.
-static struct sqlite3 *db = NULL;
-static sqlite3_stmt *stmt_row;
-static sqlite3_stmt *stmt_decl;
-static sqlite3_stmt *stmt_parentdecl;
-
-inline struct sqlite3 *sql_get_db()
-{
-	return db;
-}
-
-static char *table;
-// initialize the global name of the table
-inline void sql_set_table(const char *tablename)
-{
-	table = (char *)tablename;
-}
-
-inline const char *sql_get_table()
-{
-	return (const char *)table;
-}
-
-bool sql_exec(const char *stmt)
-{
-	char *errmsg;
-	int ret;
-
-	if (nodb)
-		return true;
-
-	ret = sqlite3_exec(db, stmt, 0, 0, &errmsg);
-
-	if (ret != SQLITE_OK) {
-		fprintf(stderr,
-			"\nsql_exec: Error in statement: %s [%s].\n",
-			stmt, errmsg);
-		sqlite3_free(errmsg);
-		return false;
-	}
-	sqlite3_free(errmsg);
-	return true;
-}
-
-int sql_process_field(void *output, int argc, char **argv, char **colnames)
-{
-	strcpy(output, argv[0]);
-	return 0;
-}
-
-bool sql_extract_field(char *field, void *id, char *output)
-{
-	char *errmsg;
-
-	if (nodb)
-		return true;
-
-	char *zsql = sqlite3_mprintf("select %q from %q where id==%d",
-				     field, sql_get_table(), id);
-
-	int retval = sqlite3_exec
-			(db, zsql, sql_process_field, (void *)output, &errmsg);
-
-	if (retval != SQLITE_OK) {
-		fprintf(stderr,
-			"\nError in statement: %s [%s].\n", zsql, errmsg);
-		sqlite3_free(errmsg);
-		return false;
-	}
-
-	return true;
-}
-
-bool sql_prepare_update_field
-		(sqlite3_stmt **stmt, char *field, char *val)
-{
-	char *zsql;
-
-	if (nodb)
-		return true;
-
-	zsql = sqlite3_mprintf("update %q set %q=%q where id==:id",
-			       sql_get_table(), field, val);
-	int retval = sqlite3_prepare_v2(db, zsql, strlen(zsql), stmt, 0);
-	if (retval != SQLITE_OK)
-		fprintf(stderr, "Could not prepare update requested field. "
-			"[%s]\n", sqlite3_errstr(retval));
-	sqlite3_free(zsql);
-
-	return retval == SQLITE_OK;
-}
-
-bool sql_step(sqlite3_stmt *stmt)
-{
-	int retval;
-
-	if (nodb)
-		return true;
-
-	retval = sqlite3_step(stmt);
-
-	if(retval != SQLITE_DONE) {
-		fprintf (stderr, "Could not step statement. [%s]\n",
-			 sqlite3_errstr(retval));
-		return false;
-	}
-
-	return true;
-}
-
-inline void sql_reset(sqlite3_stmt *stmt)
-{
-	if (nodb)
-		return;
-	sqlite3_reset(stmt);
-}
-
-inline bool sql_finalize(sqlite3_stmt *stmt)
-{
-	if (nodb)
-		return true;
-	return sqlite3_finalize(stmt) == SQLITE_OK;
-}
-
-// sql_init, if successful, initializes the global sqlite3 *db
-// Send table schema as a string of comma separated fieldnames paired
-// with their data type, e.g.
-// "field1 txt,field2 integer"
-bool sql_init(const char *sqlfilename,
-	      const char *table_schema,
-	      const char *table_name)
-{
-	char *zsql;
-	int rval;
-
-	if (nodb)
-		return true;
-
-	rval = sqlite3_open(sqlfilename, &db);
-
-	if (rval != SQLITE_OK) {
-		fprintf(stderr, "Unable to create database: %s\n", sqlfilename);
-		return false;
-	}
-
-	fprintf(stderr, "Created new database file: %s\n", sqlfilename);
-
-	zsql = sqlite3_mprintf("create table %q(%q)",
-			       table_name, table_schema);
-	if (!sql_exec(zsql))
-		return false;
-
-	sql_set_table(table_name);
-	fprintf(stderr, "Created new table: %s\n", table_name);
-	fprintf(stderr, "Schema: %s\n", table_schema);
-	sqlite3_free(zsql);
-	rval = sql_exec("pragma synchronous = off;"
-			"pragma journal_mode = off;"
-			"begin transaction;");
-	return rval;
-}
-
-bool sql_open(const char *sqlfilename, const char *tablename)
-{
-	int rval;
-
-	if (nodb)
-		return true;
-
-	rval = sqlite3_open_v2
-			(sqlfilename, &db, SQLITE_OPEN_READWRITE, NULL);
-
-	if (rval != SQLITE_OK) {
-		fprintf(stderr, "sqlite3_open_v2() returned %s\n",
-			sqlite3_errstr(rval));
-		return false;
-	}
-	sql_set_table(tablename);
-	rval = sql_exec("begin transaction");
-	return rval;
-}
-
-inline void sql_close(sqlite3 *db)
-{
-	if (nodb)
-		return;
-	sqlite3_close(db);
-}
-
-static void sql_prepare_kabi_stmts()
-{
-	char *zsql;
-	int len;
-	int retval;
-
-	if (nodb)
-		return;
-
-	zsql = sqlite3_mprintf
-			("insert into %q (id,parentid,level,flags,prefix) "
-			 "values (:id,:parentid,:level,:flags,:prefix)",
-			 sql_get_table());
-	len = strlen(zsql);
-	retval = sqlite3_prepare_v2(db, zsql, len, &stmt_row, 0);
-
-	if (retval != SQLITE_OK)
-		fprintf(stderr, "Could not prepare stmt_row. "
-			"[%s]\n", sqlite3_errstr(retval));
-
-	sqlite3_free(zsql);
-	sql_prepare_update_field(&stmt_decl, "decl", ":decl");
-	sql_prepare_update_field(&stmt_parentdecl, "parentdecl", ":parentdecl");
-}
-
-static void sql_finalize_kabi_stmts()
-{
-	if (nodb)
-		return;
-	sql_finalize(stmt_row);
-	sql_finalize(stmt_decl);
-	sql_finalize(stmt_parentdecl);
-	sql_exec("commit transaction");
 }
 
 /*****************************************************
@@ -572,27 +323,12 @@ static void compose_declaration(struct knode *kn, char *sbuf)
 
 static void format_declaration(struct knode *kn)
 {
-	int idx;
 	char *sbuf = calloc(STRBUFSIZ, 1);
 	struct knode *parent = kn->parent;
 
 	compose_declaration(kn, sbuf);
 	printf(", %s", sbuf);
 
-	idx = sqlite3_bind_parameter_index(stmt_decl, ":decl");
-	sqlite3_bind_text(stmt_decl, idx, sbuf, strlen(sbuf), 0);
-	idx = sqlite3_bind_parameter_index(stmt_decl, ":id");
-	sqlite3_bind_int(stmt_decl, idx, (long int)kn);
-	sql_step(stmt_decl);
-	sql_reset(stmt_decl);
-
-#if 0
-	if (!parent)
-		goto out;
-
-	if ((kn == parent) || (parent->flags & CTL_FILE))
-		goto out;
-#endif
 	if (kn == parent)
 		goto out;
 
@@ -603,16 +339,7 @@ static void format_declaration(struct knode *kn)
 
 	if (parent->declist) {
 		compose_declaration(parent, sbuf);
-		printf (", %s", sbuf);
-		// printf("IN: %s ", sbuf);
-
-		idx = sqlite3_bind_parameter_index
-				(stmt_parentdecl, ":parentdecl");
-		sqlite3_bind_text(stmt_parentdecl, idx, sbuf, strlen(sbuf), 0);
-		idx = sqlite3_bind_parameter_index(stmt_parentdecl, ":id");
-		sqlite3_bind_int(stmt_parentdecl, idx, (long int)kn);
-		sql_step(stmt_parentdecl);
-		sql_reset(stmt_parentdecl);
+		printf(", %s", sbuf);
 	}
 	else
 		printf(", %s", parent->name);
@@ -981,7 +708,6 @@ static void show_knodes(struct knodelist *klist)
 
 	FOR_EACH_PTR(klist, kn) {
 		char *pfx = get_prefix(kn->flags);
-		int idx;
 
 		// Top of the tree has no name, just descendants
 		if (kn->parent == kn)
@@ -990,29 +716,9 @@ static void show_knodes(struct knodelist *klist)
 		if (!kp_verbose && kn->flags & CTL_NESTED)
 			return;
 
-		idx = sqlite3_bind_parameter_index(stmt_row, ":id");
-		sqlite3_bind_int(stmt_row, idx, (long int)kn);
-		idx = sqlite3_bind_parameter_index(stmt_row, ":parentid");
-		sqlite3_bind_int(stmt_row, idx, (long int)kn->parent);
-		idx = sqlite3_bind_parameter_index(stmt_row, ":level");
-		sqlite3_bind_int(stmt_row, idx, kn->level);
-		idx = sqlite3_bind_parameter_index(stmt_row, ":flags");
-		sqlite3_bind_int(stmt_row, idx, kn->flags);
-		idx = sqlite3_bind_parameter_index(stmt_row, ":prefix");
-		sqlite3_bind_text(stmt_row, idx, pfx, strlen(pfx), 0);
-		sql_step(stmt_row);
-		sql_reset(stmt_row);
-
 		printf("%p, %p,%2d, %08x, %s",
 		       kn, kn->parent, kn->level, kn->flags, pfx);
 
-#if 0
-		if ((kp_verbose) && (kn->flags & CTL_NESTED))
-			printf("%s%s%-2d ",
-				pad_out(kn->level, ' ' ), pfx, kn->level);
-		else
-			printf("%s%s ", pad_out(kn->level, ' ' ), pfx);
-#endif
 		format_declaration(kn);
 
 		if (showusers && (kn->flags & CTL_NESTED)) {
@@ -1032,7 +738,7 @@ nextlevel:
 ** Command line option parsing
 ******************************************************/
 
-static int parse_opt(char opt, int state, char *argv)
+static int parse_opt(char opt, int state)
 {
 	int optstatus = 1;
 
@@ -1040,11 +746,6 @@ static int parse_opt(char opt, int state, char *argv)
 	case 'v' : kp_verbose = state;	// kp_verbose is global to this file
 		   break;
 	case 'u' : showusers = state;
-		   break;
-	case 'k' : kabi_sql_filename = argv;
-		   optstatus = 2;
-		   break;
-	case 'n' : nodb = true;
 		   break;
 	case 'h' : puts(helptext);
 		   exit(0);
@@ -1071,17 +772,7 @@ static int get_options(char **argv)
 		state = argstr[strlen(argstr)-1] != '-';
 
 		for (i = 0; argstr[i]; ++i)
-			optstatus = parse_opt(argstr[i], state, *argv);
-
-		// If we consumed the next string in the argument,
-		// advance the argument pointer and the index,
-		// because we consumed two args: the switch that
-		// indicated another string to consume and the
-		// string we consumed.
-		if(optstatus == 2) {
-			++argv;
-			++index;
-		}
+			optstatus = parse_opt(argstr[i], state);
 	}
 	return index;
 }
@@ -1108,9 +799,6 @@ int main(int argc, char **argv)
 	argv += argindex;
 	argc -= argindex;
 
-	if (!kabi_sql_filename)
-		kabi_sql_filename = "../kabitree.sql";
-
 	DBG(puts("got the files");)
 	symlist = sparse_initialize(argc, argv, &filelist);
 
@@ -1133,14 +821,7 @@ int main(int argc, char **argv)
 	if (! kabiflag)
 		goto out;
 
-	if (!sql_open(kabi_sql_filename, kabi_table_name))
-		sql_init(kabi_sql_filename, kabi_table_schema, kabi_table_name);
-
-	sql_prepare_kabi_stmts();
 	show_knodes(knodes);
-	sql_finalize_kabi_stmts();
-	sql_close(db);
-
 out:
 	return 0;
 }
