@@ -109,6 +109,7 @@ static bool kp_verbose = true;
 static bool showusers = false;
 DBG(static int hiwater = 0;)
 static struct symbol_list *symlist = NULL;
+static bool kabiflag = false;
 
 
 /*****************************************************
@@ -320,8 +321,10 @@ bool sql_init(const char *sqlfilename,
 	fprintf(stderr, "Created new table: %s\n", table_name);
 	fprintf(stderr, "Schema: %s\n", table_schema);
 	sqlite3_free(zsql);
-	return sql_exec("pragma synchronous = off;"
-			"pragma journal_mode = off;");
+	rval = sql_exec("pragma synchronous = off;"
+			"pragma journal_mode = off;"
+			"begin transaction;");
+	return rval;
 }
 
 bool sql_open(const char *sqlfilename, const char *tablename)
@@ -335,7 +338,8 @@ bool sql_open(const char *sqlfilename, const char *tablename)
 		return false;
 	}
 	sql_set_table(tablename);
-	return true;
+	rval = sql_exec("begin transaction");
+	return rval;
 }
 
 inline void sql_close(sqlite3 *db)
@@ -369,6 +373,7 @@ static void sql_finalize_kabi_stmts()
 	sql_finalize(stmt_row);
 	sql_finalize(stmt_decl);
 	sql_finalize(stmt_parentdecl);
+	sql_exec("commit transaction");
 }
 
 /*****************************************************
@@ -687,6 +692,8 @@ static void build_branch(struct knode *parent, char *symname)
 	if ((sym = find_internal_exported(symlist, symname))) {
 		struct symbol *basetype = sym->ctype.base_type;
 		struct knode *kn = map_knode(parent, NULL, CTL_EXPORTED);
+
+		kabiflag = true;
 
 		kn->name = symname;
 		get_declist(kn, sym);
@@ -1064,6 +1071,9 @@ int main(int argc, char **argv)
 
 	DBG(printf("\nhiwater: %d\n", hiwater);)
 
+	if (! kabiflag)
+		goto out;
+
 	if (!sql_open(kabi_sql_filename, kabi_table_name))
 		sql_init(kabi_sql_filename, kabi_table_schema, kabi_table_name);
 
@@ -1072,5 +1082,6 @@ int main(int argc, char **argv)
 	sql_finalize_kabi_stmts();
 	sql_close(db);
 
+out:
 	return 0;
 }
