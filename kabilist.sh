@@ -67,7 +67,7 @@ noexistdir() {
 	nodir
 }
 
-while getopts "vhqd:s:o:b:e:" OPTION; do
+while getopts "vhd:s:o:b:e:" OPTION; do
     case "$OPTION" in
 
 	d )	directory="$OPTARG"
@@ -82,8 +82,6 @@ while getopts "vhqd:s:o:b:e:" OPTION; do
 	e )	errfile="$OPTARG"
 		;;
 	v )	verbose=true
-		;;
-	q )	notext=true
 		;;
 	h )	usage
 		;;
@@ -105,26 +103,31 @@ echo "executing from $PWD"
 cat /dev/null > $textfile
 [ -d "$subdir" ] || noexistdir $subdir
 [ -e "$datafile" ] && rm -vf $datafile
-$notext && textfile="/dev/null"
 
-cd -
 if  $verbose ; then
 	find $subdir -name \*.i -exec sh -c \
-		'grep -qm1 "__ksymtab_" $2; \
+		'grep -qm1 "__ksymtab_" $1; \
 		if [ $? -eq 0 ]; then \
-			redhat/kabi/kabi-parser -v- -k $1 $2 2>$3; \
+			redhat/kabi/kabi-parser -n $1 2>$2; \
 		fi' \
-		sh $datafile '{}' $errfile  \; | tee -a "$textfile"
+		sh '{}' $errfile  \; | tee -a "$textfile"
 else
 	find $subdir -name \*.i -exec sh -c \
-		'grep -qm1 "__ksymtab_" $2; \
+		'grep -qm1 "__ksymtab_" $1; \
 		if [ $? -eq 0 ]; then \
-			echo $2; \
-			redhat/kabi/kabi-parser -v- -k $1 $2 >> $3 2>$4; \
+			echo $1; \
+			redhat/kabi/kabi-parser -n $1 >> $2 2>$3; \
 		fi' \
-		sh $datafile '{}' $textfile $errfile \;
+		sh '{}' $textfile $errfile \;
 fi
 
+sqlite3 $datafile <<EOF
+create table kabitree (id,parentid,level,flags,prefix,decl,parentdecl);
+.separator ','
+.import $textfile kabitree
+EOF
+
+cd -
 echo "returned to $PWD"
 exit
 
