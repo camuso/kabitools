@@ -37,6 +37,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include <time.h>
 #define NDEBUG	// comment out to enable asserts
 #include <assert.h>
 
@@ -180,6 +182,8 @@ struct knode {
 	char *file;
 	enum ctlflags flags;
 	int level;
+	unsigned long id;
+	unsigned long parentid;
 };
 
 DECLARE_PTR_LIST(knodelist, struct knode);
@@ -217,16 +221,21 @@ static struct knode *map_knode
 		 struct symbol *symbol,
 		 enum ctlflags flags)
 {
-	struct knode *newknode;
-	newknode = alloc_knode();
-	newknode->parent = parent;
-	newknode->file = parent->file;
-	newknode->flags |= flags;
-	newknode->symbol = symbol;
-	newknode->level = parent->level + 1;
-	add_knode(&parent->children, newknode);
-	DBG(hiwater= newknode->level > hiwater ? newknode->level : hiwater;)
-	return newknode;
+	time_t rawtime;
+	struct knode *newkn;
+
+	time(&rawtime);
+	newkn = alloc_knode();
+	newkn->parent = parent;
+	newkn->file = parent->file;
+	newkn->flags |= flags;
+	newkn->symbol = symbol;
+	newkn->level = parent->level + 1;
+	newkn->id = (unsigned long)newkn << 32 | (uint64_t)(rawtime & (time_t)(-1));
+	newkn->parentid = parent->id;
+	add_knode(&parent->children, newkn);
+	DBG(hiwater= newkn->level > hiwater ? newkn->level : hiwater;)
+	return newkn;
 }
 
 /*****************************************************
@@ -460,7 +469,7 @@ static void get_symbols
 	} END_FOR_EACH_PTR(sym);
 }
 
-static void build_branch(struct knode *parent, char *symname)
+static void build_branch(struct knode *parent, char *symname, char *file)
 {
 	struct symbol *sym;
 
@@ -468,9 +477,10 @@ static void build_branch(struct knode *parent, char *symname)
 		struct symbol *basetype = sym->ctype.base_type;
 		struct knode *kn = map_knode(parent, NULL, CTL_EXPORTED);
 
-		kabiflag = true;
-
+		kn->file = file;
 		kn->name = symname;
+
+		kabiflag = true;
 		get_declist(kn, sym);
 
 		if (kn->symbol_list) {
@@ -491,7 +501,9 @@ static bool starts_with(const char *a, const char *b)
 	return false;
 }
 
-static void build_tree(struct symbol_list *symlist, struct knode *parent)
+static void build_tree(struct symbol_list *symlist,
+		       struct knode *parent,
+		       char *file)
 {
 	struct symbol *sym;
 
@@ -501,7 +513,7 @@ static void build_tree(struct symbol_list *symlist, struct knode *parent)
 		    starts_with(sym->ident->name, ksymprefix)) {
 			int offset = strlen(ksymprefix);
 			char *symname = &sym->ident->name[offset];
-			build_branch(parent, symname);
+			build_branch(parent, symname, file);
 		}
 
 	} END_FOR_EACH_PTR(sym);
@@ -711,8 +723,8 @@ static void show_knodes(struct knodelist *klist)
 		if (!kp_verbose && kn->flags & CTL_NESTED)
 			return;
 
-		printf("%p, %p,%2d, %08x, %s",
-		       kn, kn->parent, kn->level, kn->flags, pfx);
+		printf("%lu, %lu,%2d, %08x, %s",
+		       kn->id, kn->parent->id, kn->level, kn->flags, pfx);
 
 		format_declaration(kn);
 
@@ -755,7 +767,6 @@ static int get_options(char **argv)
 {
 	int state = 0;		// on = 1, off = 0
 	int index = 0;
-	int optstatus = 0;
 
 	for (index = 0; *argv[0] == '-'; ++index) {
 		int i;
@@ -767,7 +778,7 @@ static int get_options(char **argv)
 		state = argstr[strlen(argstr)-1] != '-';
 
 		for (i = 0; argstr[i]; ++i)
-			optstatus = parse_opt(argstr[i], state);
+			parse_opt(argstr[i], state);
 	}
 	return index;
 }
@@ -808,7 +819,7 @@ int main(int argc, char **argv)
 		kn = map_knode(kn, NULL, CTL_FILE);
 		kn->name = file;
 		kn->level = 0;
-		build_tree(symlist, kn);
+		build_tree(symlist, kn, file);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
 	DBG(printf("\nhiwater: %d\n", hiwater);)
