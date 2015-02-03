@@ -104,6 +104,7 @@ cat /dev/null > $textfile
 [ -d "$subdir" ] || noexistdir $subdir
 [ -e "$datafile" ] && rm -vf $datafile
 
+cd -
 if  $verbose ; then
 	find $subdir -name \*.i -exec sh -c \
 		'grep -qm1 "__ksymtab_" $2; \
@@ -121,9 +122,18 @@ else
 		sh $datafile '{}' $textfile $errfile \;
 fi
 
-cd -
 echo "returned to $PWD"
+exit
 
 #files=$(find ./ -type f -name \*.i)
 #./redhat/kabi/kabi-parser $files | tee -a ./redhat/kabi/kabi-parser.log
+if  $verbose ; then
+	find $subdir -name \*.i -exec sh -c \
+		'echo $2; redhat/kabi/kabi-parser -k $1 $2 2>$3' \
+		sh $datafile '{}' $errfile  \; | tee -a "$textfile"
+else
+	find $subdir -name \*.i -exec sh -c \
+		'echo $2; redhat/kabi/kabi-parser -k $1 $2 >> $3 2>$4;' \
+		sh $datafile '{}' $textfile $errfile \;
+fi
 
