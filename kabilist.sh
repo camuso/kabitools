@@ -121,6 +121,7 @@ else
 		sh '{}' $textfile $errfile \;
 fi
 
+echo "Importing text file: $textfile to database: $datafile ..."
 sqlite3 $datafile <<EOF
 create table kabitree (id,parentid,level,flags,prefix,decl,parentdecl);
 .separator ','
@@ -130,16 +131,4 @@ EOF
 cd -
 echo "returned to $PWD"
 exit
-
-#files=$(find ./ -type f -name \*.i)
-#./redhat/kabi/kabi-parser $files | tee -a ./redhat/kabi/kabi-parser.log
-if  $verbose ; then
-	find $subdir -name \*.i -exec sh -c \
-		'echo $2; redhat/kabi/kabi-parser -k $1 $2 2>$3' \
-		sh $datafile '{}' $errfile  \; | tee -a "$textfile"
-else
-	find $subdir -name \*.i -exec sh -c \
-		'echo $2; redhat/kabi/kabi-parser -k $1 $2 >> $3 2>$4;' \
-		sh $datafile '{}' $textfile $errfile \;
-fi
 
