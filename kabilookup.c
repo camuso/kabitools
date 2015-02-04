@@ -10,20 +10,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <asm-generic/errno-base.h>
-#define NDEBUG	// comment out to enable asserts
+//#define NDEBUG	// comment out to enable asserts
 #include <assert.h>
 #include <sqlite3.h>
-
-// For this compilation unit only
-//
-#ifdef true
-#undef true
-#endif
-#ifdef false
-#undef false
-#endif
-#define true 1
-#define false 0
 
 #if !defined(NDEBUG)
 #define DBG(x) x
@@ -33,6 +22,22 @@
 #define RUN(x) x
 #endif
 
+#ifndef max
+#define max(a,b) (((a) > (b)) ? (a) : (b))
+#endif
+#ifndef min
+#define min(a,b) (((a) < (b)) ? (a) : (b))
+#endif
+
+#ifdef true
+#undef true
+#endif
+#ifdef false
+#undef false
+#endif
+#define true 1
+#define false 0
+
 typedef unsigned int bool;
 
 /*****************************************************
@@ -41,7 +46,7 @@ typedef unsigned int bool;
 
 static const char *helptext ="\
 \n\
-kabilookup [options] searchstr datafile\n\
+kabilookup [options] declstr datafile\n\
 \n\
 Searches a kabitree database to lookup declaration strings containing \n\
 the user's input. The search is continued until all containers of the\n\
@@ -68,7 +73,7 @@ indented hierarchically.\n\
                              do not have containers, for the purposes of this\n\
                              application.\n\
 Options:\n\
-    -w        whole words only \n\
+    -w        whole words only, default is \"match any and all\" \n\
     -i        ignore case \n\
     -v        verbose (default): lists all descendants as well as ancestors \n\
     -h        this help message.\n\
@@ -81,9 +86,6 @@ static bool kp_verbose = true;
 ** global sqlite3 data
 ******************************************************/
 static struct sqlite3 *db = NULL;
-static sqlite3_stmt *stmt_decl_search;
-static sqlite3_stmt *stmt_id_search;
-static sqlite3_stmt *stmt_get_row;
 static const char *table = "kabitree";
 
 // schema enumeration
@@ -97,17 +99,73 @@ enum schema {
 	COL_PARENTDECL,
 };
 
-#define PFXSIZ 16
-#define DECLSIZ 256
+/*****************************************************
+** View Management
+******************************************************/
+
+#define INTSIZ 33
+#define PFXSIZ 17
+#define DECLSIZ 257
 
 struct row {
-	long id;
-	long parentid;
-	int level;
-	int flags;
+	char id[INTSIZ];	// Returned by sqlite as hex char strings
+	char parentid[INTSIZ];	//	:
+	char level[INTSIZ];	//	:
+	char flags[INTSIZ];	//	:
 	char prefix[PFXSIZ];
 	char decl[DECLSIZ];
+	char parentdecl[DECLSIZ];
 };
+
+struct row *new_row()
+{
+	struct row *pr = malloc(sizeof(struct row));
+	memset(pr, 0, sizeof(struct row));
+	return pr;
+}
+
+void delete_row(struct row *pr)
+{
+	free(pr);
+}
+
+struct table {
+	int tablesize;
+	int rowcount;
+	int arraysize;
+	union {
+		struct row **rows;
+		char *array;
+	};
+};
+
+struct table *new_table(int rowcount)
+{
+	struct table *tptr = malloc(sizeof(table));
+	tptr->arraysize = rowcount * sizeof(struct row);
+	tptr->rowcount = rowcount;
+	tptr->array = malloc(tptr->arraysize);
+	tptr->tablesize = sizeof(struct table) + tptr->arraysize;
+	memset(*(tptr)->rows, 0, tptr->arraysize);
+	return tptr;
+}
+
+void delete_table(struct table *tptr)
+{
+	free(tptr->rows);
+	free(tptr);
+}
+
+static void copy_row(struct row *drow, struct row *srow)
+{
+	strncpy(drow->id,         srow->id,         INTSIZ-1);
+	strncpy(drow->parentid,   srow->parentid,   INTSIZ-1);
+	strncpy(drow->level,      srow->level,      INTSIZ-1);
+	strncpy(drow->flags,      srow->flags,      INTSIZ-1);
+	strncpy(drow->prefix,     srow->prefix,     PFXSIZ-1);
+	strncpy(drow->decl,       srow->decl,       DECLSIZ-1);
+	strncpy(drow->parentdecl, srow->parentdecl, DECLSIZ-1);
+}
 
 /*****************************************************
 ** SQLite utilities and wrappers
@@ -115,25 +173,29 @@ struct row {
 // if this were c++, db and table would be private members
 // of a sql class, accessible only by member function calls.
 
+static const char *kabitable = "kabitree";
+
 inline struct sqlite3 *sql_get_db()
 {
 	return db;
 }
 
-inline void sql_set_table(const char *tablename)
+inline void sql_set_kabitable(const char *tablename)
 {
-	table = (char *)tablename;
+	kabitable = (char *)tablename;
 }
 
-inline const char *sql_get_table()
+inline const char *sql_get_kabitable()
 {
-	return (const char *)table;
+	return (const char *)kabitable;
 }
 
-bool sql_exec(const char *stmt)
+bool sql_exec(const char *stmt,
+	      int (*cb)(void *, int, char**, char**),
+	      void *arg)
 {
 	char *errmsg;
-	int ret = sqlite3_exec(db, stmt, 0, 0, &errmsg);
+	int ret = sqlite3_exec(db, stmt, cb, arg, &errmsg);
 
 	if (ret != SQLITE_OK) {
 		fprintf(stderr,
@@ -148,59 +210,136 @@ bool sql_exec(const char *stmt)
 
 int sql_process_field(void *output, int argc, char **argv, char **colnames)
 {
+	if (argc != 1)
+		return false;
 	strcpy(output, argv[0]);
 	return 0;
 }
 
+// sql_process_row - callback to process one row from a select call
+//
+// NOTE: the "output" parameter, though cast as void * for the SQLite API,
+//       must have been orignially created as struct row *, preferably
+//       with a call to new_row().
+//
 int sql_process_row(void *output, int argc, char **argv, char **colnames)
 {
 	int i;
-	int rowarysize = argc * sizeof(struct row);
-	void *hunk = malloc(rowarysize);
-	struct row **rows = (struct row **)hunk;
+	struct row *pr = (struct row *)output;
 
-	printf("argc: %d\n", argc);
-	memset(rows, 0, rowarysize);
+	for (i = 0; i < argc; ++i) {
+		DBG(printf("%s ", argv[i]);)
 
-	for (i = 0; i < argc; ++i)
-	{
-		printf("%s ", colnames[i]);
+		switch (i){
+		case COL_ID	    :
+			strncpy(pr->id, argv[i], INTSIZ-1);
+			break;
+		case COL_PARENTID   :
+			strncpy(pr->parentid, argv[i], INTSIZ-1);
+			break;
+		case COL_LEVEL	    :
+			strncpy(pr->level, argv[i], INTSIZ-1);
+			break;
+		case COL_FLAGS	    :
+			strncpy(pr->flags, argv[i], INTSIZ-1);
+			break;
+		case COL_PREFIX	    :
+			strncpy(pr->prefix, argv[i], PFXSIZ-1);
+			break;
+		case COL_DECL	    :
+			strncpy(pr->decl, argv[i], DECLSIZ-1);
+			break;
+		case COL_PARENTDECL :
+			strncpy(pr->parentdecl, argv[i], DECLSIZ-1);
+			break;
+		default: return -1;
+		}
+
 	}
+	DBG(putchar('\n');)
 
-	putchar('\n');
-
-	for (i = 0; i < argc; ++i)
-	{
-		printf("%s ", argv[i]);
-	}
-	putchar('\n');
-	putchar('\n');
-
-	//strcpy(output, argv[0]);
-	output = hunk;
 	return 0;
 }
 
-bool sql_get_row(char *searchstr, char *output)
+// sql_get_one_row - extract one row from a view, given the offset into the view
+//
+// NOTE: the struct row * must have been orignially created elsewhere,
+//       preferably with a call to new_row().
+//
+bool sql_get_one_row(char *viewname, int offset, struct row *retrow)
 {
-	char *errmsg;
+	bool rval;
+	char *zsql = sqlite3_mprintf("select * from %q limit 1 offset %d",
+				     viewname, offset);
+	DBG(puts(zsql);)
+	rval = sql_exec(zsql, sql_process_row, (void *)retrow);
+	sqlite3_free(zsql);
+	return rval;
+}
+
+bool sql_get_rows_on_decl(char *viewname, char *declstr, char *output)
+{
+	bool rval;
 	char *zsql = sqlite3_mprintf
-			("select id,parentid,level,prefix,decl,parentdecl "
-			 "from kabitree where decl like \'%%%q%%\'",
-			  searchstr);
+			("select * from %q where decl like \'%%%q%%\'",
+			  viewname, declstr);
+	DBG(puts(zsql);)
+	rval = sql_exec(zsql, sql_process_row, (void *)output);
+	sqlite3_free(zsql);
+	return rval;
+}
 
-	printf("zsql: %s\n", zsql);
-	getchar();
-	int retval = sqlite3_exec
-			(db, zsql, sql_process_row, (void *)output, &errmsg);
+bool sql_get_rows_on_id(char *viewname, char *id, char *output)
+{
+	bool rval;
+	char *foo = sqlite3_mprintf("select * from %q where id == %q",
+			 viewname, id);
+	DBG(puts(foo);)
+	rval = sql_exec(foo, sql_process_row, (void *)output);
+	sqlite3_free(foo);
+	return rval;
+}
 
-	if (retval != SQLITE_OK) {
-		fprintf(stderr,
-			"\nError in statement: %s [%s].\n", zsql, errmsg);
-		sqlite3_free(errmsg);
-		return false;
-	}
-	return true;
+bool sql_create_view_on_decl(char *viewname, char *declstr)
+{
+	bool rval;
+	char *zsql = sqlite3_mprintf("create temp view %q as select * from "
+				     "%q where decl like \'%%%q%%\'"
+				     "and level > 2",
+				     viewname, sql_get_kabitable(), declstr);
+	DBG(puts(zsql);)
+	rval = sql_exec(zsql, 0, 0);
+	sqlite3_free(zsql);
+	return rval;
+}
+
+// sql_process_row_count - callback to process the return for a count request
+//
+// NOTE: The count comes back as a string (char *) representation of a
+//       hexadecimal number.
+//
+int sql_process_row_count(void *output, int argc, char **argv, char **colnames)
+{
+	if ((argc != 1) || (output == NULL))
+		return -1;
+
+	memcpy(output, argv[0], INTSIZ-1); // values go out of scope
+	return 0;
+}
+
+// sql_row_count - counts the number of rows in a view
+//
+// NOTE: Create a view first. See sql_creat_view_on_decl() above.
+//
+bool sql_row_count(char *viewname, char *count)
+{
+	bool rval;
+	char *zsql = sqlite3_mprintf("select count (id) from %q", viewname);
+
+	DBG(puts(zsql);)
+	rval = sql_exec(zsql, sql_process_row_count, (void *)count);
+	sqlite3_free(zsql);
+	return rval;
 }
 
 bool sql_open(const char *sqlfilename)
@@ -219,6 +358,87 @@ bool sql_open(const char *sqlfilename)
 inline void sql_close(sqlite3 *db)
 {
 	sqlite3_close(db);
+}
+
+/*****************************************************
+** Mine the database and Format the Results
+******************************************************/
+
+static char *indent(int padsiz)
+{
+	static char buf[DECLSIZ];
+
+	memset(buf, 0, DECLSIZ);
+	padsiz = min(padsiz, DECLSIZ);
+
+	if (padsiz < 1)
+		return buf;
+
+	while(padsiz--)
+		buf[padsiz] = ' ';
+
+	return buf;
+}
+
+static int get_ancestry(struct row* prow)
+{
+	int i;
+	int level;
+	char *parentid = prow->parentid;
+	char **eptr = NULL;
+	struct table *ptbl;
+
+	level = strtoul(prow->level, eptr, 10);
+	ptbl = new_table(level);
+
+	// Put the row passed in as an argument into the first
+	// row of the new table. Then go get its ancestors.
+	copy_row(ptbl->rows[0], prow);
+
+	for (i = 1; i < level; ++i) {
+		sql_get_rows_on_id((char *)sql_get_kabitable(),
+				   parentid,
+				   (void*)(ptbl->rows)[i]);
+		parentid = (ptbl->rows)[i]->parentid;
+	}
+
+	for (i = level - 1; i >= 0; --i)
+	{
+		int curlvl = strtoul(ptbl->rows[i]->level, eptr, 10);
+
+		if (curlvl < 2)
+			printf("%s %s\n",
+			       ptbl->rows[i]->prefix, ptbl->rows[i]->decl);
+		else
+			printf("%s%s\n",
+			       indent(curlvl-1), ptbl->rows[i]->decl);
+	}
+	return 0;
+}
+
+static int start(char *declstr, char *filename)
+{
+	int i;
+	int rowcount;
+	char countstr[INTSIZ];
+	char *viewname = "searchview";
+	struct row *prow = new_row();
+
+	sql_open(filename);
+
+	sql_create_view_on_decl(viewname, declstr);
+	sql_row_count(viewname, countstr);
+	sscanf(countstr, "%d", &rowcount);
+
+	for (i = 0; i < rowcount; ++i) {
+		memset(prow, 0, sizeof(struct row));
+		sql_get_one_row(viewname, i, prow);
+		get_ancestry(prow);
+
+	}
+
+	delete_row(prow);
+	return 0;
 }
 
 /*****************************************************
@@ -261,22 +481,6 @@ static int get_options(char **argv)
 	return index;
 }
 
-
-static int get_ancestry(int level, long parentid)
-{
-	return 0;
-}
-
-static int start(char *searchstr, char *filename)
-{
-	struct row **rows = NULL;
-
-	sql_open(filename);
-	sql_get_row(searchstr, (void *)rows);
-
-	return 0;
-}
-
 /*****************************************************
 ** main
 ******************************************************/
@@ -284,7 +488,7 @@ static int start(char *searchstr, char *filename)
 int main(int argc, char **argv)
 {
 	char *filename;
-	char *searchstr;
+	char *declstr;
 	int argindex = 0;
 
 	DBG(setbuf(stdout, NULL);)
@@ -301,10 +505,10 @@ int main(int argc, char **argv)
 	argv += argindex;
 	argc -= argindex;
 
-	searchstr = argv[0];
+	declstr = argv[0];
 	filename = argv[1];
 
-	start(searchstr, filename);
+	start(declstr, filename);
 	return 0;
 }
 
