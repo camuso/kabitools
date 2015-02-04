@@ -1,16 +1,13 @@
 
-hostprogs-y	:= kabi
-always		:= $(hostprogs-y)
+PARSER_CFLAGS	+= "-I/usr/include/sparse"
+PARSER_LIBS	:= "-lsparse"
+LOOKUP_CFLAGS	+=
+LOOKUP_LIBS	:= "-lsqlite3"
 
-kabi-objs	:= kabi.o
+all	: kabi kabilookup
 
-HOST_EXTRACFLAGS += "-I/usr/include/sparse"
-HOSTLOADLIBES_kabi := "-lsparse"
+kabi 	: kabi.c
+	cc $(PARSER_CFLAGS) -o kabi kabi.c $(PARSER_LIBS)
 
-targets += kabi.c
-
-kabi.o : kabi.c
-	echo "hostprogs-y: $(hostprogs-y)"
-	cc $(HOST_EXTRACFLAGS) -o kabi kabi.c -lsparse -lsqlite3
-
-
+kabilookup : kabilookup.c
+	cc $(LOOKUP_CFLAGS) -o kabilookup kabilookup.c $(LOOKUP_LIBS)
