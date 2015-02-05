@@ -110,7 +110,7 @@ if  $verbose ; then
 	find $subdir -name \*.i -exec sh -c \
 		'grep -qm1 "__ksymtab_" $1; \
 		if [ $? -eq 0 ]; then \
-			redhat/kabi/kabi-parser -n $1 2>$2; \
+			redhat/kabi/kabi-parser $1 2>$2; \
 		fi' \
 		sh '{}' $errfile  \; | tee -a "$textfile"
 else
@@ -118,14 +118,14 @@ else
 		'grep -qm1 "__ksymtab_" $1; \
 		if [ $? -eq 0 ]; then \
 			echo $1; \
-			redhat/kabi/kabi-parser -n $1 >> $2 2>$3; \
+			redhat/kabi/kabi-parser $1 >> $2 2>$3; \
 		fi' \
 		sh '{}' $textfile $errfile \;
 fi
 
 echo "Importing text file: $textfile to database: $datafile ..."
 sqlite3 $datafile <<EOF
-create table kabitree (id, parentid, level, flags, prefix, decl, parentdecl);
+create table kabitree (level integer,id integer64,parentid integer64,flags integer, prefix text, decl text, parentdecl text);
 .separator ','
 .import $textfile kabitree
 EOF
