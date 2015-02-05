@@ -325,22 +325,22 @@ static void format_declaration(struct knode *kn)
 	struct knode *parent = kn->parent;
 
 	compose_declaration(kn, sbuf);
-	printf(", %s", sbuf);
+	printf(",%s", sbuf);
 
 	if (kn == parent)
 		goto out;
 
 	if (!parent || (kn->flags & CTL_FILE)) {
-		printf(", ");
+		printf(",");
 		goto out;
 	}
 
 	if (parent->declist) {
 		compose_declaration(parent, sbuf);
-		printf(", %s", sbuf);
+		printf(",%s", sbuf);
 	}
 	else
-		printf(", %s", parent->name);
+		printf(",%s", parent->name);
 out:
 	free(sbuf);
 	putchar('\n');
@@ -717,8 +717,8 @@ static void show_knodes(struct knodelist *klist)
 		if (!kp_verbose && kn->flags & CTL_NESTED)
 			return;
 
-		printf("%lu, %lu,%2d, %08x, %s",
-		       kn->id, kn->parent->id, kn->level, kn->flags, pfx);
+		printf("%d,%lu,%lu,%08x,%s",
+		       kn->level, kn->id, kn->parent->id, kn->flags, pfx);
 
 		format_declaration(kn);
 
