@@ -80,25 +80,19 @@ typedef unsigned int bool;
 
 static const char *helptext ="\
 \n\
-kabi [options] filespec\n\
+kabi [options] files\n\
 \n\
-Parses \".i\" (intermediate, c-preprocessed) files for exported symbols and\n\
-symbols of structs and unions that are used by the exported symbols.\n\
+    Parses \".i\" (intermediate, c-preprocessed) files for exported \n\
+    symbols and symbols of structs and unions that are used by the \n\
+    exported symbols. \n\
 \n\
-    filespec  File or files (wildcards ok) to be processed\n\
+    files   - File or files (wildcards ok) to be processed\n\
 \n\
 Options:\n\
-\n\
     -v        Verbose (default): Lists all the arguments of functions and\n\
               recursively descends into compound types to gather all the\n\
               information about them.\n\
-\n\
     -v-       Concise: Lists only the exported functions and their args.\n\
-\n\
-    -u        Lists users of every compound type\n\
-\n\
-    -u-       Turn off lists of users (default)\n\
-\n\
     -h        This help message.\n\
 \n";
 
