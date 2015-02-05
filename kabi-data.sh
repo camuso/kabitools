@@ -17,17 +17,17 @@ $0 -d <directory> -o <textfile> [-s subdir -b datafile -e errfile -v -h]
 
   -d directory - Required. Directory at top of tree to be parsed.
   -s subdir    - Optional directory from which to start parsing, relative
-                 to the top of the tree defined by the required \"directory\"
-		 argument above.
+                 to the top of the tree defined by the required "directory"
+                 argument above.
                  Default is from the top of the kernel tree.
-  -o textfile  - Optional text file. Default is ../kabilist.log relative to
+  -o textfile  - Optional text file. Default is ../kabi-data.log relative to
                  the top of the kernel tree.
                  If it already exists, the text file will be destroyed and
                  rebuilt.
-  -b datafile  - Optional database file. The default is ../kabitree.sql
+  -b datafile  - Optional database file. The default is ../kabi-data.sql
                  relative to the top of the kernel tree.
                  If it already exists, the database file will be destroyed
-		 and rebuilt.
+                 and rebuilt.
   -e errfile   - Optional error file. By default, errors are sent
                  to /dev/null
   -v           - Verbose output
@@ -41,8 +41,8 @@ currentdir=$PWD
 verbose=false
 directory=""
 subdir="./"
-textfile="../kabilist.log"
-datafile="../kabitree.sql"
+textfile="../kabi-data.log"
+datafile="../kabi-data.sql"
 errfile="/dev/null"
 
 
