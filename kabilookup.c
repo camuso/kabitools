@@ -103,9 +103,9 @@ enum schema {
 ** View Management
 ******************************************************/
 
-#define INTSIZ 33
-#define PFXSIZ 17
-#define DECLSIZ 257
+#define INTSIZ 32
+#define PFXSIZ 16
+#define DECLSIZ 256
 
 struct row {
 	char id[INTSIZ];	// Returned by sqlite as hex char strings
@@ -134,7 +134,7 @@ struct table {
 	int rowcount;
 	int arraysize;
 	union {
-		struct row **rows;
+		struct row *rows;
 		char *array;
 	};
 };
@@ -146,7 +146,7 @@ struct table *new_table(int rowcount)
 	tptr->rowcount = rowcount;
 	tptr->array = malloc(tptr->arraysize);
 	tptr->tablesize = sizeof(struct table) + tptr->arraysize;
-	memset(*(tptr)->rows, 0, tptr->arraysize);
+	memset(tptr->array, 0, tptr->arraysize);
 	return tptr;
 }
 
@@ -289,14 +289,15 @@ bool sql_get_rows_on_decl(char *viewname, char *declstr, char *output)
 	return rval;
 }
 
-bool sql_get_rows_on_id(char *viewname, char *id, char *output)
+bool sql_get_rows_on_id(char *viewname, char *idstr, char *output)
 {
 	bool rval;
-	char *foo = sqlite3_mprintf("select * from %q where id == %q",
-			 viewname, id);
-	DBG(puts(foo);)
-	rval = sql_exec(foo, sql_process_row, (void *)output);
-	sqlite3_free(foo);
+	char *zsql = sqlite3_mprintf("select * from %q where id == '%q'",
+				    viewname, idstr);
+	DBG(puts(zsql);)
+	rval = sql_exec(zsql, sql_process_row, (void *)output);
+	sqlite3_free(zsql);
+
 	return rval;
 }
 
@@ -384,7 +385,6 @@ static int get_ancestry(struct row* prow)
 {
 	int i;
 	int level;
-	char *parentid = prow->parentid;
 	char **eptr = NULL;
 	struct table *ptbl;
 
@@ -393,25 +393,26 @@ static int get_ancestry(struct row* prow)
 
 	// Put the row passed in as an argument into the first
 	// row of the new table. Then go get its ancestors.
-	copy_row(ptbl->rows[0], prow);
+	copy_row(ptbl->rows, prow);
 
-	for (i = 1; i < level; ++i) {
+	for (i = 0; i < level; ++i) {
 		sql_get_rows_on_id((char *)sql_get_kabitable(),
-				   parentid,
-				   (void*)(ptbl->rows)[i]);
-		parentid = (ptbl->rows)[i]->parentid;
+				   ptbl->rows->parentid,
+				   (void*)ptbl->rows);
+		++ptbl->rows;
 	}
 
-	for (i = level - 1; i >= 0; --i)
-	{
-		int curlvl = strtoul(ptbl->rows[i]->level, eptr, 10);
+	for (i = level; i >= 0; --i) {
+		int curlvl;
+
+		--ptbl->rows;
+
+		curlvl = strtoul(ptbl->rows->level, eptr, 10);
 
 		if (curlvl < 2)
-			printf("%s %s\n",
-			       ptbl->rows[i]->prefix, ptbl->rows[i]->decl);
+			printf("%s %s\n", ptbl->rows->prefix, ptbl->rows->decl);
 		else
-			printf("%s%s\n",
-			       indent(curlvl-1), ptbl->rows[i]->decl);
+			printf("%s%s\n", indent(curlvl-1), ptbl->rows->decl);
 	}
 	return 0;
 }
