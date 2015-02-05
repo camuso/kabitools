@@ -83,9 +83,9 @@ static const char *table = "kabitree";
 
 // schema enumeration
 enum schema {
+	COL_LEVEL,
 	COL_ID,
 	COL_PARENTID,
-	COL_LEVEL,
 	COL_FLAGS,
 	COL_PREFIX,
 	COL_DECL,
@@ -101,9 +101,9 @@ enum schema {
 #define DECLSIZ 256
 
 struct row {
+	char level[INTSIZ];	//	:
 	char id[INTSIZ];	// Returned by sqlite as hex char strings
 	char parentid[INTSIZ];	//	:
-	char level[INTSIZ];	//	:
 	char flags[INTSIZ];	//	:
 	char prefix[PFXSIZ];
 	char decl[DECLSIZ];
@@ -151,9 +151,9 @@ void delete_table(struct table *tptr)
 
 static void copy_row(struct row *drow, struct row *srow)
 {
+	strncpy(drow->level,      srow->level,      INTSIZ-1);
 	strncpy(drow->id,         srow->id,         INTSIZ-1);
 	strncpy(drow->parentid,   srow->parentid,   INTSIZ-1);
-	strncpy(drow->level,      srow->level,      INTSIZ-1);
 	strncpy(drow->flags,      srow->flags,      INTSIZ-1);
 	strncpy(drow->prefix,     srow->prefix,     PFXSIZ-1);
 	strncpy(drow->decl,       srow->decl,       DECLSIZ-1);
@@ -224,14 +224,14 @@ int sql_process_row(void *output, int argc, char **argv, char **colnames)
 		DBG(printf("%s ", argv[i]);)
 
 		switch (i){
+		case COL_LEVEL	    :
+			strncpy(pr->level, argv[i], INTSIZ-1);
+			break;
 		case COL_ID	    :
 			strncpy(pr->id, argv[i], INTSIZ-1);
 			break;
 		case COL_PARENTID   :
 			strncpy(pr->parentid, argv[i], INTSIZ-1);
-			break;
-		case COL_LEVEL	    :
-			strncpy(pr->level, argv[i], INTSIZ-1);
 			break;
 		case COL_FLAGS	    :
 			strncpy(pr->flags, argv[i], INTSIZ-1);
@@ -419,7 +419,7 @@ static int get_ancestry(struct row* prow)
 	for (i = level; i >= 0; --i) {
 		int curlvl = strtoul(ptbl->rows->level, eptr, 10);
 
-		if (curlvl < 4)
+		if (curlvl < 3)
 			printf("%s%s %s\n", indent(curlvl-1),
 			       ptbl->rows->prefix, ptbl->rows->decl);
 		else
