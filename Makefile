@@ -4,10 +4,10 @@ PARSER_LIBS	:= "-lsparse"
 LOOKUP_CFLAGS	+=
 LOOKUP_LIBS	:= "-lsqlite3"
 
-all	: kabi kabilookup
+all	: kabi-parser kabi-lookup
 
-kabi 	: kabi.c
-	cc $(PARSER_CFLAGS) -o kabi kabi.c $(PARSER_LIBS)
+kabi-parser	: kabi.c
+	cc $(PARSER_CFLAGS) -o kabi-parser kabi.c $(PARSER_LIBS)
 
-kabilookup : kabilookup.c
-	cc $(LOOKUP_CFLAGS) -o kabilookup kabilookup.c $(LOOKUP_LIBS)
+kabi-lookup : kabilookup.c
+	cc $(LOOKUP_CFLAGS) -o kabi-lookup kabilookup.c $(LOOKUP_LIBS)
