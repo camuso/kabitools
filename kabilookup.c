@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <asm-generic/errno-base.h>
-//#define NDEBUG	// comment out to enable asserts
+#define NDEBUG	// comment out to enable asserts
 #include <assert.h>
 #include <sqlite3.h>
 
@@ -48,38 +48,31 @@ static const char *helptext ="\
 \n\
 kabilookup [options] declstr datafile\n\
 \n\
-Searches a kabitree database to lookup declaration strings containing \n\
-the user's input. The search is continued until all containers of the\n\
-declaration are found. The results of the search are printed to stout\n\
-indented hierarchically.\n\
+    Searches a kabitree database to lookup declaration strings \n\
+    containing the user's input. The search is continued until all \n\
+    ancestors (containers) of the declaration are found. The results \n\
+    of the search are printed to stdout andindented hierarchically.\n\
 \n\
-    searchstr - String to lookup. \n\
-    datafile  - Database file containing a kabitree table defined as follows\n\
-\n\
-                id         - Unique number to identify the record. \n\
-                parentid   - Unique number identifying the record having the\n\
-                             \"parent\" or container of the object declared \n\
-		           in the current record.\n\
-                level      - Nested level of the object indicates how deep\n\
-                             the object is in the primordial ancestor's tree.\n\
-                flags      - Used by code to identify record types (e.g. \n\
-                             \"FILE\", \"EXPORTED\", etc). Also used for code\n\
-                             flow. \n\
-                prefix     - String containing the record type. \n\
-                decl       - String containing the declaration of the object\n\
-                             in the kernel. \n\
-                parentdecl - String containing the declaration of the \n\
-                             containing object, where there is one. Files\n\
-                             do not have containers, for the purposes of this\n\
-                             application.\n\
+    declstr   - Declaration to lookup. Use double quotes \"\" around \n\
+    compound strings. \n\
+    datafile  - Database file containing the tree of exported functions \n\
+                and any and all symbols explicitly or implicitly affected. \n\
+                This file should be created by the kabi-data.sh tool. \n\
 Options:\n\
+              Limits on the number of records displayed: \n\
+    -0        no limits \n\
+    -1        10 \n\
+    -2        100 \n\
+    -3        1000 \n\
     -w        whole words only, default is \"match any and all\" \n\
     -i        ignore case \n\
-    -v        verbose (default): lists all descendants as well as ancestors \n\
+    -v        verbose (default): lists all ancestors \n\
     -h        this help message.\n\
 \n";
 
-static bool kp_verbose = true;
+static bool kb_verbose = true;
+static bool kb_whole_word = false;
+static int kb_limit = 0;
 
 
 /*****************************************************
@@ -280,9 +273,17 @@ bool sql_get_one_row(char *viewname, int offset, struct row *retrow)
 bool sql_get_rows_on_decl(char *viewname, char *declstr, char *output)
 {
 	bool rval;
-	char *zsql = sqlite3_mprintf
-			("select * from %q where decl like \'%%%q%%\'",
-			  viewname, declstr);
+	char *zsql;
+
+	if (kb_whole_word)
+		zsql = sqlite3_mprintf("select distinct * from %q where "
+				       "decl == \'%q\'",
+				       viewname, declstr);
+	else
+		zsql = sqlite3_mprintf("select distinct * from %q where "
+				       "decl like \'%%%q%%\'",
+				       viewname, declstr);
+
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, sql_process_row, (void *)output);
 	sqlite3_free(zsql);
@@ -292,8 +293,9 @@ bool sql_get_rows_on_decl(char *viewname, char *declstr, char *output)
 bool sql_get_rows_on_id(char *viewname, char *idstr, char *output)
 {
 	bool rval;
-	char *zsql = sqlite3_mprintf("select * from %q where id == '%q'",
-				    viewname, idstr);
+	char *zsql = sqlite3_mprintf("select distinct * from %q "
+				     "where id == '%q'",
+				     viewname, idstr);
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, sql_process_row, (void *)output);
 	sqlite3_free(zsql);
@@ -304,10 +306,21 @@ bool sql_get_rows_on_id(char *viewname, char *idstr, char *output)
 bool sql_create_view_on_decl(char *viewname, char *declstr)
 {
 	bool rval;
-	char *zsql = sqlite3_mprintf("create temp view %q as select * from "
-				     "%q where decl like \'%%%q%%\'"
-				     "and level > 2",
-				     viewname, sql_get_kabitable(), declstr);
+	char *zsql;
+
+	if (! kb_limit)
+		zsql = sqlite3_mprintf
+				("create temp view %q as select distinct "
+				 "* from %q where decl like \'%%%q%%\'"
+				 "and level > 2",
+				 viewname, sql_get_kabitable(), declstr);
+	else
+		zsql = sqlite3_mprintf
+				("create temp view %q as select distinct "
+				 "* from %q where decl like \'%%%q%%\'"
+				 "and level > 2 limit %d",
+				 viewname, sql_get_kabitable(), declstr,
+				 kb_limit);
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, 0, 0);
 	sqlite3_free(zsql);
@@ -317,7 +330,7 @@ bool sql_create_view_on_decl(char *viewname, char *declstr)
 // sql_process_row_count - callback to process the return for a count request
 //
 // NOTE: The count comes back as a string (char *) representation of a
-//       hexadecimal number.
+//       decimal number.
 //
 int sql_process_row_count(void *output, int argc, char **argv, char **colnames)
 {
@@ -406,8 +419,9 @@ static int get_ancestry(struct row* prow)
 	for (i = level; i >= 0; --i) {
 		int curlvl = strtoul(ptbl->rows->level, eptr, 10);
 
-		if (curlvl < 2)
-			printf("%s %s\n", ptbl->rows->prefix, ptbl->rows->decl);
+		if (curlvl < 4)
+			printf("%s%s %s\n", indent(curlvl-1),
+			       ptbl->rows->prefix, ptbl->rows->decl);
 		else
 			printf("%s%s\n", indent(curlvl-1), ptbl->rows->decl);
 		--ptbl->rows;
@@ -449,7 +463,15 @@ static int parse_opt(char opt, int state)
 	int optstatus = 1;
 
 	switch (opt) {
-	case 'v' : kp_verbose = state;	// kp_verbose is global to this file
+	case '0' : kb_limit = 0;
+		   break;
+	case '1' : kb_limit = 10;
+		   break;
+	case '2' : kb_limit = 100;
+		   break;
+	case '3' : kb_limit = 1000;
+		   break;
+	case 'v' : kb_verbose = state;
 		   break;
 	case 'h' : puts(helptext);
 		   exit(0);
