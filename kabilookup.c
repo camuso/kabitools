@@ -389,30 +389,28 @@ static int get_ancestry(struct row* prow)
 	struct table *ptbl;
 
 	level = strtoul(prow->level, eptr, 10);
-	ptbl = new_table(level);
+	ptbl = new_table(level+1);
 
 	// Put the row passed in as an argument into the first
 	// row of the new table. Then go get its ancestors.
 	copy_row(ptbl->rows, prow);
 
 	for (i = 0; i < level; ++i) {
-		sql_get_rows_on_id((char *)sql_get_kabitable(),
-				   ptbl->rows->parentid,
-				   (void*)ptbl->rows);
+		char *parentid = ptbl->rows->parentid;
 		++ptbl->rows;
+		sql_get_rows_on_id((char *)sql_get_kabitable(),
+				   parentid,
+				   (void*)ptbl->rows);
 	}
 
 	for (i = level; i >= 0; --i) {
-		int curlvl;
-
-		--ptbl->rows;
-
-		curlvl = strtoul(ptbl->rows->level, eptr, 10);
+		int curlvl = strtoul(ptbl->rows->level, eptr, 10);
 
 		if (curlvl < 2)
 			printf("%s %s\n", ptbl->rows->prefix, ptbl->rows->decl);
 		else
 			printf("%s%s\n", indent(curlvl-1), ptbl->rows->decl);
+		--ptbl->rows;
 	}
 	return 0;
 }
