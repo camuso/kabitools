@@ -35,7 +35,7 @@
 #ifdef false
 #undef false
 #endif
-#define true 1
+#define true  1
 #define false 0
 
 typedef unsigned int bool;
@@ -67,7 +67,7 @@ kabi-lookup -x [options] declstr exportspath datafile \n\
     datafile    - Required. Database file containing the tree of exported \n\
                   functions and any and all symbols explicitly or implicitly \n\
                   affected. This file should be created by the kabi-data.sh \n\
-		  tool. \n\
+                  tool. \n\
 Options:\n\
         Limits on the number of records displayed: \n\
     -0  no limits \n\
@@ -90,6 +90,8 @@ static bool kb_verbose = true;
 static bool kb_whole_word = false;
 static int kb_limit = 0;
 static bool kb_exports_only = false;
+
+static char *indent(int padsiz);
 
 /*****************************************************
 ** global sqlite3 data
@@ -219,8 +221,9 @@ bool sql_exec(const char *stmt,
 
 int sql_process_field(void *output, int argc, char **argv, char **colnames)
 {
-	if (argc != 1)
-		return false;
+	if (argc != 1 || !colnames)
+		return -1;
+
 	strcpy(output, argv[0]);
 	return 0;
 }
@@ -235,6 +238,9 @@ int sql_process_row(void *output, int argc, char **argv, char **colnames)
 {
 	int i;
 	struct row *pr = (struct row *)output;
+
+	if (!argc || !colnames)
+		return -1;
 
 	for (i = 0; i < argc; ++i) {
 		DBG(printf("%s ", argv[i]);)
@@ -267,6 +273,27 @@ int sql_process_row(void *output, int argc, char **argv, char **colnames)
 	}
 	DBG(putchar('\n');)
 
+	return 0;
+}
+
+// sql_print_row - callback to print one row from a select call
+//
+// NOTE: the "output" parameter is unused here.
+//       also, this function will print rows in the order in which they
+//       are returned by the database query that called it, and only
+//	 the FILE prefix will be printed and none of the other prefixes.
+//
+int sql_print_row(void *output, int argc, char **argv, char **colnames)
+{
+	if (!argc || output || !colnames)
+		return -1;
+
+	if (strtoul(argv[COL_LEVEL],0,0) == 0)
+		printf("\n%s ", argv[COL_PREFIX]);
+
+	printf("%s%s\n",
+	       indent((int)strtoul(argv[COL_LEVEL],0,0)),
+	       argv[COL_DECL]);
 	return 0;
 }
 
@@ -350,7 +377,7 @@ bool sql_create_view_on_decl(char *viewname, char *declstr)
 //
 int sql_process_row_count(void *output, int argc, char **argv, char **colnames)
 {
-	if ((argc != 1) || (output == NULL))
+	if ((argc != 1) || !output || !colnames)
 		return -1;
 
 	memcpy(output, argv[0], INTSIZ-1); // values go out of scope
@@ -481,22 +508,36 @@ static int do_exports_only(const char *declstr,
 	if (! sql_open(datafile))
 		return -1;
 
-	zsql = sqlite3_mprintf(
-			"select * from %q where level=0 "
-			"and decl like '%%%q%%' union select * from %q "
-			"where level=1 and decl like '%%%q%%' union select * "
-			"from %q where level=2 and decl like '%%%q%%' "
-			"order by id;",
-			kabitable, exportspath,
-			kabitable, declstr,
-			kabitable, declstr);
+	zsql = sqlite3_mprintf("CREATE temp VIEW A as select * from %q "
+			       "where level=0 and decl like '%%%q%%'",
+			       kabitable, exportspath);
+	DBG(puts(zsql);)
+	if (!(rval = sql_exec(zsql, 0, 0)))
+		goto out;
 
-	rval = sql_exec(zsql, 0, 0);
+	zsql = sqlite3_mprintf("CREATE temp VIEW B as select * from %q "
+			       "where level=1 and decl like '%%%q%%'",
+			       kabitable, declstr);
+	DBG(puts(zsql);)
+	if (!(rval = sql_exec(zsql, 0, 0)))
+		goto out;
+
+	zsql = sqlite3_mprintf("CREATE temp VIEW C as select * from %q "
+			       "where level=2 and decl like '%%%q%%'",
+			       kabitable, declstr);
+	DBG(puts(zsql);)
+	if (!(rval = sql_exec(zsql, 0, 0)))
+		goto out;
+
+	zsql = sqlite3_mprintf("select * from A union "
+			       "select * from B union "
+			       "select * from C order by id");
+	DBG(puts(zsql);)
+	rval = sql_exec(zsql, sql_print_row, 0);
+out:
 	sqlite3_free(zsql);
 	return rval ? 0 : -1;
 }
-
-
 
 /*****************************************************
 ** Command line option parsing
@@ -632,5 +673,6 @@ int main(int argc, char **argv)
 		do_exports_only(declstr, exportspath, datafile);
 	else
 		start(declstr, datafile);
+	sql_close(db);
 	return 0;
 }
