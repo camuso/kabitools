@@ -46,34 +46,50 @@ typedef unsigned int bool;
 
 static const char *helptext ="\
 \n\
-kabilookup [options] declstr datafile\n\
+kabi-lookup [options] declstr datafile \n\
+  e.g. \n\
+  $ kabi-lookup \"struct acpi\" ../kabi-data.sql \n\
+\n\
+kabi-lookup -x [options] declstr exportspath datafile \n\
+  e.g. \n\
+  $ kabi-lookup -x \"struct device\" \"drivers/pci\" ../kabi-data.sql\n\
 \n\
     Searches a kabitree database to lookup declaration strings \n\
-    containing the user's input. The search is continued until all \n\
-    ancestors (containers) of the declaration are found. The results \n\
-    of the search are printed to stdout andindented hierarchically.\n\
+    containing the user's input. In verbose mode (default), the search \n\
+    is continued until all ancestors (containers) of the declaration are \n\
+    found. The results of the search are printed to stdout and indented \n\
+    hierarchically.\n\
 \n\
-    declstr   - Declaration to lookup. Use double quotes \"\" around \n\
-    compound strings. \n\
-    datafile  - Database file containing the tree of exported functions \n\
-                and any and all symbols explicitly or implicitly affected. \n\
-                This file should be created by the kabi-data.sh tool. \n\
+    declstr     - Required. Declaration to lookup. Use double quotes \"\" \n\
+                  around compound strings. \n\
+    exportspath - Only used with -x option (see below). When using the \n\
+                  -x option, this string must be the 2nd argument. \n\
+    datafile    - Required. Database file containing the tree of exported \n\
+                  functions and any and all symbols explicitly or implicitly \n\
+                  affected. This file should be created by the kabi-data.sh \n\
+		  tool. \n\
 Options:\n\
-              Limits on the number of records displayed: \n\
-    -0        no limits \n\
-    -1        10 \n\
-    -2        100 \n\
-    -3        1000 \n\
-    -w        whole words only, default is \"match any and all\" \n\
-    -i        ignore case \n\
-    -v        verbose (default): lists all ancestors \n\
-    -h        this help message.\n\
+        Limits on the number of records displayed: \n\
+    -0  no limits \n\
+    -1  10 \n\
+    -2  100 \n\
+    -3  1000 \n\
+\n\
+        Other options \n\
+    -x  Requires exports path string as 2nd argument. Lists only exported \n\
+        functions and their arguments for the given path, e.g.\n\
+          $ kabi-lookup \"struct device\" \"drivers/pci\" ../kabi-data.sql\n\
+    -w  whole words only, default is \"match any and all\" \n\
+    -i  ignore case \n\
+    -v  verbose (default): lists all ancestors \n\
+    -v- to disable verbose \n\
+    -h  this help message.\n\
 \n";
 
 static bool kb_verbose = true;
 static bool kb_whole_word = false;
 static int kb_limit = 0;
-
+static bool kb_exports_only = false;
 
 /*****************************************************
 ** global sqlite3 data
@@ -145,7 +161,7 @@ struct table *new_table(int rowcount)
 
 void delete_table(struct table *tptr)
 {
-	free(tptr->rows);
+	free(tptr->array);
 	free(tptr);
 }
 
@@ -366,7 +382,7 @@ bool sql_open(const char *sqlfilename)
 			sqlite3_errstr(rval));
 		return false;
 	}
-	return rval;
+	return true;
 }
 
 inline void sql_close(sqlite3 *db)
@@ -422,14 +438,16 @@ static int get_ancestry(struct row* prow)
 		if (curlvl < 3)
 			printf("%s%s %s\n", indent(curlvl-1),
 			       ptbl->rows->prefix, ptbl->rows->decl);
-		else
+		else if (kb_verbose)
 			printf("%s%s\n", indent(curlvl-1), ptbl->rows->decl);
 		--ptbl->rows;
 	}
+
+	//delete_table(ptbl);
 	return 0;
 }
 
-static int start(char *declstr, char *filename)
+static int start(char *declstr, char *datafile)
 {
 	int i;
 	int rowcount;
@@ -437,7 +455,7 @@ static int start(char *declstr, char *filename)
 	char *viewname = "searchview";
 	struct row *prow = new_row();
 
-	sql_open(filename);
+	sql_open(datafile);
 
 	sql_create_view_on_decl(viewname, declstr);
 	sql_row_count(viewname, countstr);
@@ -447,16 +465,56 @@ static int start(char *declstr, char *filename)
 		memset(prow, 0, sizeof(struct row));
 		sql_get_one_row(viewname, i, prow);
 		get_ancestry(prow);
-
 	}
 
 	delete_row(prow);
 	return 0;
 }
 
+static int do_exports_only(const char *declstr,
+			   const char *exportspath,
+			   const char *datafile)
+{
+	bool rval;
+	char *zsql ;
+
+	if (! sql_open(datafile))
+		return -1;
+
+	zsql = sqlite3_mprintf(
+			"select * from %q where level=0 "
+			"and decl like '%%%q%%' union select * from %q "
+			"where level=1 and decl like '%%%q%%' union select * "
+			"from %q where level=2 and decl like '%%%q%%' "
+			"order by id;",
+			kabitable, exportspath,
+			kabitable, declstr,
+			kabitable, declstr);
+
+	rval = sql_exec(zsql, 0, 0);
+	sqlite3_free(zsql);
+	return rval ? 0 : -1;
+}
+
+
+
 /*****************************************************
 ** Command line option parsing
 ******************************************************/
+
+// Mimic c++ encapsulation. These variables are invisible to subroutines
+// above here in the file, unless they are passed by call.
+static char *declstr;		// string or substring we're seeking
+static char *datafile;		// name of the database file
+static char *exportspath;	// optional exports only view
+static int orig_argc;
+static char **orig_argv;
+enum cmderr {CMDERR_TOOMANY, CMDERR_TOOFEW};
+static const char *errstr[] = {
+	"You entered too many arguments",
+	"You entered too few arguments"
+	"\0"
+};
 
 static int parse_opt(char opt, int state)
 {
@@ -472,6 +530,8 @@ static int parse_opt(char opt, int state)
 	case '3' : kb_limit = 1000;
 		   break;
 	case 'v' : kb_verbose = state;
+		   break;
+	case 'x' : kb_exports_only = state;
 		   break;
 	case 'h' : puts(helptext);
 		   exit(0);
@@ -502,35 +562,75 @@ static int get_options(char **argv)
 	return index;
 }
 
-/*****************************************************
-** main
-******************************************************/
+static void print_cmdline() {
+	int i = 0;
+	for (i = 0; i < orig_argc; ++i)
+		printf(" %s", orig_argv[i]);
+}
 
-int main(int argc, char **argv)
+static void print_cmd_errmsg(enum cmderr err)
 {
-	char *filename;
-	char *declstr;
+	printf("\n%s. You typed ...\n  ", errstr[err]);
+	print_cmdline();
+	printf("\nPlease read the help text below.\n%s", helptext);
+}
+
+static bool process_args(int argc, char **argv)
+{
 	int argindex = 0;
 
-	DBG(setbuf(stdout, NULL);)
+	orig_argc = argc;
+	orig_argv = argv;
 
-	if (argc <= 1) {
+	if (argc <= 2) {
 		puts(helptext);
 		exit(0);
 	}
 
-	++argv;
+	++argv; --argc;
 	get_options(&argv[0]);
 
 	argindex = get_options(&argv[0]);
 	argv += argindex;
 	argc -= argindex;
 
-	declstr = argv[0];
-	filename = argv[1];
+	switch (argc) {
+	case 2: if (kb_exports_only) {
+			print_cmd_errmsg(CMDERR_TOOFEW);
+			return false;
+		}
+		declstr = argv[0];
+		datafile = argv[1];
+		break;
+	case 3: if (!kb_exports_only) {
+			print_cmd_errmsg(CMDERR_TOOMANY);
+			return false;
+		}
+		declstr = argv[0];
+		exportspath = argv[1];
+		datafile = argv[2];
+		break;
+	default: return false;
+		 break;
+	}
 
-	start(declstr, filename);
-	return 0;
+	return true;
 }
 
+/*****************************************************
+** main
+******************************************************/
 
+int main(int argc, char **argv)
+{
+	DBG(setbuf(stdout, NULL);)
+
+	if (!process_args(argc, argv))
+		return -1;
+
+	if (kb_exports_only)
+		do_exports_only(declstr, exportspath, datafile);
+	else
+		start(declstr, datafile);
+	return 0;
+}
