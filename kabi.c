@@ -176,8 +176,10 @@ struct knode {
 	char *file;
 	enum ctlflags flags;
 	int level;
-	unsigned long id;
-	unsigned long parentid;
+	long id;
+	long parentid;
+	long left;
+	long right;
 };
 
 DECLARE_PTR_LIST(knodelist, struct knode);
@@ -210,26 +212,38 @@ static inline int knode_list_size(struct knodelist *list)
 	return ptr_list_size((struct ptr_list *)(list));
 }
 
-static struct knode *map_knode
-		(struct knode *parent,
-		 struct symbol *symbol,
-		 enum ctlflags flags)
+long get_timestamp()
 {
-	time_t rawtime;
-	struct knode *newkn;
+	struct timespec ts;
 
-	time(&rawtime);
-	newkn = alloc_knode();
-	newkn->parent = parent;
-	newkn->file = parent->file;
-	newkn->flags |= flags;
-	newkn->symbol = symbol;
-	newkn->level = parent->level + 1;
-	newkn->id = (unsigned long)newkn << 32 | (uint64_t)(rawtime & (time_t)(-1));
-	newkn->parentid = parent->id;
-	add_knode(&parent->children, newkn);
-	DBG(hiwater= newkn->level > hiwater ? newkn->level : hiwater;)
-	return newkn;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	return (ts.tv_sec << 32) + ts.tv_nsec;
+}
+
+// Every call to map_knode should have a corresponding update of
+// the 'right' field when processing for the knode is complete.
+// This provides the nested hierarchy by implementing the "modified
+// preorder tree traversal algorithm".
+static struct knode *map_knode(struct knode *parent,
+			       struct symbol *symbol,
+			       enum ctlflags flags)
+{
+	struct knode *kn;
+	long timestamp = get_timestamp();
+
+	kn = alloc_knode();
+	kn->parent = parent;
+	kn->file = parent->file;
+	kn->flags |= flags;
+	kn->symbol = symbol;
+	kn->level = parent->level + 1;
+	kn->id = timestamp;
+	kn->parentid = parent->id;
+	kn->left = timestamp;
+
+	add_knode(&parent->children, kn);
+	DBG(hiwater= kn->level > hiwater ? kn->level : hiwater;)
+	return kn;
 }
 
 /*****************************************************
@@ -270,10 +284,9 @@ static struct used *lookup_used(struct usedlist *list, struct symbol *sym)
 	return NULL;
 }
 
-static void add_new_used
-		(struct usedlist **list,
-		 struct knode *parent,
-		 struct symbol *sym)
+static void add_new_used(struct usedlist **list,
+			 struct knode *parent,
+			 struct symbol *sym)
 {
 	struct used *newused = alloc_used();
 	newused->symbol = sym;
@@ -281,10 +294,9 @@ static void add_new_used
 	add_used(list, newused);
 }
 
-static bool add_to_used
-		(struct usedlist **list,
-		 struct knode *parent,
-		 struct symbol *sym)
+static bool add_to_used(struct usedlist **list,
+			struct knode *parent,
+			struct symbol *sym)
 {
 	struct used *user;
 
@@ -460,6 +472,7 @@ static void get_symbols
 		if (!(add_to_used(&redlist, parent, sym)))
 			proc_symlist(kn, kn->symbol_list, CTL_NESTED);
 
+		kn->right = get_timestamp();
 	} END_FOR_EACH_PTR(sym);
 }
 
@@ -480,10 +493,13 @@ static void build_branch(struct knode *parent, char *symname, char *file)
 		if (kn->symbol_list) {
 			struct knode *bkn = map_knode(kn, basetype, CTL_RETURN);
 			get_declist(bkn, basetype);
+			bkn->right = get_timestamp();
 		}
 
 		if (basetype->arguments)
 			get_symbols(kn, basetype->arguments, CTL_ARG);
+
+		kn->right = get_timestamp();
 	}
 }
 
@@ -717,8 +733,9 @@ static void show_knodes(struct knodelist *klist)
 		if (!kp_verbose && kn->flags & CTL_NESTED)
 			return;
 
-		printf("%d,%lu,%lu,%08x,%s",
-		       kn->level, kn->id, kn->parent->id, kn->flags, pfx);
+		printf("%d,%lu,%lu,%lu,%lu,%08x,%s",
+		       kn->level, kn->id, kn->parent->id,
+		       kn->left, kn->right, kn->flags, pfx);
 
 		format_declaration(kn);
 
@@ -808,12 +825,16 @@ int main(int argc, char **argv)
 	kn->parent = kn;
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
+		struct timespec ts;
 		DBG(printf("sparse file: %s\n", file);)
 		symlist = sparse(file);
 		kn = map_knode(kn, NULL, CTL_FILE);
 		kn->name = file;
 		kn->level = 0;
 		build_tree(symlist, kn, file);
+		//modified preorder tree traversal algorithm.
+		clock_gettime(CLOCK_REALTIME, &ts);
+		kn->right = get_timestamp();
 	} END_FOR_EACH_PTR_NOTAG(file);
 
 	DBG(printf("\nhiwater: %d\n", hiwater);)
