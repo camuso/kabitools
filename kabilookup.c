@@ -102,8 +102,8 @@ static const char *table = "kabitree";
 // schema enumeration
 enum schema {
 	COL_LEVEL,
-	COL_ID,
-	COL_PARENTID,
+	COL_LEFT,
+	COL_RIGHT,
 	COL_FLAGS,
 	COL_PREFIX,
 	COL_DECL,
@@ -119,10 +119,10 @@ enum schema {
 #define DECLSIZ 256
 
 struct row {
-	char level[INTSIZ];	//	:
-	char id[INTSIZ];	// Returned by sqlite as hex char strings
-	char parentid[INTSIZ];	//	:
-	char flags[INTSIZ];	//	:
+	char level[INTSIZ];
+	char left[INTSIZ];
+	char right[INTSIZ];
+	char flags[INTSIZ];
 	char prefix[PFXSIZ];
 	char decl[DECLSIZ];
 	char parentdecl[DECLSIZ];
@@ -169,9 +169,9 @@ void delete_table(struct table *tptr)
 
 static void copy_row(struct row *drow, struct row *srow)
 {
-	strncpy(drow->level,      srow->level,      INTSIZ-1);
-	strncpy(drow->id,         srow->id,         INTSIZ-1);
-	strncpy(drow->parentid,   srow->parentid,   INTSIZ-1);
+	strncpy(drow->level,	  srow->level,      INTSIZ-1);
+	strncpy(drow->left,       srow->left,       INTSIZ-1);
+	strncpy(drow->right,      srow->right,	    INTSIZ-1);
 	strncpy(drow->flags,      srow->flags,      INTSIZ-1);
 	strncpy(drow->prefix,     srow->prefix,     PFXSIZ-1);
 	strncpy(drow->decl,       srow->decl,       DECLSIZ-1);
@@ -249,11 +249,11 @@ int sql_process_row(void *output, int argc, char **argv, char **colnames)
 		case COL_LEVEL	    :
 			strncpy(pr->level, argv[i], INTSIZ-1);
 			break;
-		case COL_ID	    :
-			strncpy(pr->id, argv[i], INTSIZ-1);
+		case COL_LEFT	    :
+			strncpy(pr->left, argv[i], INTSIZ-1);
 			break;
-		case COL_PARENTID   :
-			strncpy(pr->parentid, argv[i], INTSIZ-1);
+		case COL_RIGHT   :
+			strncpy(pr->right, argv[i], INTSIZ-1);
 			break;
 		case COL_FLAGS	    :
 			strncpy(pr->flags, argv[i], INTSIZ-1);
@@ -319,16 +319,82 @@ bool sql_get_rows_on_decl(char *viewname, char *declstr, char *output)
 	char *zsql;
 
 	if (kb_whole_word)
-		zsql = sqlite3_mprintf("select distinct * from %q where "
-				       "decl == \'%q\'",
+		zsql = sqlite3_mprintf("select * from %q where "
+				       "decl like '%q '",
 				       viewname, declstr);
 	else
-		zsql = sqlite3_mprintf("select distinct * from %q where "
+		zsql = sqlite3_mprintf("select * from %q where "
 				       "decl like \'%%%q%%\'",
 				       viewname, declstr);
 
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, sql_process_row, (void *)output);
+	sqlite3_free(zsql);
+	return rval;
+}
+
+enum zstr{
+	ZS_MATCH_ANY,
+	ZS_MATCH_WORD,
+	ZS_OUTER,
+	ZS_OUTER_AT,
+	ZS_OUTER_ATBELOW,
+	ZS_INNER,
+	ZS_INNER_AT,
+	ZS_INNER_ATBELOW,
+};
+
+static char *zstmt[] = {
+	"select * from %q where decl like \'%%%s%%\'",
+	"select * from %q where decl like \'%%%s %%\'",
+	"select * from %q where where left <= %d AND right >= %d",
+	"select * from %q where where left <= %d AND right >= %d "
+							"AND level == %d",
+	"select * from %q where where left <= %d AND right >= %d "
+		"AND level <= %d",
+	"select * from %q where where left >= %d AND right <= %d",
+	"select * from %q where where left >= %d AND right <= %d "
+							"AND level == %d",
+	"select * from %q where where left >= %d AND right <= %d "
+		"AND level <= %d",
+};
+
+char *parse_zstmt(enum zstr zs )
+{
+	switch (zs) {
+	case ZS_MATCH_ANY	: return zstmt[ZS_MATCH_ANY];
+	case ZS_MATCH_WORD	: return zstmt[ZS_MATCH_WORD];
+	case ZS_OUTER		: return zstmt[ZS_OUTER];
+	case ZS_OUTER_AT	: return zstmt[ZS_OUTER_AT];
+	case ZS_OUTER_ATBELOW	: return zstmt[ZS_OUTER_ATBELOW];
+	case ZS_INNER		: return zstmt[ZS_INNER];
+	case ZS_INNER_AT	: return zstmt[ZS_INNER_AT];
+	case ZS_INNER_ATBELOW	: return zstmt[ZS_INNER_ATBELOW];
+	default: fprintf(stderr, "Invalid stmt index: %d\n", zs);
+		 return NULL;
+	}
+}
+
+bool sql_get_nest_level(char *view, long left, long right, int level,
+			enum zstr zs, void *dest)
+{
+	bool rval;
+	char *stmt = parse_zstmt(zs);
+	char *zsql = sqlite3_mprintf(stmt, view, left, right, level);
+
+	rval = sql_exec(zsql, sql_process_row, dest);
+	sqlite3_free(zsql);
+	return rval;
+}
+
+bool sql_get_nest(char *view, long left, long right,
+		  enum zstr zs, void *dest)
+{
+	bool rval;
+	char *stmt = parse_zstmt(zs);
+	char *zsql = sqlite3_mprintf(stmt, view, left, right);
+
+	rval = sql_exec(zsql, sql_process_row, dest);
 	sqlite3_free(zsql);
 	return rval;
 }
@@ -353,13 +419,13 @@ bool sql_create_view_on_decl(char *viewname, char *declstr)
 
 	if (! kb_limit)
 		zsql = sqlite3_mprintf
-				("create temp view %q as select distinct "
+				("create temp view %q as select "
 				 "* from %q where decl like \'%%%q%%\'"
 				 "and level > 2",
 				 viewname, sql_get_kabitable(), declstr);
 	else
 		zsql = sqlite3_mprintf
-				("create temp view %q as select distinct "
+				("create temp view %q as select "
 				 "* from %q where decl like \'%%%q%%\'"
 				 "and level > 2 limit %d",
 				 viewname, sql_get_kabitable(), declstr,
@@ -391,7 +457,7 @@ int sql_process_row_count(void *output, int argc, char **argv, char **colnames)
 bool sql_row_count(char *viewname, char *count)
 {
 	bool rval;
-	char *zsql = sqlite3_mprintf("select count (id) from %q", viewname);
+	char *zsql = sqlite3_mprintf("select count (left) from %q", viewname);
 
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, sql_process_row_count, (void *)count);
@@ -452,10 +518,10 @@ static int get_ancestry(struct row* prow)
 	copy_row(ptbl->rows, prow);
 
 	for (i = 0; i < level; ++i) {
-		char *parentid = ptbl->rows->parentid;
+		char *right = ptbl->rows->right;
 		++ptbl->rows;
 		sql_get_rows_on_id((char *)sql_get_kabitable(),
-				   parentid,
+				   right,
 				   (void*)ptbl->rows);
 	}
 
@@ -498,6 +564,43 @@ static int start(char *declstr, char *datafile)
 	return 0;
 }
 
+static bool process_row(struct row *prow, char *view)
+{
+	int level;
+	long left;
+	long right;
+	long temp;
+
+	sscanf(prow->level, "%d", &level);
+	sscanf(prow->left, "%lu", &left);
+	sscanf(prow->right, "%lu", &right);
+
+
+
+	return true;
+}
+
+static int get_nest(char *declstr, char *datafile)
+{
+	int i;
+	int rowcount;
+	char *view = "kt";
+	char *countstr = NULL;
+	struct row *prow = new_row();
+
+	sql_open(datafile);
+	sql_create_view_on_decl(view, declstr);
+	sql_row_count(view, countstr);
+	sscanf(countstr, "%d", &rowcount);
+
+	for (i = 0; i < rowcount; ++i) {
+		memset(prow, 0, sizeof(struct row));
+		sql_get_one_row(view, i, prow);
+		process_row(prow, view);
+	}
+	return 0;
+}
+
 static int do_exports_only(const char *declstr,
 			   const char *exportspath,
 			   const char *datafile)
@@ -531,7 +634,7 @@ static int do_exports_only(const char *declstr,
 
 	zsql = sqlite3_mprintf("select * from A union "
 			       "select * from B union "
-			       "select * from C order by id");
+			       "select * from C order by left");
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, sql_print_row, 0);
 out:
@@ -668,6 +771,8 @@ int main(int argc, char **argv)
 
 	if (!process_args(argc, argv))
 		return -1;
+
+
 
 	if (kb_exports_only)
 		do_exports_only(declstr, exportspath, datafile);
