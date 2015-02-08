@@ -176,8 +176,6 @@ struct knode {
 	char *file;
 	enum ctlflags flags;
 	int level;
-	long id;
-	long parentid;
 	long left;
 	long right;
 };
@@ -220,10 +218,18 @@ long get_timestamp()
 	return (ts.tv_sec << 32) + ts.tv_nsec;
 }
 
+// map_knode - allocate and initialize a new knode
+//
+// parent - pointer to the parent knode
+// symbol - the symbol characterized by this knode
+// flags  - for processing and type information
+//
+// returns a pointer to the new instance of knode.
+//
 // Every call to map_knode should have a corresponding update of
-// the 'right' field when processing for the knode is complete.
-// This provides the nested hierarchy by implementing the "modified
-// preorder tree traversal algorithm".
+// the 'right' field with a call to get_timestamp() when processing
+// for the knode is complete. This implements a nested hierarchy
+// using the "modified preorder tree traversal algorithm".
 static struct knode *map_knode(struct knode *parent,
 			       struct symbol *symbol,
 			       enum ctlflags flags)
@@ -237,8 +243,6 @@ static struct knode *map_knode(struct knode *parent,
 	kn->flags |= flags;
 	kn->symbol = symbol;
 	kn->level = parent->level + 1;
-	kn->id = timestamp;
-	kn->parentid = parent->id;
 	kn->left = timestamp;
 
 	add_knode(&parent->children, kn);
@@ -733,9 +737,8 @@ static void show_knodes(struct knodelist *klist)
 		if (!kp_verbose && kn->flags & CTL_NESTED)
 			return;
 
-		printf("%d,%lu,%lu,%lu,%lu,%08x,%s",
-		       kn->level, kn->id, kn->parent->id,
-		       kn->left, kn->right, kn->flags, pfx);
+		printf("%d,%lu,%lu,%08x,%s",
+		       kn->level, kn->left, kn->right, kn->flags, pfx);
 
 		format_declaration(kn);
 
@@ -825,15 +828,12 @@ int main(int argc, char **argv)
 	kn->parent = kn;
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
-		struct timespec ts;
 		DBG(printf("sparse file: %s\n", file);)
 		symlist = sparse(file);
 		kn = map_knode(kn, NULL, CTL_FILE);
 		kn->name = file;
 		kn->level = 0;
 		build_tree(symlist, kn, file);
-		//modified preorder tree traversal algorithm.
-		clock_gettime(CLOCK_REALTIME, &ts);
 		kn->right = get_timestamp();
 	} END_FOR_EACH_PTR_NOTAG(file);
 

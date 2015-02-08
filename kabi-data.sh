@@ -125,7 +125,7 @@ fi
 
 echo "Importing text file: $textfile to database: $datafile ..."
 sqlite3 $datafile <<EOF
-create table kabitree (level integer,id integer64,parentid integer64,left integer64, right integer64,flags integer, prefix text, decl text, parentdecl text);
+create table kabitree (level integer, left integer64, right integer64, flags integer, prefix text, decl text, parentdecl text);
 .separator ','
 .import $textfile kabitree
 EOF
