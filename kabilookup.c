@@ -285,15 +285,16 @@ int sql_process_row(void *output, int argc, char **argv, char **colnames)
 //
 int sql_print_row(void *output, int argc, char **argv, char **colnames)
 {
-	if (!argc || output || !colnames)
+	int pad = (int)strtoul(argv[COL_LEVEL],0,0);
+	char *padstr = indent(pad);
+
+	if (!argc || !output || !colnames)
 		return -1;
 
-	if (strtoul(argv[COL_LEVEL],0,0) == 0)
-		printf("\n%s ", argv[COL_PREFIX]);
-
-	printf("%s%s\n",
-	       indent((int)strtoul(argv[COL_LEVEL],0,0)),
-	       argv[COL_DECL]);
+	if (strtoul(argv[COL_LEVEL],0,0) <= 2)
+		printf("%s%s %s\n", padstr, argv[COL_PREFIX], argv[COL_DECL]);
+	else
+		printf("%s%s\n", padstr, argv[COL_DECL]);
 	return 0;
 }
 
@@ -347,53 +348,33 @@ enum zstr{
 static char *zstmt[] = {
 	"select * from %q where decl like \'%%%s%%\'",
 	"select * from %q where decl like \'%%%s %%\'",
-	"select * from %q where where left <= %d AND right >= %d",
-	"select * from %q where where left <= %d AND right >= %d "
-							"AND level == %d",
-	"select * from %q where where left <= %d AND right >= %d "
-		"AND level <= %d",
-	"select * from %q where where left >= %d AND right <= %d",
-	"select * from %q where where left >= %d AND right <= %d "
-							"AND level == %d",
-	"select * from %q where where left >= %d AND right <= %d "
-		"AND level <= %d",
+	"select * from %q where left <= %lu AND right >= %lu",
+	"select * from %q where left <= %lu AND right >= %lu AND level == %d",
+	"select * from %q where left <= %lu AND right >= %lu AND level <= %d",
+	"select * from %q where left >= %lu AND right <= %lu",
+	"select * from %q where left >= %lu AND right <= %lu AND level == %d",
+	"select * from %q where left >= %lu AND right <= %lu AND level <= %d",
 };
 
-char *parse_zstmt(enum zstr zs )
-{
-	switch (zs) {
-	case ZS_MATCH_ANY	: return zstmt[ZS_MATCH_ANY];
-	case ZS_MATCH_WORD	: return zstmt[ZS_MATCH_WORD];
-	case ZS_OUTER		: return zstmt[ZS_OUTER];
-	case ZS_OUTER_AT	: return zstmt[ZS_OUTER_AT];
-	case ZS_OUTER_ATBELOW	: return zstmt[ZS_OUTER_ATBELOW];
-	case ZS_INNER		: return zstmt[ZS_INNER];
-	case ZS_INNER_AT	: return zstmt[ZS_INNER_AT];
-	case ZS_INNER_ATBELOW	: return zstmt[ZS_INNER_ATBELOW];
-	default: fprintf(stderr, "Invalid stmt index: %d\n", zs);
-		 return NULL;
-	}
-}
-
-bool sql_get_nest_level(char *view, long left, long right, int level,
+bool sql_get_nest_level(const char *view, long left, long right, int level,
 			enum zstr zs, void *dest)
 {
 	bool rval;
-	char *stmt = parse_zstmt(zs);
-	char *zsql = sqlite3_mprintf(stmt, view, left, right, level);
+	char *zsql = sqlite3_mprintf(zstmt[zs], view, left, right, level);
 
-	rval = sql_exec(zsql, sql_process_row, dest);
+	DBG(puts(zsql);)
+	rval = sql_exec(zsql, sql_print_row, dest);
 	sqlite3_free(zsql);
 	return rval;
 }
 
-bool sql_get_nest(char *view, long left, long right,
+bool sql_get_nest(const char *view, long left, long right,
 		  enum zstr zs, void *dest)
 {
 	bool rval;
-	char *stmt = parse_zstmt(zs);
-	char *zsql = sqlite3_mprintf(stmt, view, left, right);
+	char *zsql = sqlite3_mprintf(zstmt[zs], view, left, right);
 
+	DBG(puts(zsql);)
 	rval = sql_exec(zsql, sql_process_row, dest);
 	sqlite3_free(zsql);
 	return rval;
@@ -419,13 +400,13 @@ bool sql_create_view_on_decl(char *viewname, char *declstr)
 
 	if (! kb_limit)
 		zsql = sqlite3_mprintf
-				("create temp view %q as select "
+				("create view %q as select "
 				 "* from %q where decl like \'%%%q%%\'"
 				 "and level > 2",
 				 viewname, sql_get_kabitable(), declstr);
 	else
 		zsql = sqlite3_mprintf
-				("create temp view %q as select "
+				("create view %q as select "
 				 "* from %q where decl like \'%%%q%%\'"
 				 "and level > 2 limit %d",
 				 viewname, sql_get_kabitable(), declstr,
@@ -564,19 +545,20 @@ static int start(char *declstr, char *datafile)
 	return 0;
 }
 
-static bool process_row(struct row *prow, char *view)
+static bool process_row(struct row *prow)
 {
 	int level;
 	long left;
 	long right;
-	long temp;
 
 	sscanf(prow->level, "%d", &level);
 	sscanf(prow->left, "%lu", &left);
 	sscanf(prow->right, "%lu", &right);
 
+	memset(prow, 0, sizeof(struct row));
 
-
+	sql_get_nest_level(sql_get_kabitable(),
+			   left, right, level, ZS_OUTER_ATBELOW, prow);
 	return true;
 }
 
@@ -585,19 +567,20 @@ static int get_nest(char *declstr, char *datafile)
 	int i;
 	int rowcount;
 	char *view = "kt";
-	char *countstr = NULL;
+	char countstr[INTSIZ];
 	struct row *prow = new_row();
 
 	sql_open(datafile);
 	sql_create_view_on_decl(view, declstr);
-	sql_row_count(view, countstr);
+	sql_row_count(view, &countstr[0]);
 	sscanf(countstr, "%d", &rowcount);
 
 	for (i = 0; i < rowcount; ++i) {
 		memset(prow, 0, sizeof(struct row));
 		sql_get_one_row(view, i, prow);
-		process_row(prow, view);
+		process_row(prow);
 	}
+	sql_exec("drop view kt", 0, 0);
 	return 0;
 }
 
@@ -772,7 +755,8 @@ int main(int argc, char **argv)
 	if (!process_args(argc, argv))
 		return -1;
 
-
+	get_nest(declstr, datafile);
+	return 0;
 
 	if (kb_exports_only)
 		do_exports_only(declstr, exportspath, datafile);
