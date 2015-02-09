@@ -86,12 +86,47 @@ Options:\n\
     -h  this help message.\n\
 \n";
 
-static bool kb_verbose = true;
-static bool kb_whole_word = false;
-static int kb_limit = 0;
-static bool kb_exports_only = false;
+enum kbflags {
+	KB_COUNT,
+	KB_DECL,
+	KB_EXPORTS,
+	KB_VERBOSE,
+	KB_WHOLE_WORD,
+	KB_DATABASE,
+};
 
+static enum kbflags kb_flags = 0;
+static const int kb_exemask  = (1 << KB_COUNT) |
+			       (1 << KB_DECL)  |
+			       (1 << KB_EXPORTS);
+enum exemsg {
+	EXE_OK,
+	EXE_NOFILE,
+	EXE_NOTFOUND,
+	EXE_2MANY,
+	EXE_ARG2BIG,
+	EXE_ARG2SML,
+	EXE_CONFLICT,
+};
+
+static int kb_argmask =	(1 << EXE_ARG2BIG) |
+			(1 << EXE_ARG2SML) |
+			(1 << EXE_CONFLICT);
+
+static const char *errstr[] = {
+	[EXE_NOFILE]	= "Cannot open database file %s\n",
+	[EXE_NOTFOUND]	= "%s cannot be found in database file %s\n",
+	[EXE_2MANY]	= "Too many items match %s. Be more specific.\n",
+	[EXE_ARG2BIG]	= "Too many rguments",
+	[EXE_ARG2SML]	= "Not enough arguments",
+	[EXE_CONFLICT]	= "You entered conflicting switches",
+	"\0"
+};
+
+enum exemsg;
 static char *indent(int padsiz);
+static void print_cmd_errmsg(enum exemsg err);
+static void print_cmdline();
 
 /*****************************************************
 ** global sqlite3 data
@@ -184,7 +219,7 @@ static void copy_row(struct row *drow, struct row *srow)
 // if this were c++, db and table would be private members
 // of a sql class, accessible only by member function calls.
 
-static const char *kabitable = "kabitree";
+static char *kabitable = "kabitree";
 
 inline struct sqlite3 *sql_get_db()
 {
@@ -196,9 +231,9 @@ inline void sql_set_kabitable(const char *tablename)
 	kabitable = (char *)tablename;
 }
 
-inline const char *sql_get_kabitable()
+inline char *sql_get_kabitable()
 {
-	return (const char *)kabitable;
+	return kabitable;
 }
 
 bool sql_exec(const char *stmt,
@@ -298,6 +333,34 @@ int sql_print_row(void *output, int argc, char **argv, char **colnames)
 	return 0;
 }
 
+enum zstr{
+	ZS_DECL_ANY,
+	ZS_DECL_WORD,
+	ZS_DECL_ANY_NESTED,
+	ZS_DECL_WORD_NESTED,
+	ZS_OUTER,
+	ZS_OUTER_AT,
+	ZS_OUTER_ATBELOW,
+	ZS_INNER,
+	ZS_INNER_AT,
+	ZS_INNER_ATBELOW,
+};
+
+static char *zstmt[] = {
+	"select * from %q where decl like \'%%%q%%\'",
+	"select * from %q where decl like \'%%%q %%\'",
+	"select * from %q where left <= %lu AND right >= %lu",
+	"select * from %q where left <= %lu AND right >= %lu AND level == %d",
+	"select * from %q where left <= %lu AND right >= %lu AND level <= %d",
+	"select * from %q where left >= %lu AND right <= %lu",
+	"select * from %q where left >= %lu AND right <= %lu AND level == %d",
+	"select * from %q where left >= %lu AND right <= %lu AND level <= %d",
+	"create view %q as select * from %q where decl like \'%%%q%%\' "
+		"and level > 2"
+	"create view %q as select * from %q where decl like \'%%%q %%\' "
+		"and level > 2"
+};
+
 // sql_get_one_row - extract one row from a view, given the offset into the view
 //
 // NOTE: the struct row * must have been orignially created elsewhere,
@@ -314,47 +377,20 @@ bool sql_get_one_row(char *viewname, int offset, struct row *retrow)
 	return rval;
 }
 
-bool sql_get_rows_on_decl(char *viewname, char *declstr, char *output)
+bool sql_get_rows_on_decl(char *viewname, char *declstr, void *output)
 {
 	bool rval;
-	char *zsql;
-
-	if (kb_whole_word)
-		zsql = sqlite3_mprintf("select * from %q where "
-				       "decl like '%q '",
-				       viewname, declstr);
-	else
-		zsql = sqlite3_mprintf("select * from %q where "
-				       "decl like \'%%%q%%\'",
-				       viewname, declstr);
+	char *stmt = kb_flags & KB_WHOLE_WORD ?
+				zstmt[ZS_DECL_WORD_NESTED] :
+				zstmt[ZS_DECL_ANY_NESTED];
+	char *zsql = sqlite3_mprintf(stmt, viewname, declstr);
 
 	DBG(puts(zsql);)
-	rval = sql_exec(zsql, sql_process_row, (void *)output);
+	rval = sql_exec(zsql, sql_process_row, output);
 	sqlite3_free(zsql);
 	return rval;
 }
 
-enum zstr{
-	ZS_MATCH_ANY,
-	ZS_MATCH_WORD,
-	ZS_OUTER,
-	ZS_OUTER_AT,
-	ZS_OUTER_ATBELOW,
-	ZS_INNER,
-	ZS_INNER_AT,
-	ZS_INNER_ATBELOW,
-};
-
-static char *zstmt[] = {
-	"select * from %q where decl like \'%%%s%%\'",
-	"select * from %q where decl like \'%%%s %%\'",
-	"select * from %q where left <= %lu AND right >= %lu",
-	"select * from %q where left <= %lu AND right >= %lu AND level == %d",
-	"select * from %q where left <= %lu AND right >= %lu AND level <= %d",
-	"select * from %q where left >= %lu AND right <= %lu",
-	"select * from %q where left >= %lu AND right <= %lu AND level == %d",
-	"select * from %q where left >= %lu AND right <= %lu AND level <= %d",
-};
 
 bool sql_get_nest_level(const char *view, long left, long right, int level,
 			enum zstr zs, void *dest)
@@ -380,37 +416,15 @@ bool sql_get_nest(const char *view, long left, long right,
 	return rval;
 }
 
-bool sql_get_rows_on_id(char *viewname, char *idstr, char *output)
-{
-	bool rval;
-	char *zsql = sqlite3_mprintf("select distinct * from %q "
-				     "where id == '%q'",
-				     viewname, idstr);
-	DBG(puts(zsql);)
-	rval = sql_exec(zsql, sql_process_row, (void *)output);
-	sqlite3_free(zsql);
-
-	return rval;
-}
-
 bool sql_create_view_on_decl(char *viewname, char *declstr)
 {
 	bool rval;
 	char *zsql;
+	char *stmt = kb_flags & KB_WHOLE_WORD ?
+				zstmt[ZS_DECL_WORD_NESTED] :
+				zstmt[ZS_DECL_ANY_NESTED];
 
-	if (! kb_limit)
-		zsql = sqlite3_mprintf
-				("create view %q as select "
-				 "* from %q where decl like \'%%%q%%\'"
-				 "and level > 2",
-				 viewname, sql_get_kabitable(), declstr);
-	else
-		zsql = sqlite3_mprintf
-				("create view %q as select "
-				 "* from %q where decl like \'%%%q%%\'"
-				 "and level > 2 limit %d",
-				 viewname, sql_get_kabitable(), declstr,
-				 kb_limit);
+	zsql = sqlite3_mprintf(stmt, viewname, sql_get_kabitable(), declstr);
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, 0, 0);
 	sqlite3_free(zsql);
@@ -484,145 +498,101 @@ static char *indent(int padsiz)
 	return buf;
 }
 
-static int get_ancestry(struct row* prow)
+static bool get_count(char *view, int *count)
 {
-	int i;
-	int level;
-	char **eptr = NULL;
-	struct table *ptbl;
-
-	level = strtoul(prow->level, eptr, 10);
-	ptbl = new_table(level+1);
-
-	// Put the row passed in as an argument into the first
-	// row of the new table. Then go get its ancestors.
-	copy_row(ptbl->rows, prow);
-
-	for (i = 0; i < level; ++i) {
-		char *right = ptbl->rows->right;
-		++ptbl->rows;
-		sql_get_rows_on_id((char *)sql_get_kabitable(),
-				   right,
-				   (void*)ptbl->rows);
-	}
-
-	for (i = level; i >= 0; --i) {
-		int curlvl = strtoul(ptbl->rows->level, eptr, 10);
-
-		if (curlvl < 3)
-			printf("%s%s %s\n", indent(curlvl-1),
-			       ptbl->rows->prefix, ptbl->rows->decl);
-		else if (kb_verbose)
-			printf("%s%s\n", indent(curlvl-1), ptbl->rows->decl);
-		--ptbl->rows;
-	}
-
-	//delete_table(ptbl);
-	return 0;
-}
-
-static int start(char *declstr, char *datafile)
-{
-	int i;
-	int rowcount;
 	char countstr[INTSIZ];
-	char *viewname = "searchview";
-	struct row *prow = new_row();
 
-	sql_open(datafile);
-
-	sql_create_view_on_decl(viewname, declstr);
-	sql_row_count(viewname, countstr);
-	sscanf(countstr, "%d", &rowcount);
-
-	for (i = 0; i < rowcount; ++i) {
-		memset(prow, 0, sizeof(struct row));
-		sql_get_one_row(viewname, i, prow);
-		get_ancestry(prow);
-	}
-
-	delete_row(prow);
-	return 0;
+	if (!sql_row_count(view, &countstr[0]))
+		return false;
+	sscanf(countstr, "%d", count);
+	return true;
 }
 
-static bool process_row(struct row *prow)
+static bool process_row(struct row *prow, enum zstr zs)
 {
 	int level;
 	long left;
 	long right;
 
-	sscanf(prow->level, "%d", &level);
-	sscanf(prow->left, "%lu", &left);
+	sscanf(prow->level, "%d",  &level);
+	sscanf(prow->left,  "%lu", &left);
 	sscanf(prow->right, "%lu", &right);
 
 	memset(prow, 0, sizeof(struct row));
 
 	sql_get_nest_level(sql_get_kabitable(),
-			   left, right, level, ZS_OUTER_ATBELOW, prow);
+			   left, right, level, zs, prow);
 	return true;
 }
 
-static int get_nest(char *declstr, char *datafile)
+static int exe_decl(char *declstr, char *datafile)
 {
 	int i;
 	int rowcount;
 	char *view = "kt";
-	char countstr[INTSIZ];
-	struct row *prow = new_row();
+	struct row *prow;
 
-	sql_open(datafile);
+	if (!sql_open(datafile))
+		return EXE_NOFILE;
+
+	prow = new_row();
 	sql_create_view_on_decl(view, declstr);
-	sql_row_count(view, &countstr[0]);
-	sscanf(countstr, "%d", &rowcount);
+	get_count(view, &rowcount);
 
 	for (i = 0; i < rowcount; ++i) {
 		memset(prow, 0, sizeof(struct row));
 		sql_get_one_row(view, i, prow);
-		process_row(prow);
+		process_row(prow, ZS_OUTER_ATBELOW);
 	}
+
+	delete_row(prow);
 	sql_exec("drop view kt", 0, 0);
-	return 0;
+	sql_close(db);
+	return EXE_OK;
 }
 
-static int do_exports_only(const char *declstr,
-			   const char *exportspath,
-			   const char *datafile)
+static int exe_exports(char *declstr, char *datafile)
 {
-	bool rval;
-	char *zsql ;
+	int count;
+	char *view = "kt";
+	struct row *prow;
 
-	if (! sql_open(datafile))
-		return -1;
+	if (!sql_open(datafile))
+		return EXE_NOFILE;
 
-	zsql = sqlite3_mprintf("CREATE temp VIEW A as select * from %q "
-			       "where level=0 and decl like '%%%q%%'",
-			       kabitable, exportspath);
-	DBG(puts(zsql);)
-	if (!(rval = sql_exec(zsql, 0, 0)))
-		goto out;
+	sql_create_view_on_decl(view, declstr);
+	get_count(view, &count);
 
-	zsql = sqlite3_mprintf("CREATE temp VIEW B as select * from %q "
-			       "where level=1 and decl like '%%%q%%'",
-			       kabitable, declstr);
-	DBG(puts(zsql);)
-	if (!(rval = sql_exec(zsql, 0, 0)))
-		goto out;
+	if (count == 0)
+		return EXE_NOTFOUND;
 
-	zsql = sqlite3_mprintf("CREATE temp VIEW C as select * from %q "
-			       "where level=2 and decl like '%%%q%%'",
-			       kabitable, declstr);
-	DBG(puts(zsql);)
-	if (!(rval = sql_exec(zsql, 0, 0)))
-		goto out;
+	if (count > 1)
+		return EXE_2MANY;
 
-	zsql = sqlite3_mprintf("select * from A union "
-			       "select * from B union "
-			       "select * from C order by left");
-	DBG(puts(zsql);)
-	rval = sql_exec(zsql, sql_print_row, 0);
-out:
-	sqlite3_free(zsql);
-	return rval ? 0 : -1;
+	prow = new_row();
+	sql_get_rows_on_decl(sql_get_kabitable(), declstr, (void *)prow);
+
+	return EXE_OK;
+}
+
+int exe_count(char *declstr, char *datafile)
+{
+	int count;
+	char *view = "kt";
+	struct row *prow;
+
+	if (!sql_open(datafile))
+		return EXE_NOFILE;
+
+	prow = new_row();
+	sql_create_view_on_decl(view, declstr);
+	get_count(view, &count);
+	printf("There are %d symbols matching %s.\n", count, declstr);
+
+	delete_row(prow);
+	sql_exec("drop view kt", 0, 0);
+	sql_close(db);
+	return EXE_OK;
 }
 
 /*****************************************************
@@ -631,47 +601,60 @@ out:
 
 // Mimic c++ encapsulation. These variables are invisible to subroutines
 // above here in the file, unless they are passed by call.
-static char *declstr;		// string or substring we're seeking
-static char *datafile;		// name of the database file
-static char *exportspath;	// optional exports only view
+static char *datafile = "../kabi-data.sql";
+static char *declstr;
 static int orig_argc;
 static char **orig_argv;
-enum cmderr {CMDERR_TOOMANY, CMDERR_TOOFEW};
-static const char *errstr[] = {
-	"You entered too many arguments",
-	"You entered too few arguments"
-	"\0"
-};
 
-static int parse_opt(char opt, int state)
+static int count_bits(unsigned mask)
 {
-	int optstatus = 1;
+	int count = 0;
 
+	do {
+		count += mask & 1;
+	} while (mask >>= 1);
+
+	return count;
+}
+
+// Check for mutually exclusive flags.
+static bool check_flags()
+{
+	unsigned flg = kb_flags & kb_exemask;
+
+	if (count_bits(flg) > 1)
+		return false;
+
+	return true;
+}
+
+static bool parse_opt(char opt, char **argv)
+{
 	switch (opt) {
-	case '0' : kb_limit = 0;
+	case 'b' : datafile = *(++argv);
 		   break;
-	case '1' : kb_limit = 10;
+	case 'c' : kb_flags |= KB_COUNT;
 		   break;
-	case '2' : kb_limit = 100;
+	case 'd' : kb_flags |= KB_DECL;
+		   declstr = *(++argv);
 		   break;
-	case '3' : kb_limit = 1000;
+	case 'e' : kb_flags |= KB_EXPORTS;
+		   declstr = *(++argv);
 		   break;
-	case 'v' : kb_verbose = state;
+	case 'v' : kb_flags |= KB_VERBOSE;
 		   break;
-	case 'x' : kb_exports_only = state;
+	case 'w' : kb_flags |= KB_WHOLE_WORD;
 		   break;
 	case 'h' : puts(helptext);
 		   exit(0);
-	default  : optstatus = -1;
-		   break;
+	default  : return false;
 	}
 
-	return optstatus;
+	return check_flags();
 }
 
-static int get_options(char **argv)
+static bool get_options(char **argv, int *idx)
 {
-	int state = 0;		// on = 1, off = 0
 	int index = 0;
 
 	for (index = 0; *argv[0] == '-'; ++index) {
@@ -680,68 +663,53 @@ static int get_options(char **argv)
 		// Point to the first character of the actual option
 		char *argstr = &(*argv++)[1];
 
-		// Trailing '-' sets state to OFF (0) for switches.
-		state = argstr[strlen(argstr)-1] != '-';
-
 		for (i = 0; argstr[i]; ++i)
-			parse_opt(argstr[i], state);
+			if (!parse_opt(argstr[i], argv))
+				return false;
 	}
-	return index;
+
+	*idx = index;
+	return true;
 }
 
-static void print_cmdline() {
+static void print_cmdline()
+{
 	int i = 0;
 	for (i = 0; i < orig_argc; ++i)
 		printf(" %s", orig_argv[i]);
 }
 
-static void print_cmd_errmsg(enum cmderr err)
+static void print_cmd_errmsg(enum exemsg err)
 {
 	printf("\n%s. You typed ...\n  ", errstr[err]);
 	print_cmdline();
 	printf("\nPlease read the help text below.\n%s", helptext);
 }
 
-static bool process_args(int argc, char **argv)
+static int process_args(int argc, char **argv)
 {
 	int argindex = 0;
 
 	orig_argc = argc;
 	orig_argv = argv;
 
-	if (argc <= 2) {
-		puts(helptext);
-		exit(0);
-	}
-
+	// skip over argv[0], which is the invocation of this app.
 	++argv; --argc;
-	get_options(&argv[0]);
 
-	argindex = get_options(&argv[0]);
-	argv += argindex;
-	argc -= argindex;
+	if (!get_options(&argv[0], &argindex))
+		return EINVAL;
 
-	switch (argc) {
-	case 2: if (kb_exports_only) {
-			print_cmd_errmsg(CMDERR_TOOFEW);
-			return false;
-		}
-		declstr = argv[0];
-		datafile = argv[1];
-		break;
-	case 3: if (!kb_exports_only) {
-			print_cmd_errmsg(CMDERR_TOOMANY);
-			return false;
-		}
-		declstr = argv[0];
-		exportspath = argv[1];
-		datafile = argv[2];
-		break;
-	default: return false;
-		 break;
+	return 0;
+}
+
+static int execute()
+{
+	switch (kb_flags & kb_exemask) {
+	case KB_COUNT   : return exe_count(datafile, declstr);
+	case KB_DECL    : return exe_decl(declstr, datafile);
+	case KB_EXPORTS : return exe_exports(declstr, datafile);
 	}
-
-	return true;
+	return 0;
 }
 
 /*****************************************************
@@ -750,18 +718,13 @@ static bool process_args(int argc, char **argv)
 
 int main(int argc, char **argv)
 {
+	int err;
 	DBG(setbuf(stdout, NULL);)
 
-	if (!process_args(argc, argv))
+	if((err = process_args(argc, argv))) {
+		print_cmd_errmsg(err);
 		return -1;
+	}
 
-	get_nest(declstr, datafile);
-	return 0;
-
-	if (kb_exports_only)
-		do_exports_only(declstr, exportspath, datafile);
-	else
-		start(declstr, datafile);
-	sql_close(db);
-	return 0;
+	return execute();
 }
