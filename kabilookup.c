@@ -46,80 +46,64 @@ typedef unsigned int bool;
 
 static const char *helptext ="\
 \n\
-kabi-lookup [options] declstr datafile \n\
-  e.g. \n\
-  $ kabi-lookup \"struct acpi\" ../kabi-data.sql \n\
+kabi-lookup [options] -[c|d|e]symbol \n\
 \n\
-kabi-lookup -x [options] declstr exportspath datafile \n\
-  e.g. \n\
-  $ kabi-lookup -x \"struct device\" \"drivers/pci\" ../kabi-data.sql\n\
+    Searches a kabi database for symbols. The results of the search \n\
+    are printed to stdout and indented hierarchically.\n\
 \n\
-    Searches a kabitree database to lookup declaration strings \n\
-    containing the user's input. In verbose mode (default), the search \n\
-    is continued until all ancestors (containers) of the declaration are \n\
-    found. The results of the search are printed to stdout and indented \n\
-    hierarchically.\n\
-\n\
-    declstr     - Required. Declaration to lookup. Use double quotes \"\" \n\
-                  around compound strings. \n\
-    exportspath - Only used with -x option (see below). When using the \n\
-                  -x option, this string must be the 2nd argument. \n\
-    datafile    - Required. Database file containing the tree of exported \n\
-                  functions and any and all symbols explicitly or implicitly \n\
-                  affected. This file should be created by the kabi-data.sh \n\
-                  tool. \n\
 Options:\n\
-        Limits on the number of records displayed: \n\
-    -0  no limits \n\
-    -1  10 \n\
-    -2  100 \n\
-    -3  1000 \n\
-\n\
-        Other options \n\
-    -x  Requires exports path string as 2nd argument. Lists only exported \n\
-        functions and their arguments for the given path, e.g.\n\
-          $ kabi-lookup \"struct device\" \"drivers/pci\" ../kabi-data.sql\n\
+    -b datafile - Optional sqlite database file. The default is \n\
+		\"../kabi-data.sql\" relative to the top of the \n\
+		kernel tree. \n\
+    -c symbol - Counts the instances of the symbol in the kabi tree. \n\
+    -d symbol - Prints to stdout every instance of the symbol. It is\n\
+		advisable to use \"-c symbol\"first to see how many \n\
+		there are. \n\
+    -e symbol - Specific to EXPORTED functions. Prints the function, \a\
+                and its argument list. With the -v verbose switch, \n\
+                it will print all the descendants of arguments that \n\
+                are compound data types. \n\
     -w  whole words only, default is \"match any and all\" \n\
-    -i  ignore case \n\
-    -v  verbose (default): lists all ancestors \n\
-    -v- to disable verbose \n\
+    -v  verbose lists all descendants of a symbol. \n\
     -h  this help message.\n\
 \n";
 
 enum kbflags {
-	KB_COUNT,
-	KB_DECL,
-	KB_EXPORTS,
-	KB_VERBOSE,
-	KB_WHOLE_WORD,
-	KB_DATABASE,
+	KB_COUNT	= 1 << 0,
+	KB_DECL		= 1 << 1,
+	KB_EXPORTS	= 1 << 2,
+	KB_VERBOSE	= 1 << 3,
+	KB_WHOLE_WORD	= 1 << 4,
+	KB_DATABASE	= 1 << 5,
 };
 
 static enum kbflags kb_flags = 0;
-static const int kb_exemask  = (1 << KB_COUNT) |
-			       (1 << KB_DECL)  |
-			       (1 << KB_EXPORTS);
+static const int kb_exemask  = KB_COUNT | KB_DECL | KB_EXPORTS;
 enum exemsg {
 	EXE_OK,
-	EXE_NOFILE,
-	EXE_NOTFOUND,
-	EXE_2MANY,
 	EXE_ARG2BIG,
 	EXE_ARG2SML,
 	EXE_CONFLICT,
+	EXE_BADFORM,
+	EXE_NOFILE,
+	EXE_NOTFOUND,
+	EXE_2MANY,
 };
 
-static int kb_argmask =	(1 << EXE_ARG2BIG) |
-			(1 << EXE_ARG2SML) |
-			(1 << EXE_CONFLICT);
+static int kb_argmask =	(1 << EXE_ARG2BIG)  |
+			(1 << EXE_ARG2SML)  |
+			(1 << EXE_CONFLICT) |
+			(1 << EXE_BADFORM);
 
 static const char *errstr[] = {
-	[EXE_NOFILE]	= "Cannot open database file %s\n",
-	[EXE_NOTFOUND]	= "%s cannot be found in database file %s\n",
-	[EXE_2MANY]	= "Too many items match %s. Be more specific.\n",
-	[EXE_ARG2BIG]	= "Too many rguments",
+	[EXE_ARG2BIG]	= "Too many arguments",
 	[EXE_ARG2SML]	= "Not enough arguments",
 	[EXE_CONFLICT]	= "You entered conflicting switches",
+	[EXE_BADFORM]	= "Badly formed argument list",
+	[EXE_NOFILE]	= "Seeking \"%s\", but cannot open database file %s\n",
+	[EXE_NOTFOUND]	= "\"%s\" cannot be found in database file %s\n",
+	[EXE_2MANY]	= "Too many items match \"%s\" in database %s."
+			  " Be more specific.\n",
 	"\0"
 };
 
@@ -136,6 +120,7 @@ static const char *table = "kabitree";
 
 // schema enumeration
 enum schema {
+	COL_ROWID,
 	COL_LEVEL,
 	COL_LEFT,
 	COL_RIGHT,
@@ -154,6 +139,7 @@ enum schema {
 #define DECLSIZ 256
 
 struct row {
+	char rowid[INTSIZ];
 	char level[INTSIZ];
 	char left[INTSIZ];
 	char right[INTSIZ];
@@ -202,8 +188,9 @@ void delete_table(struct table *tptr)
 	free(tptr);
 }
 
-static void copy_row(struct row *drow, struct row *srow)
+void copy_row(struct row *drow, struct row *srow)
 {
+	strncpy(drow->rowid,	  srow->rowid,      INTSIZ-1);
 	strncpy(drow->level,	  srow->level,      INTSIZ-1);
 	strncpy(drow->left,       srow->left,       INTSIZ-1);
 	strncpy(drow->right,      srow->right,	    INTSIZ-1);
@@ -220,6 +207,7 @@ static void copy_row(struct row *drow, struct row *srow)
 // of a sql class, accessible only by member function calls.
 
 static char *kabitable = "kabitree";
+static char *kabitypes = "kabitype";
 
 inline struct sqlite3 *sql_get_db()
 {
@@ -281,13 +269,16 @@ int sql_process_row(void *output, int argc, char **argv, char **colnames)
 		DBG(printf("%s ", argv[i]);)
 
 		switch (i){
+		case COL_ROWID	    :
+			strncpy(pr->level, argv[i], INTSIZ-1);
+			break;
 		case COL_LEVEL	    :
 			strncpy(pr->level, argv[i], INTSIZ-1);
 			break;
 		case COL_LEFT	    :
 			strncpy(pr->left, argv[i], INTSIZ-1);
 			break;
-		case COL_RIGHT   :
+		case COL_RIGHT	    :
 			strncpy(pr->right, argv[i], INTSIZ-1);
 			break;
 		case COL_FLAGS	    :
@@ -336,29 +327,33 @@ int sql_print_row(void *output, int argc, char **argv, char **colnames)
 enum zstr{
 	ZS_DECL_ANY,
 	ZS_DECL_WORD,
-	ZS_DECL_ANY_NESTED,
-	ZS_DECL_WORD_NESTED,
 	ZS_OUTER,
 	ZS_OUTER_AT,
 	ZS_OUTER_ATBELOW,
 	ZS_INNER,
 	ZS_INNER_AT,
 	ZS_INNER_ATBELOW,
+	ZS_VIEWDECL_ANY,
+	ZS_VIEWDECL_WORD,
+	ZS_VIEWDECL_ANY_NESTED,
+	ZS_VIEWDECL_WORD_NESTED,
 };
 
 static char *zstmt[] = {
-	"select * from %q where decl like \'%%%q%%\'",
-	"select * from %q where decl like \'%%%q %%\'",
+	"select * from %q where decl like '%%%q%%'",
+	"select * from %q where decl like '%%%q'",
 	"select * from %q where left <= %lu AND right >= %lu",
 	"select * from %q where left <= %lu AND right >= %lu AND level == %d",
 	"select * from %q where left <= %lu AND right >= %lu AND level <= %d",
 	"select * from %q where left >= %lu AND right <= %lu",
 	"select * from %q where left >= %lu AND right <= %lu AND level == %d",
 	"select * from %q where left >= %lu AND right <= %lu AND level <= %d",
-	"create view %q as select * from %q where decl like \'%%%q%%\' "
-		"and level > 2"
-	"create view %q as select * from %q where decl like \'%%%q %%\' "
-		"and level > 2"
+	"create view %q as select * from %q where decl like \'%%%q%%\'",
+	"create view %q as select * from %q where decl like '%%%q'",
+	"create view %q as select * from %q where decl like '%%%q%%'"
+		"and level > 2",
+	"create view %q as select * from %q where decl like '%%%q'"
+		"and level > 2",
 };
 
 // sql_get_one_row - extract one row from a view, given the offset into the view
@@ -381,8 +376,8 @@ bool sql_get_rows_on_decl(char *viewname, char *declstr, void *output)
 {
 	bool rval;
 	char *stmt = kb_flags & KB_WHOLE_WORD ?
-				zstmt[ZS_DECL_WORD_NESTED] :
-				zstmt[ZS_DECL_ANY_NESTED];
+				zstmt[ZS_DECL_WORD] :
+				zstmt[ZS_DECL_ANY];
 	char *zsql = sqlite3_mprintf(stmt, viewname, declstr);
 
 	DBG(puts(zsql);)
@@ -411,7 +406,37 @@ bool sql_get_nest(const char *view, long left, long right,
 	char *zsql = sqlite3_mprintf(zstmt[zs], view, left, right);
 
 	DBG(puts(zsql);)
-	rval = sql_exec(zsql, sql_process_row, dest);
+	rval = sql_exec(zsql, sql_print_row, dest);
+	sqlite3_free(zsql);
+	return rval;
+}
+
+bool sql_create_view_on_inner(char *viewname, char *declstr)
+{
+	bool rval;
+	char *zsql;
+	char *stmt = kb_flags & KB_WHOLE_WORD ?
+				zstmt[ZS_VIEWDECL_WORD_NESTED] :
+				zstmt[ZS_VIEWDECL_ANY_NESTED];
+	DBG(puts(stmt);)
+	zsql = sqlite3_mprintf(stmt, viewname, sql_get_kabitable(), declstr);
+	DBG(puts(zsql);)
+	rval = sql_exec(zsql, 0, 0);
+	sqlite3_free(zsql);
+	return rval;
+}
+
+bool sql_create_view_on_decl_nested(char *viewname, char *declstr)
+{
+	bool rval;
+	char *zsql;
+	char *stmt = kb_flags & KB_WHOLE_WORD ?
+				zstmt[ZS_VIEWDECL_WORD_NESTED] :
+				zstmt[ZS_VIEWDECL_ANY_NESTED];
+	DBG(puts(stmt);)
+	zsql = sqlite3_mprintf(stmt, viewname, sql_get_kabitable(), declstr);
+	DBG(puts(zsql);)
+	rval = sql_exec(zsql, 0, 0);
 	sqlite3_free(zsql);
 	return rval;
 }
@@ -421,9 +446,9 @@ bool sql_create_view_on_decl(char *viewname, char *declstr)
 	bool rval;
 	char *zsql;
 	char *stmt = kb_flags & KB_WHOLE_WORD ?
-				zstmt[ZS_DECL_WORD_NESTED] :
-				zstmt[ZS_DECL_ANY_NESTED];
-
+				zstmt[ZS_VIEWDECL_WORD] :
+				zstmt[ZS_VIEWDECL_ANY];
+	DBG(puts(stmt);)
 	zsql = sqlite3_mprintf(stmt, viewname, sql_get_kabitable(), declstr);
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, 0, 0);
@@ -508,23 +533,33 @@ static bool get_count(char *view, int *count)
 	return true;
 }
 
-static bool process_row(struct row *prow, enum zstr zs)
+static bool process_row_nested(struct row *prow, enum zstr zs)
 {
-	int level;
 	long left;
 	long right;
 
-	sscanf(prow->level, "%d",  &level);
 	sscanf(prow->left,  "%lu", &left);
 	sscanf(prow->right, "%lu", &right);
 
 	memset(prow, 0, sizeof(struct row));
 
-	sql_get_nest_level(sql_get_kabitable(),
-			   left, right, level, zs, prow);
+	sql_get_nest(sql_get_kabitable(), left, right, zs, prow);
 	return true;
 }
 
+static bool process_row(struct row *prow, enum zstr zs, int level)
+{
+	long left;
+	long right;
+
+	sscanf(prow->left,  "%lu", &left);
+	sscanf(prow->right, "%lu", &right);
+
+	memset(prow, 0, sizeof(struct row));
+
+	sql_get_nest_level(sql_get_kabitable(), left, right, level, zs, prow);
+	return true;
+}
 static int exe_decl(char *declstr, char *datafile)
 {
 	int i;
@@ -536,13 +571,13 @@ static int exe_decl(char *declstr, char *datafile)
 		return EXE_NOFILE;
 
 	prow = new_row();
-	sql_create_view_on_decl(view, declstr);
+	sql_create_view_on_decl_nested(view, declstr);
 	get_count(view, &rowcount);
 
 	for (i = 0; i < rowcount; ++i) {
 		memset(prow, 0, sizeof(struct row));
 		sql_get_one_row(view, i, prow);
-		process_row(prow, ZS_OUTER_ATBELOW);
+		process_row_nested(prow, ZS_OUTER);
 	}
 
 	delete_row(prow);
@@ -553,6 +588,7 @@ static int exe_decl(char *declstr, char *datafile)
 
 static int exe_exports(char *declstr, char *datafile)
 {
+	int rval = EXE_OK;
 	int count;
 	char *view = "kt";
 	struct row *prow;
@@ -563,16 +599,30 @@ static int exe_exports(char *declstr, char *datafile)
 	sql_create_view_on_decl(view, declstr);
 	get_count(view, &count);
 
-	if (count == 0)
-		return EXE_NOTFOUND;
+	if (count == 0) {
+		rval = EXE_NOTFOUND;
+		goto out;
+	}
 
-	if (count > 1)
-		return EXE_2MANY;
+	if (count > 1) {
+		rval = EXE_2MANY;
+		goto out;
+	}
 
 	prow = new_row();
-	sql_get_rows_on_decl(sql_get_kabitable(), declstr, (void *)prow);
+	sql_get_one_row(view, 0, prow);
+	printf("FILE: %s\n", prow->parentdecl);
 
-	return EXE_OK;
+	if (kb_flags & KB_VERBOSE)
+		process_row_nested(prow, ZS_INNER);
+	else
+		process_row(prow, ZS_INNER_ATBELOW, 2);
+
+	delete_row(prow);
+out:
+	sql_exec("drop view kt", 0, 0);
+	sql_close(db);
+	return rval;
 }
 
 int exe_count(char *declstr, char *datafile)
@@ -587,8 +637,7 @@ int exe_count(char *declstr, char *datafile)
 	prow = new_row();
 	sql_create_view_on_decl(view, declstr);
 	get_count(view, &count);
-	printf("There are %d symbols matching %s.\n", count, declstr);
-
+	printf("There are %d symbols matching \"%s\".\n", count, declstr);
 	delete_row(prow);
 	sql_exec("drop view kt", 0, 0);
 	sql_close(db);
@@ -628,18 +677,19 @@ static bool check_flags()
 	return true;
 }
 
-static bool parse_opt(char opt, char **argv)
+static bool parse_opt(char opt, char ***argv)
 {
 	switch (opt) {
-	case 'b' : datafile = *(++argv);
+	case 'b' : datafile = *((*argv)++);
 		   break;
 	case 'c' : kb_flags |= KB_COUNT;
+		   declstr = *((*argv)++);
 		   break;
 	case 'd' : kb_flags |= KB_DECL;
-		   declstr = *(++argv);
+		   declstr = *((*argv)++);
 		   break;
 	case 'e' : kb_flags |= KB_EXPORTS;
-		   declstr = *(++argv);
+		   declstr = *((*argv)++);
 		   break;
 	case 'v' : kb_flags |= KB_VERBOSE;
 		   break;
@@ -656,16 +706,19 @@ static bool parse_opt(char opt, char **argv)
 static bool get_options(char **argv, int *idx)
 {
 	int index = 0;
+	char *argstr;
 
 	for (index = 0; *argv[0] == '-'; ++index) {
 		int i;
 
 		// Point to the first character of the actual option
-		char *argstr = &(*argv++)[1];
+		argstr = &(*argv++)[1];
 
 		for (i = 0; argstr[i]; ++i)
-			if (!parse_opt(argstr[i], argv))
+			if (!parse_opt(argstr[i], &argv))
 				return false;
+		if (!*argv)
+			break;
 	}
 
 	*idx = index;
@@ -681,9 +734,13 @@ static void print_cmdline()
 
 static void print_cmd_errmsg(enum exemsg err)
 {
-	printf("\n%s. You typed ...\n  ", errstr[err]);
-	print_cmdline();
-	printf("\nPlease read the help text below.\n%s", helptext);
+	if ((1 << err) & kb_argmask) {
+		printf("\n%s. You typed ...\n  ", errstr[err]);
+		print_cmdline();
+		printf("\nPlease read the help text below.\n%s", helptext);
+	} else {
+		printf (errstr[err], declstr, datafile);
+	}
 }
 
 static int process_args(int argc, char **argv)
@@ -696,8 +753,11 @@ static int process_args(int argc, char **argv)
 	// skip over argv[0], which is the invocation of this app.
 	++argv; --argc;
 
+	if (argc < 2)
+		return EXE_ARG2SML;
+
 	if (!get_options(&argv[0], &argindex))
-		return EINVAL;
+		return EXE_BADFORM;
 
 	return 0;
 }
@@ -705,7 +765,7 @@ static int process_args(int argc, char **argv)
 static int execute()
 {
 	switch (kb_flags & kb_exemask) {
-	case KB_COUNT   : return exe_count(datafile, declstr);
+	case KB_COUNT   : return exe_count(declstr, datafile);
 	case KB_DECL    : return exe_decl(declstr, datafile);
 	case KB_EXPORTS : return exe_exports(declstr, datafile);
 	}
@@ -723,8 +783,13 @@ int main(int argc, char **argv)
 
 	if((err = process_args(argc, argv))) {
 		print_cmd_errmsg(err);
-		return -1;
+		return 1;
 	}
 
-	return execute();
+	if ((err = execute())) {
+		print_cmd_errmsg(err);
+		return 1;
+	}
+
+	return 0;
 }
