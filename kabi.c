@@ -11,14 +11,25 @@
  * project:
  * http://git.engineering.redhat.com/git/users/sbairagy/spartakus.git
  *
- * 1. Gather all the exported symbols
- * 2. Gather all the args of the exported symbols.
- * 3. Recursively descend into the compound types in the arg lists to
- *    acquire all information on compound types that can affect the
- *    exported symbols.
+ * Gather all the exported symbols and recursively descend into the
+ * compound types in the arg lists to acquire all information on compound
+ * types that can affect the exported symbols.
  *
- * Only unique symbols will be listed, rather than listing them everywhere
- * they are discovered.
+ * Symbols will be recursively explored only once. To recursively explore
+ * each symbol wherever it occurs would lead to an unwieldy database.
+ *
+ * Compound symbols and their complete descendancy are kept in a separate
+ * table.
+ *
+ * Two tables are generated. One containing all the kabi data for each file
+ * parsed, and the other containing one complete definition of each compound
+ * structure and all its descendants. These two tables are stored in CSV
+ * (comma separated values) files and can be imported to a database.
+ *
+ * The csv files are opened to be appended, not to be created from scratch,
+ * unless they don't yet exist. In this way, directories and filenames with
+ * wildcards, or the bash utility "find", can be used to process multiple
+ * files, appending the results from each file processed to the CSV files.
  *
  * What is a symbol? From sparse/symbol.h:
  *
@@ -80,28 +91,39 @@ typedef unsigned int bool;
 
 static const char *helptext ="\
 \n\
-kabi [options] files\n\
+kabi [options] files \n\
 \n\
     Parses \".i\" (intermediate, c-preprocessed) files for exported \n\
     symbols and symbols of structs and unions that are used by the \n\
     exported symbols. \n\
 \n\
     files   - File or files (wildcards ok) to be processed\n\
+              Must be last in the argument list. \n\
 \n\
 Options:\n\
+    -d file   optional filename for csv file containing the kabi tree. \n\
+              The default is \"../kabi-data.csv\". \n\
+    -t file   Optional filename for csv file containing all the kabi types. \n\
+              The default is \"../kabi-types.csv\". \n\
     -v        Verbose (default): Lists all the arguments of functions and\n\
               recursively descends into compound types to gather all the\n\
               information about them.\n\
-    -v-       Concise: Lists only the exported functions and their args.\n\
+    -x        Delete the data files before starting. \n\
     -h        This help message.\n\
 \n";
 
 static const char *ksymprefix = "__ksymtab_";
 static bool kp_verbose = true;
+static bool kp_rmfiles = false;
 static bool showusers = false;
 DBG(static int hiwater = 0;)
 static struct symbol_list *symlist = NULL;
 static bool kabiflag = false;
+
+static char *datafilename = "../kabi-data.csv";
+static char *typefilename = "../kabi-types.csv";
+FILE *datafile;
+FILE *typefile;
 
 /*****************************************************
 ** enumerated flags and masks
@@ -195,6 +217,11 @@ static struct knode *alloc_knode()
 	return kptr;
 }
 
+static inline void *delete_last_knode(struct knodelist  **list)
+{
+	return (struct knode *)delete_ptr_list_last((struct ptr_list **)list);
+}
+
 static inline void add_knode (struct knodelist **klist, struct knode *k)
 {
 	add_ptr_list(klist, k);
@@ -251,11 +278,74 @@ static struct knode *map_knode(struct knode *parent,
 }
 
 /*****************************************************
+** Output formatting
+******************************************************/
+
+static void extract_type(struct knode *kn, char *sbuf)
+{
+	char *str;
+
+	memset(sbuf, 0, STRBUFSIZ);
+
+	FOR_EACH_PTR_NOTAG(kn->declist, str) {
+		strcat(sbuf, str);
+		strcat(sbuf, " ");
+	} END_FOR_EACH_PTR_NOTAG(str);
+}
+
+static void compose_declaration(struct knode *kn, char *sbuf)
+{
+	extract_type(kn, sbuf);
+
+	if (kn->flags & CTL_POINTER)
+		strcat(sbuf, "*");
+
+	if (kn->name)
+		strcat(sbuf, kn->name);
+}
+
+static void format_declaration(struct knode *kn)
+{
+	char *sbuf = calloc(STRBUFSIZ, 1);
+	struct knode *parent = kn->parent;
+
+	compose_declaration(kn, sbuf);
+	fprintf(datafile, ",%s", sbuf);
+
+	if (kn == parent)
+		goto out;
+
+	if (!parent || (kn->flags & CTL_FILE)) {
+		fprintf(datafile, ",");
+		goto out;
+	}
+
+	if (parent->declist) {
+		compose_declaration(parent, sbuf);
+		fprintf(datafile, ",%s", sbuf);
+	}
+	else
+		fprintf(datafile, ",%s", parent->name);
+out:
+	free(sbuf);
+	putc('\n', datafile);
+}
+
+static char *pad_out(int padsize, char padchar)
+{
+	static char buf[STRBUFSIZ];
+	memset(buf, 0, STRBUFSIZ);
+	while(padsize--)
+		buf[padsize] = padchar;
+	return buf;
+}
+/*****************************************************
 ** used declaration and utilities
 ******************************************************/
 struct used {
 	struct symbol *symbol;
 	struct knodelist *users;
+	char typnam[STRBUFSIZ];
 };
 
 DECLARE_PTR_LIST(usedlist, struct used);
@@ -278,98 +368,55 @@ static inline void add_used(struct usedlist **list, struct used *u)
 	add_ptr_list(list, u);
 }
 
-static struct used *lookup_used(struct usedlist *list, struct symbol *sym)
+static inline struct knode *first_user(struct knodelist *list)
+{
+	return (struct knode *)first_ptr_list((struct ptr_list *)list);
+}
+
+static struct used *lookup_used(struct usedlist *list, struct knode *kn)
 {
 	struct used *temp;
 	FOR_EACH_PTR(list, temp) {
-		if (temp->symbol == sym)
+		char sbuf[STRBUFSIZ];
+		extract_type(kn, sbuf);
+
+		if(!strncmp(temp->typnam, sbuf, STRBUFSIZ))
 			return temp;
+
 	} END_FOR_EACH_PTR(temp);
 	return NULL;
 }
 
 static void add_new_used(struct usedlist **list,
-			 struct knode *parent,
+			 struct knode *kn,
 			 struct symbol *sym)
 {
+	char sbuf[STRBUFSIZ];
 	struct used *newused = alloc_used();
 	newused->symbol = sym;
-	add_knode(&newused->users, parent);
+	add_knode(&newused->users, kn->parent);
 	add_used(list, newused);
+	extract_type(kn, sbuf);
+	strncpy(newused->typnam, sbuf, STRBUFSIZ);
 }
 
-static bool add_to_used(struct usedlist **list,
-			struct knode *parent,
-			struct symbol *sym)
+static bool is_used(struct usedlist **list,
+		    struct knode *kn,
+		    struct symbol *sym)
 {
 	struct used *user;
 
-	if ((user = lookup_used(*list, sym))) {
-		add_knode(&user->users, parent);
+	if ((user = lookup_used(*list, kn))) {
+		add_knode(&user->users, kn->parent);
 		return true;
 	} else {
-		add_new_used(list, parent, sym);
+		if (!(kn->flags & CTL_STRUCT))
+			return false;
+		add_new_used(list, kn, sym);
 		return false;
 	}
 }
 
-/*****************************************************
-** Output formatting
-******************************************************/
-
-static void compose_declaration(struct knode *kn, char *sbuf)
-{
-	char *str;
-
-	memset(sbuf, 0, STRBUFSIZ);
-
-	FOR_EACH_PTR_NOTAG(kn->declist, str) {
-		strcat(sbuf, str);
-		strcat(sbuf, " ");
-	} END_FOR_EACH_PTR_NOTAG(str);
-
-	if (kn->flags & CTL_POINTER)
-		strcat(sbuf, "*");
-
-	if (kn->name)
-		strcat(sbuf, kn->name);
-}
-
-static void format_declaration(struct knode *kn)
-{
-	char *sbuf = calloc(STRBUFSIZ, 1);
-	struct knode *parent = kn->parent;
-
-	compose_declaration(kn, sbuf);
-	printf(",%s", sbuf);
-
-	if (kn == parent)
-		goto out;
-
-	if (!parent || (kn->flags & CTL_FILE)) {
-		printf(",");
-		goto out;
-	}
-
-	if (parent->declist) {
-		compose_declaration(parent, sbuf);
-		printf(",%s", sbuf);
-	}
-	else
-		printf(",%s", parent->name);
-out:
-	free(sbuf);
-	putchar('\n');
-}
-
-static char *pad_out(int padsize, char padchar)
-{
-	static char buf[BUFSIZ];
-	memset(buf, 0, BUFSIZ);
-	while(padsize--)
-		buf[padsize] = padchar;
-	return buf;
-}
 
 /*****************************************************
 ** sparse probing and mining
@@ -446,34 +493,24 @@ static void get_symbols
 	struct symbol *sym;
 
 	FOR_EACH_PTR(list, sym) {
-		struct knode *kn;
-		struct symbol *basetype = sym->ctype.base_type;
-		enum typemask tm;
-
-		if (basetype)
-			tm = 1 << basetype->type;
+		struct knode *kn = NULL;
 
 		if (parent->symbol == sym)
 			return;
 
-		if ((tm & (SM_STRUCT | SM_UNION))
-				&& add_to_used(&redlist, parent, sym))
-			return;
-
 		kn = map_knode(parent, sym, flags);
 		get_declist(kn, sym);
-
 		if (sym->ident)
 			kn->name = sym->ident->name;
 
-		// Avoid redundancies as well as the possibility of infinite
-		// recursion. Infinite recursion most often occurs when a
-		// struct has members that point back to itself, as in ..
+		// Avoid redundancies and infinite recursions.
+		// Infinite recursions occur when a struct has members
+		// that point back to itself, as in ..
 		// struct list_head {
 		// 	struct list_head *next;
 		// 	struct list_head *prev;
 		// };
-		if (!(add_to_used(&redlist, parent, sym)))
+		if (!(is_used(&redlist, kn, sym)))
 			proc_symlist(kn, kn->symbol_list, CTL_NESTED);
 
 		kn->right = get_timestamp();
@@ -717,13 +754,13 @@ static void show_users(struct knodelist *klist, int level)
 	FOR_EACH_PTR(klist, kn) {
 
 		if (kn->flags & CTL_STRUCT) {
-			printf("%s USER: ", pad_out(level+10, ' '));
+			fprintf(datafile, "%s USER: ", pad_out(level+10, ' '));
 			format_declaration(kn);
 		}
 	}END_FOR_EACH_PTR(kn);
 }
 
-static void show_knodes(struct knodelist *klist)
+static void write_knodes(struct knodelist *klist)
 {
 	struct knode *kn;
 
@@ -737,36 +774,75 @@ static void show_knodes(struct knodelist *klist)
 		if (!kp_verbose && kn->flags & CTL_NESTED)
 			return;
 
-		printf("%d,%lu,%lu,%08x,%s",
+		fprintf(datafile, "%d,%lu,%lu,%08x,%s",
 		       kn->level, kn->left, kn->right, kn->flags, pfx);
 
 		format_declaration(kn);
 
 		if (showusers && (kn->flags & CTL_NESTED)) {
-			struct used *u = lookup_used(redlist, kn->symbol);
+			struct used *u = lookup_used(redlist, kn);
 			if (u)
 				show_users(u->users, kn->level);
 		}
 nextlevel:
 		if (kn->children) {
-			show_knodes(kn->children);
+			write_knodes(kn->children);
 		}
 
 	} END_FOR_EACH_PTR(kn);
+}
+
+static struct knode *get_kn_from_parent(char *typnam, struct knode *parent)
+{
+	struct knode *kn;
+	FOR_EACH_PTR(parent->children, kn) {
+		char sbuf[STRBUFSIZ];
+		extract_type(kn, sbuf);
+		if (!strncmp(sbuf, typnam, STRBUFSIZ))
+			return kn;
+	} END_FOR_EACH_PTR(kn);
+	return NULL;
+}
+
+static void write_types(struct usedlist *rlist)
+{
+	struct used *un;
+
+	FOR_EACH_PTR(rlist, un) {
+		char sbuf[STRBUFSIZ];
+		struct knode *parent = first_user(un->users);
+		struct knode *kn = get_kn_from_parent(un->typnam, parent);
+
+		if (!kn)
+			continue;
+
+		fprintf(typefile, "%d,%lu,%lu,%08x",
+			kn->level, kn->left, kn->right, kn->flags);
+		extract_type(kn, sbuf);
+		fprintf(typefile, ",%s\n", sbuf);
+	} END_FOR_EACH_PTR(un);
 }
 
 /*****************************************************
 ** Command line option parsing
 ******************************************************/
 
-static int parse_opt(char opt, int state)
+static bool parse_opt(char opt, char ***argv, int *index)
 {
 	int optstatus = 1;
 
 	switch (opt) {
-	case 'v' : kp_verbose = state;	// kp_verbose is global to this file
+	case 'd' : datafilename = *((*argv)++);
+		   ++(*index);
 		   break;
-	case 'u' : showusers = state;
+	case 't' : typefilename = *((*argv)++);
+		   ++(*index);
+		   break;
+	case 'v' : kp_verbose = true;
+		   break;
+	case 'u' : showusers = true;
+		   break;
+	case 'x' : kp_rmfiles = true;
 		   break;
 	case 'h' : puts(helptext);
 		   exit(0);
@@ -779,22 +855,32 @@ static int parse_opt(char opt, int state)
 
 static int get_options(char **argv)
 {
-	int state = 0;		// on = 1, off = 0
 	int index = 0;
+	char *argstr;
 
 	for (index = 0; *argv[0] == '-'; ++index) {
 		int i;
 
 		// Point to the first character of the actual option
-		char *argstr = &(*argv++)[1];
-
-		// Trailing '-' sets state to OFF (0) for switches.
-		state = argstr[strlen(argstr)-1] != '-';
+		argstr = &(*argv++)[1];
 
 		for (i = 0; argstr[i]; ++i)
-			parse_opt(argstr[i], state);
+			if (!parse_opt(argstr[i], &argv, &index))
+				return false;
+		if (!*argv)
+			break;
 	}
+
 	return index;
+}
+
+static bool open_file(FILE **f, char *filename)
+{
+	if (!(*f = fopen(filename, "a+"))) {
+		printf("Cannot open file \"%s\".\n", filename);
+		return false;
+	}
+	return true;
 }
 
 /*****************************************************
@@ -842,6 +928,20 @@ int main(int argc, char **argv)
 	if (! kabiflag)
 		return 1;
 
-	show_knodes(knodes);
+	if (kp_rmfiles) {
+		remove(datafilename);
+		remove(typefilename);
+	}
+
+	if (!open_file(&datafile, datafilename))
+		return 1;
+
+	write_knodes(knodes);
+
+	if (!open_file(&typefile, typefilename))
+		return 1;
+
+	write_types(redlist);
+
 	return 0;
 }
