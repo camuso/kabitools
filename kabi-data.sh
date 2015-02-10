@@ -20,14 +20,21 @@ $0 -d <directory> -o <textfile> [-s subdir -b datafile -e errfile -v -h]
                  to the top of the tree defined by the required "directory"
                  argument above.
                  Default is from the top of the kernel tree.
-  -o textfile  - Optional text file. Default is ../kabi-data.log relative to
-                 the top of the kernel tree.
-                 If it already exists, the text file will be destroyed and
+  -b datalog  -  Optional. Default is ../kabi-data.csv relative to
+                 the top of the kernel tree. This file will contain the
+                 parser output of the hierarchical kabi data.
+                 If it already exists, this csv file will be destroyed and
                  rebuilt.
-  -b datafile  - Optional database file. The default is ../kabi-data.sql
+  -B datafile  - Optional database file. The default is ../kabi-data.sql
                  relative to the top of the kernel tree.
                  If it already exists, the database file will be destroyed
                  and rebuilt.
+  -t typelog   - Optional. Default is  ../kabi-type.csv relative to the
+                 top of the kernel tree. This file will contian the parser
+                 output of the compound data type definitions and all their
+                 descendants.
+                 If it already exists, this csv file will be destroyed and
+                 rebuilt.
   -e errfile   - Optional error file. By default, errors are sent
                  to /dev/null
   -v           - Verbose output
@@ -41,7 +48,8 @@ currentdir=$PWD
 verbose=false
 directory=""
 subdir="./"
-textfile="../kabi-data.log"
+datalog="../kabi-data.csv"
+typelog="../kabi-types.csv"
 datafile="../kabi-data.sql"
 errfile="/dev/null"
 
@@ -49,7 +57,7 @@ errfile="/dev/null"
 usage() {
 	echo -e "$usagestr"
 	cd $currentdir
-	exit
+	exit 1
 }
 
 nodir() {
@@ -59,7 +67,7 @@ nodir() {
 
 noparser() {
 	echo -e "\n\t\$directory/kabi-parser does not exist.\n\n"
-	exit
+	exit 1
 }
 
 noexistdir() {
@@ -67,7 +75,7 @@ noexistdir() {
 	nodir
 }
 
-while getopts "vhd:s:o:b:e:" OPTION; do
+while getopts "vhd:s:B:b:t:e:" OPTION; do
     case "$OPTION" in
 
 	d )	directory="$OPTARG"
@@ -75,9 +83,11 @@ while getopts "vhd:s:o:b:e:" OPTION; do
 		;;
 	s )	subdir="$OPTARG"
 		;;
-	o )	textfile="$OPTARG"
+	b )	datalog="$OPTARG"
 		;;
-	b )	datafile="$OPTARG"
+	B )	datafile="$OPTARG"
+		;;
+	t )	typelog="$OPTARG"
 		;;
 	e )	errfile="$OPTARG"
 		;;
@@ -100,34 +110,41 @@ done
 cd $directory
 echo "executing from $PWD"
 
-cat /dev/null > $textfile
+cat /dev/null > $datalog
+cat /dev/null > $typelog
 [ -d "$subdir" ] || noexistdir $subdir
 [ -e "$datafile" ] && rm -vf $datafile
 
 START=$(date +%s)
 
-if  $verbose ; then
-	find $subdir -name \*.i -exec sh -c \
-		'grep -qm1 "__ksymtab_" $1; \
-		if [ $? -eq 0 ]; then \
-			redhat/kabi/kabi-parser $1 2>$2; \
-		fi' \
-		sh '{}' $errfile  \; | tee -a "$textfile"
-else
-	find $subdir -name \*.i -exec sh -c \
-		'grep -qm1 "__ksymtab_" $1; \
-		if [ $? -eq 0 ]; then \
-			echo $1; \
-			redhat/kabi/kabi-parser $1 >> $2 2>$3; \
-		fi' \
-		sh '{}' $textfile $errfile \;
-fi
+find $subdir -name \*.i -exec sh -c \
+	'grep -qm1 "__ksymtab_" $3; \
+	if [ $? -eq 0 ]; then \
+		echo $3; \
+		redhat/kabi/kabi-parser -d $1 -t $2 $3 2>$4; \
+	fi' \
+	sh $datalog $typelog '{}' $errfile \;
 
-echo "Importing text file: $textfile to database: $datafile ..."
+echo
+echo "Importing csv files:"
+echo -e "\t$datalog"
+echo -e "\t$typelog"
+echo "to database: $datafile"
+echo
+echo "This can take a couple minutes."
+echo
 sqlite3 $datafile <<EOF
-create table kabitree (level integer, left integer64, right integer64, flags integer, prefix text, decl text, parentdecl text);
+create table ktree (level integer, left integer64, right integer64, flags integer, prefix text, decl text, parentdecl text);
+create table kabitree (rowid integer primary key, level integer, left integer64, right integer64, flags integer, prefix text, decl text, parentdecl text);
+create table ktype (level integer, left integer64, right integer64, flags integer, type text);
+create table kabitype (rowid integer primary key, level integer, left integer64, right integer64, flags integer, type text);
 .separator ','
-.import $textfile kabitree
+.import $datalog ktree
+.import $typelog ktype
+insert into kabitree (level, left, right, flags, prefix, decl, parentdecl) select * from ktree;
+insert into kabitype (level, left, right, flags, type) select * from ktype;
+drop table ktree;
+drop table ktype;
 EOF
 
 cd -
@@ -140,5 +157,5 @@ seconds=$(( $DIFF % 60 ))
 echo
 echo "Elapsed time: $minutes minutes and $seconds seconds"
 echo
-exit
+exit 0
 
