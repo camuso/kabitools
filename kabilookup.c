@@ -63,6 +63,9 @@ Options:\n\
                 and its argument list. With the -v verbose switch, \n\
                 it will print all the descendants of arguments that \n\
                 are compound data types. \n\
+    -s symbol - Seeks a data structure and prints its members to \n\
+                stdout. With the -v switch, all descendants of all \n\
+                members are also printed. \n\
     -w  whole words only, default is \"match any and all\" \n\
     -v  verbose lists all descendants of a symbol. \n\
     -h  this help message.\n\
@@ -145,7 +148,10 @@ struct row {
 	char left[INTSIZ];
 	char right[INTSIZ];
 	char flags[INTSIZ];
-	char prefix[PFXSIZ];
+	union {
+		char prefix[PFXSIZ];
+		char type[DECLSIZ];
+	};
 	char decl[DECLSIZ];
 	char parentdecl[DECLSIZ];
 };
@@ -341,8 +347,8 @@ enum zstr{
 	ZS_VIEWDECL_WORD,
 	ZS_VIEWDECL_ANY_NESTED,
 	ZS_VIEWDECL_WORD_NESTED,
-	ZS_VIEWDECL_ANY_AT,
-	ZS_VIEWDECL_WORD_AT,
+	ZS_VIEWDECL_ANY_LEVEL,
+	ZS_VIEWDECL_WORD_LEVEL,
 	ZS_VIEW_INNER,
 	ZS_VIEW_OUTER,
 	ZS_VIEW_INNER_LEVEL,
@@ -380,12 +386,12 @@ static char *zstmt[] = {
 [ZS_VIEWDECL_WORD_NESTED] =
 	"create temp view %q as select * from %q where decl like '%%%q '"
 	" AND level > 2",
-[ZS_VIEWDECL_ANY_AT]  =
+[ZS_VIEWDECL_ANY_LEVEL]  =
 	"create temp view %q as select * from %q where decl like '%%%q%%'"
-	" AND level == %d",
-[ZS_VIEWDECL_WORD_AT] =
+	" AND level %s",
+[ZS_VIEWDECL_WORD_LEVEL] =
 	"create temp view %q as select * from %q where decl like '%%%q '"
-	" AND level == %d",
+	" AND level %s",
 [ZS_VIEW_INNER] =
 	"create temp view %q as select * from %q where"
 	" left >= %lu AND right <= %lu",
@@ -455,7 +461,8 @@ bool sql_get_nest(const char *view, long left, long right,
 	return rval;
 }
 
-// sql_create_view_on_nest - can be inner or outer, depending on zs
+// sql_create_view_on_nest - create a view based on the nest boundaries
+//                           can be inner or outer, depending on zs
 //
 // view	 - name of view to create
 // table - name of table from which to create the view
@@ -465,7 +472,7 @@ bool sql_get_nest(const char *view, long left, long right,
 // level - used if the selected zs needs it. Otherwise NULL to satisfy
 //         the argument list.
 //
-bool sql_create_view_on_nest_level(char *view, char *table,
+bool sql_create_view_on_nest(char *view, char *table,
 				   long left, long right,
 				   enum zstr zs, char *level)
 {
@@ -484,15 +491,33 @@ bool sql_create_view_on_nest_level(char *view, char *table,
 	return rval;
 }
 
-bool sql_create_view_on_decl(char *view, char *table, char *declstr)
+// sql_create_view_on_decl - create a view based on the decl column of a table
+//
+// view	 - name of view to create
+// table - name of table from which to create the view
+// decl  - string in decl column to be sought.
+// level - used if the selected zs needs it. Otherwise NULL to satisfy
+//         the argument list.
+//
+bool sql_create_view_on_decl(char *view, char *table,
+			     char *declstr, char *level)
 {
 	bool rval;
 	char *zsql;
-	char *stmt = kb_flags & KB_WHOLE_WORD ?
+	char *stmt;
+
+	if  (level) {
+		stmt = kb_flags & KB_WHOLE_WORD ?
+				zstmt[ZS_VIEWDECL_WORD_LEVEL] :
+				zstmt[ZS_VIEWDECL_ANY_LEVEL];
+		zsql = sqlite3_mprintf(stmt, view, table, declstr, level);
+	} else {
+		stmt = kb_flags & KB_WHOLE_WORD ?
 				zstmt[ZS_VIEWDECL_WORD] :
 				zstmt[ZS_VIEWDECL_ANY];
-	DBG(puts(stmt);)
-	zsql = sqlite3_mprintf(stmt, view, table, declstr);
+		zsql = sqlite3_mprintf(stmt, view, table, declstr);
+	}
+
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, 0, 0);
 	sqlite3_free(zsql);
@@ -636,7 +661,7 @@ static bool get_struct(struct row *prow)
 	if (sql_exists("view", "typ", true))
 		sql_exec("drop view typ", 0, 0);
 
-	sql_create_view_on_decl(view, kabitypes, prow->decl);
+	sql_create_view_on_decl(view, kabitypes, prow->decl, ">= 2");
 	get_count(view, &count);
 
 	for (i = 0; i < count; ++i) {
@@ -663,7 +688,7 @@ static int exe_decl(char *declstr, char *datafile)
 		sql_exec("drop view kt", 0, 0);
 
 	prow = new_row();
-	sql_create_view_on_decl(view, kabitable, declstr);
+	sql_create_view_on_decl(view, kabitable, declstr, NULL);
 	get_count(view, &rowcount);
 
 	for (i = 0; i < rowcount; ++i) {
@@ -691,7 +716,7 @@ static int exe_exports(char *declstr, char *datafile)
 	if (sql_exists("view", "kt", true))
 		sql_exec("drop view kt", 0, 0);
 
-	sql_create_view_on_decl(view, kabitable, declstr);
+	sql_create_view_on_decl(view, kabitable, declstr, "== 1");
 	get_count(view, &count);
 
 	if (count == 0) {
@@ -716,9 +741,9 @@ static int exe_exports(char *declstr, char *datafile)
 		sscanf(prow->left,  "%lu", &left);
 		sscanf(prow->right, "%lu", &right);
 		sql_exec("drop view kt", 0 , 0);
-		sql_create_view_on_nest_level(view, kabitable,
-					      left, right,
-					      ZS_VIEW_INNER_LEVEL, "<= 2");
+		sql_create_view_on_nest(view, kabitable,
+					left, right,
+					ZS_VIEW_INNER_LEVEL, "<= 2");
 		get_count(view, &count);
 
 		for (i = 0; i < count; ++i) {
@@ -753,7 +778,7 @@ int exe_count(char *declstr, char *datafile)
 		sql_exec("drop view kt", 0, 0);
 
 	prow = new_row();
-	sql_create_view_on_decl(view, kabitable, declstr);
+	sql_create_view_on_decl(view, kabitable, declstr, NULL);
 	get_count(view, &count);
 	printf("There are %d symbols matching \"%s\".\n", count, declstr);
 	delete_row(prow);
@@ -774,7 +799,7 @@ static int exe_struct(char *declstr, char *datafile)
 	if (sql_exists("view", "kt", true))
 		sql_exec("drop view kt", 0, 0);
 
-	sql_create_view_on_decl(view, kabitypes, declstr);
+	sql_create_view_on_decl(view, kabitypes, declstr, "> 2");
 	prow = new_row();
 	sql_get_one_row(view, 0, prow);
 	sscanf(prow->level, "%d", &level);
