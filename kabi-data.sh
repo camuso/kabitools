@@ -136,13 +136,13 @@ echo
 sqlite3 $datafile <<EOF
 create table ktree (level integer, left integer64, right integer64, flags integer, prefix text, decl text, parentdecl text);
 create table kabitree (rowid integer primary key, level integer, left integer64, right integer64, flags integer, prefix text, decl text, parentdecl text);
-create table ktype (level integer, left integer64, right integer64, flags integer, type text);
-create table kabitype (rowid integer primary key, level integer, left integer64, right integer64, flags integer, type text);
+create table ktype (level integer, left integer64, right integer64, flags integer, decl text);
+create table kabitype (rowid integer primary key, level integer, left integer64, right integer64, flags integer, decl text);
 .separator ','
 .import $datalog ktree
 .import $typelog ktype
 insert into kabitree (level, left, right, flags, prefix, decl, parentdecl) select * from ktree;
-insert into kabitype (level, left, right, flags, type) select * from ktype;
+insert into kabitype (level, left, right, flags, decl) select * from ktype;
 drop table ktree;
 drop table ktype;
 EOF
