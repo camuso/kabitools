@@ -46,30 +46,23 @@ typedef unsigned int bool;
 
 static const char *helptext ="\
 \n\
-kabi-lookup [options] -[c|d|e]symbol \n\
-\n\
+kabi-lookup -[vw] -c|d|e|s symbol [-b datafile]\n\
     Searches a kabi database for symbols. The results of the search \n\
     are printed to stdout and indented hierarchically.\n\
 \n\
-Options:\n\
+    -c symbol   - Counts the instances of the symbol in the kabi tree. \n\
+    -d symbol   - Prints to stdout every instance of the symbol. It is \n\
+                  advisable to use \"-c symbol\" first. \n\
+    -e symbol   - Specific to EXPORTED functions. Prints the function, \n\
+                  and its argument list. With the -v verbose switch, it \n\
+                  will print all the descendants of nonscalar arguments. \n\
+    -s symbol   - Seeks a data structure and prints its members to stdout. \n\
+                  The -v switch prints descendants of nonscalar members. \n\
+    -v          - verbose lists all descendants of a symbol. \n\
+    -w          - whole words only, default is \"match any and all\" \n\
     -b datafile - Optional sqlite database file. The default is \n\
-		\"../kabi-data.sql\" relative to the top of the \n\
-		kernel tree. \n\
-    -c symbol - Counts the instances of the symbol in the kabi tree. \n\
-    -d symbol - Prints to stdout every instance of the symbol. It is\n\
-		advisable to use \"-c symbol\"first to see how many \n\
-		there are. \n\
-    -e symbol - Specific to EXPORTED functions. Prints the function, \a\
-                and its argument list. With the -v verbose switch, \n\
-                it will print all the descendants of arguments that \n\
-                are compound data types. \n\
-    -s symbol - Seeks a data structure and prints its members to \n\
-                stdout. With the -v switch, all descendants of all \n\
-                members are also printed. \n\
-    -w  whole words only, default is \"match any and all\" \n\
-    -v  verbose lists all descendants of a symbol. \n\
-    -h  this help message.\n\
-\n";
+                  \"../kabi-data.sql\" relative to top of kernel tree. \n\
+    -h  this help message.\n";
 
 enum kbflags {
 	KB_COUNT	= 1 << 0,
@@ -578,6 +571,39 @@ inline void sql_close(sqlite3 *db)
 ** Mine the database and Format the Results
 ******************************************************/
 
+// extract_words - extracts a number of words from one string to another
+//
+// sbuf  - destination string
+// str   - source string
+// seek  - first word we're seeking
+// delim - what delimits the words
+// qty   - how many we want, including the first one.
+// size  - destination buffer size
+//
+static bool extract_words(char *sbuf, char *str, char *seek,
+			  char *delim, int qty)
+{
+	bool found = false;
+	int count = 0;
+	char *c = strtok(str, delim);
+
+	do {
+		if (!strcmp(c, seek))
+			found = true;
+
+		if (found) {
+			strcpy(sbuf, c);
+			++count;
+		}
+
+	} while ((c = strtok(NULL, delim)) && (count < qty));
+
+	if (count < qty)
+		return false;
+
+	return true;
+}
+
 static char *indent(int padsiz)
 {
 	static char buf[DECLSIZ];
@@ -625,17 +651,15 @@ static bool get_struct(struct row *prow)
 	int i;
 	int count;
 	char *view = "typ";
-	char *t1;
+	char sbuf[DECLSIZ];
+	char *str = strdup(prow->decl);
 
-	t1 = strchr(prow->decl, ' ');
-	++t1;
-	t1 = strchr(t1, ' ');
-	*t1 = '\0';
+	extract_words(sbuf, str, "struct", " ", 2);
 
 	if (sql_exists("view", "typ", true))
 		sql_exec("drop view typ", 0, 0);
 
-	sql_create_view_on_decl(view, kabitypes, prow->decl, ">= 2");
+	sql_create_view_on_decl(view, kabitypes, sbuf, ">= 2");
 	get_count(view, &count);
 
 	for (i = 0; i < count; ++i) {
@@ -780,7 +804,7 @@ static int exe_struct(char *declstr, char *datafile)
 	prow = new_row();
 	sql_get_one_row(view, 0, prow);
 	sscanf(prow->level, "%d", &level);
-	sprintf(lvlstr, "%d", level+1);
+	sprintf(lvlstr, "<= %d", level+1);
 
 	if (kb_flags & KB_VERBOSE)
 		process_row(prow, ZS_INNER, NULL);
@@ -904,9 +928,6 @@ static int process_args(int argc, char **argv)
 
 	// skip over argv[0], which is the invocation of this app.
 	++argv; --argc;
-
-	if (argc < 2)
-		return EXE_ARG2SML;
 
 	if (!get_options(&argv[0], &argindex))
 		return EXE_BADFORM;
