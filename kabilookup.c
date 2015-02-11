@@ -196,6 +196,7 @@ void delete_table(struct table *tptr)
 	free(tptr);
 }
 
+// copy row (dest, source)
 void copy_row(struct row *drow, struct row *srow)
 {
 	strncpy(drow->rowid,	  srow->rowid,      INTSIZ-1);
@@ -607,13 +608,15 @@ static bool process_row(struct row *prow, enum zstr zs, char *level)
 {
 	long left;
 	long right;
+	struct row *pr = new_row();
 
-	sscanf(prow->left,  "%lu", &left);
-	sscanf(prow->right, "%lu", &right);
-
-	memset(prow, 0, sizeof(struct row));
+	memset(pr, 0, sizeof(struct row));
+	copy_row(pr, prow);
+	sscanf(pr->left,  "%lu", &left);
+	sscanf(pr->right, "%lu", &right);
 
 	sql_get_nest(kabitable, left, right, zs, level, (void *)prow);
+	delete_row(pr);
 	return true;
 }
 
@@ -716,6 +719,8 @@ static int exe_exports(char *declstr, char *datafile)
 					left, right,
 					ZS_VIEW_INNER_LEVEL, "<= 2");
 		get_count(view, &count);
+		sql_get_one_row(view, 0, prow);
+		process_row(prow, ZS_OUTER_LEVEL, "== 1");
 
 		for (i = 0; i < count; ++i) {
 			memset(prow, 0, sizeof(struct row));
