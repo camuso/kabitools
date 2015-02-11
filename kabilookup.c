@@ -130,6 +130,7 @@ enum schema {
 	COL_RIGHT,
 	COL_FLAGS,
 	COL_PREFIX,
+	COL_TYPE = COL_PREFIX,
 	COL_DECL,
 	COL_PARENTDECL,
 };
@@ -259,6 +260,21 @@ int sql_process_field(void *output, int argc, char **argv, char **colnames)
 	return 0;
 }
 
+int sql_process_data(void *array, int argc, char **argv, char **colnames)
+{
+	int i;
+	char **strary = (char **)array;
+
+	if (!argc || !colnames)
+		return -1;
+
+	for (i = 0; i < argc; ++i) {
+		DBG(printf("%s ", argv[i]);)
+		strcpy(strary[i], argv[i]);
+	}
+	return 0;
+}
+
 // sql_process_row - callback to process one row from a select call
 //
 // NOTE: the "output" parameter, though cast as void * for the SQLite API,
@@ -312,10 +328,9 @@ int sql_process_row(void *output, int argc, char **argv, char **colnames)
 
 // sql_print_row - callback to print one row from a select call
 //
-// NOTE: the "output" parameter is unused here.
-//       also, this function will print rows in the order in which they
-//       are returned by the database query that called it, and only
-//	 the FILE prefix will be printed and none of the other prefixes.
+//       This function will print rows in the order in which they are
+//       returned by the database query that called it, and only the
+//       FILE, EXPORTED, and ARG prefixes will be printed.
 //
 int sql_print_row(void *output, int argc, char **argv, char **colnames)
 {
@@ -335,18 +350,12 @@ int sql_print_row(void *output, int argc, char **argv, char **colnames)
 enum zstr{
 	ZS_DECL_ANY,
 	ZS_DECL_WORD,
-	ZS_DECL_ANY_AT,
-	ZS_DECL_WORD_AT,
-	ZS_OUTER,
-	ZS_OUTER_AT,
-	ZS_OUTER_ATBELOW,
 	ZS_INNER,
-	ZS_INNER_AT,
-	ZS_INNER_ATBELOW,
+	ZS_OUTER,
+	ZS_INNER_LEVEL,
+	ZS_OUTER_LEVEL,
 	ZS_VIEWDECL_ANY,
 	ZS_VIEWDECL_WORD,
-	ZS_VIEWDECL_ANY_NESTED,
-	ZS_VIEWDECL_WORD_NESTED,
 	ZS_VIEWDECL_ANY_LEVEL,
 	ZS_VIEWDECL_WORD_LEVEL,
 	ZS_VIEW_INNER,
@@ -359,38 +368,24 @@ static char *zstmt[] = {
 [ZS_DECL_ANY]  =
 	"select * from %q where decl like '%%%q%%'",
 [ZS_DECL_WORD] =
-	"select * from %q where decl like '%%%q '",
-[ZS_DECL_ANY_AT] =
-	"select * from %q where decl like '%%%q%%' AND level == %d",
-[ZS_DECL_WORD_AT] =
-	"select * from %q where decl like '%%%q ' AND level == %d",
-[ZS_OUTER] =
-	"select * from %q where left <= %lu AND right >= %lu",
-[ZS_OUTER_AT] =
-	"select * from %q where left <= %lu AND right >= %lu AND level == %d",
-[ZS_OUTER_ATBELOW] =
-	"select * from %q where left <= %lu AND right >= %lu AND level <= %d",
+	"select * from %q where decl like '%%%q %%'",
 [ZS_INNER] =
 	"select * from %q where left >= %lu AND right <= %lu",
-[ZS_INNER_AT] =
-	"select * from %q where left >= %lu AND right <= %lu AND level == %d",
-[ZS_INNER_ATBELOW] =
-	"select * from %q where left >= %lu AND right <= %lu AND level <= %d",
+[ZS_OUTER] =
+	"select * from %q where left <= %lu AND right >= %lu",
+[ZS_INNER_LEVEL] =
+	"select * from %q where left >= %lu AND right <= %lu AND level %s",
+[ZS_OUTER_LEVEL] =
+	"select * from %q where left <= %lu AND right >= %lu AND level %s",
 [ZS_VIEWDECL_ANY] =
 	"create temp view %q as select * from %q where decl like '%%%q%%'",
 [ZS_VIEWDECL_WORD] =
-	"create temp view %q as select * from %q where decl like '%%%q '",
-[ZS_VIEWDECL_ANY_NESTED] =
-	"create temp view %q as select * from %q where decl like '%%%q%%'"
-	" AND level > 2",
-[ZS_VIEWDECL_WORD_NESTED] =
-	"create temp view %q as select * from %q where decl like '%%%q '"
-	" AND level > 2",
+	"create temp view %q as select * from %q where decl like '%%%q %%'",
 [ZS_VIEWDECL_ANY_LEVEL]  =
 	"create temp view %q as select * from %q where decl like '%%%q%%'"
 	" AND level %s",
 [ZS_VIEWDECL_WORD_LEVEL] =
-	"create temp view %q as select * from %q where decl like '%%%q '"
+	"create temp view %q as select * from %q where decl like '%%%q %%'"
 	" AND level %s",
 [ZS_VIEW_INNER] =
 	"create temp view %q as select * from %q where"
@@ -436,24 +431,28 @@ bool sql_get_rows_on_decl(char *viewname, char *declstr, void *output)
 	return rval;
 }
 
-
-bool sql_get_nest_level(const char *view, long left, long right, int level,
-			enum zstr zs, void *dest)
-{
-	bool rval;
-	char *zsql = sqlite3_mprintf(zstmt[zs], view, left, right, level);
-
-	DBG(puts(zsql);)
-	rval = sql_exec(zsql, sql_print_row, dest);
-	sqlite3_free(zsql);
-	return rval;
-}
-
+// sql_get_nest - create a view based on the nest boundaries
+//                           can be inner or outer, depending on zs
+//
+// table - name of table or view from which to extract the nest
+// left  - leftmost boundary of nest
+// right - rightmost boundary of nest
+// zs    - an enum that selects a command string from the zstmt array
+// level - used if the selected zs needs it. Otherwise NULL to satisfy
+//         the argument list.
+// dest  - data area to pass to the callback, which copy the data from
+//         the view into the data area.
+//
 bool sql_get_nest(const char *view, long left, long right,
-		  enum zstr zs, void *dest)
+		  enum zstr zs, char *level, void *dest)
 {
 	bool rval;
-	char *zsql = sqlite3_mprintf(zstmt[zs], view, left, right);
+	char *zsql;
+
+	if (level)
+		zsql = sqlite3_mprintf(zstmt[zs], view, left, right, level);
+	else
+		zsql = sqlite3_mprintf(zstmt[zs], view, left, right);
 
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, sql_print_row, dest);
@@ -541,31 +540,17 @@ bool sql_exists(char *type, char *name, bool temp)
 	return true;
 }
 
-// sql_process_row_count - callback to process the return for a count request
-//
-// NOTE: The count comes back as a string (char *) representation of a
-//       decimal number.
-//
-int sql_process_row_count(void *output, int argc, char **argv, char **colnames)
-{
-	if ((argc != 1) || !output || !colnames)
-		return -1;
-
-	memcpy(output, argv[0], INTSIZ-1); // values go out of scope
-	return 0;
-}
-
 // sql_row_count - counts the number of rows in a view
 //
 // NOTE: Create a view first. See sql_creat_view_on_decl() above.
 //
-bool sql_row_count(char *viewname, char *count)
+bool sql_row_count(char *view, char *count)
 {
 	bool rval;
-	char *zsql = sqlite3_mprintf("select count (left) from %q", viewname);
+	char *zsql = sqlite3_mprintf("select count () from %q", view);
 
 	DBG(puts(zsql);)
-	rval = sql_exec(zsql, sql_process_row_count, (void *)count);
+	rval = sql_exec(zsql, sql_process_field, (void *)count);
 	sqlite3_free(zsql);
 	return rval;
 }
@@ -618,7 +603,7 @@ static bool get_count(char *view, int *count)
 	return true;
 }
 
-static bool process_row_nested(struct row *prow, enum zstr zs)
+static bool process_row(struct row *prow, enum zstr zs, char *level)
 {
 	long left;
 	long right;
@@ -628,21 +613,7 @@ static bool process_row_nested(struct row *prow, enum zstr zs)
 
 	memset(prow, 0, sizeof(struct row));
 
-	sql_get_nest(sql_get_kabitable(), left, right, zs, prow);
-	return true;
-}
-
-static bool process_row(struct row *prow, enum zstr zs, int level)
-{
-	long left;
-	long right;
-
-	sscanf(prow->left,  "%lu", &left);
-	sscanf(prow->right, "%lu", &right);
-
-	memset(prow, 0, sizeof(struct row));
-
-	sql_get_nest_level(sql_get_kabitable(), left, right, level, zs, prow);
+	sql_get_nest(kabitable, left, right, zs, level, (void *)prow);
 	return true;
 }
 
@@ -667,7 +638,7 @@ static bool get_struct(struct row *prow)
 	for (i = 0; i < count; ++i) {
 		memset(prow, 0, sizeof(struct row));
 		sql_get_one_row(view, i, prow);
-		process_row_nested(prow, ZS_INNER);
+		process_row(prow, ZS_INNER, NULL);
 	}
 
 	sql_exec("drop view typ", 0, 0);
@@ -694,7 +665,7 @@ static int exe_decl(char *declstr, char *datafile)
 	for (i = 0; i < rowcount; ++i) {
 		memset(prow, 0, sizeof(struct row));
 		sql_get_one_row(view, i, prow);
-		process_row_nested(prow, ZS_OUTER);
+		process_row(prow, ZS_OUTER, NULL);
 	}
 
 	delete_row(prow);
@@ -756,7 +727,7 @@ static int exe_exports(char *declstr, char *datafile)
 		}
 	}
 	else
-		process_row(prow, ZS_INNER_ATBELOW, 2);
+		process_row(prow, ZS_INNER_LEVEL, "<= 2");
 
 	delete_row(prow);
 out:
@@ -791,6 +762,7 @@ static int exe_struct(char *declstr, char *datafile)
 {
 	int level;
 	char *view = "kt";
+	char lvlstr[INTSIZ];
 	struct row *prow;
 
 	if (!sql_open(datafile))
@@ -803,11 +775,12 @@ static int exe_struct(char *declstr, char *datafile)
 	prow = new_row();
 	sql_get_one_row(view, 0, prow);
 	sscanf(prow->level, "%d", &level);
+	sprintf(lvlstr, "%d", level+1);
 
 	if (kb_flags & KB_VERBOSE)
-		process_row_nested(prow, ZS_INNER);
+		process_row(prow, ZS_INNER, NULL);
 	else
-		process_row(prow, ZS_INNER_ATBELOW, level+1);
+		process_row(prow, ZS_INNER_LEVEL, lvlstr);
 
 	delete_row(prow);
 	sql_exec("drop view kt", 0, 0);
