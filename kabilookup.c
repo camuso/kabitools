@@ -663,7 +663,7 @@ static bool get_struct(struct row *prow)
 		sql_exec("drop view sv", 0, 0);
 
 	extract_words(sbuf, str, "struct", " ", 2, DECLSIZ);
-	sql_create_view_on_decl(view, kabitypes, sbuf, ">= 3");
+	sql_create_view_on_decl(view, kabitypes, sbuf, ">= 2");
 
 	pr = new_row();
 	sql_get_one_row(view, 0, pr);
