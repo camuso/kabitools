@@ -94,6 +94,7 @@ enum exemsg {
 	EXE_ARG2SML,
 	EXE_CONFLICT,
 	EXE_BADFORM,
+	EXE_INVARG,
 	EXE_NOFILE,
 	EXE_NOTFOUND,
 	EXE_2MANY,
@@ -102,7 +103,8 @@ enum exemsg {
 static int kb_argmask =	(1 << EXE_ARG2BIG)  |
 			(1 << EXE_ARG2SML)  |
 			(1 << EXE_CONFLICT) |
-			(1 << EXE_BADFORM);
+			(1 << EXE_BADFORM   |
+			(1 << EXE_INVARG));
 
 // Execution result messages
 static const char *errstr[] = {
@@ -110,6 +112,7 @@ static const char *errstr[] = {
 	[EXE_ARG2SML]	= "Not enough arguments",
 	[EXE_CONFLICT]	= "You entered conflicting switches",
 	[EXE_BADFORM]	= "Badly formed argument list",
+	[EXE_INVARG]    = "Invalid argument.",
 	[EXE_NOFILE]	= "Seeking \"%s\", but cannot open database file %s\n",
 	[EXE_NOTFOUND]	= "\"%s\" cannot be found in database file %s\n",
 	[EXE_2MANY]	= "Too many items match \"%s\" in database %s."
