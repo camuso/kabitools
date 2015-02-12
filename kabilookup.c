@@ -593,10 +593,10 @@ inline void sql_close(sqlite3 *db)
 // extract_words - extracts a number of words from one string to another
 //
 // sbuf  - destination string
-// str   - source string
-// seek  - first word we're seeking
+// str   - source string (haystack)
+// seek  - first word we're seeking (needle)
 // delim - what delimits the words
-// qty   - how many we want, including the first one.
+// qty   - how many we want, including first one, after finding first one.
 // size  - destination buffer size
 //
 static bool extract_words(char *sbuf, char *str, char *seek,
@@ -626,6 +626,35 @@ static bool extract_words(char *sbuf, char *str, char *seek,
 	return true;
 }
 
+// tokenize - tokenizes a string into substrings divided by spaces
+//
+// sbuf - user's buffer containing the string to be tokenized
+//
+// Returns a dynamically allocated array of strings. It is the
+// caller's responsibility to free this pointer when done with it.
+//
+char **tokenize(char *sbuf)
+{
+	char *dup = strdup(sbuf);
+	char *c = dup;
+	int words = 0;
+	char **strarray;
+
+	while( *(++c))
+		if (isspace(*c))
+			++words;
+
+	strarray = (char **)malloc(words * sizeof(char *));
+	c = strtok(dup, " ");
+
+	do {
+		*(strarray++) = c;
+	} while ((c = strtok(NULL, " ")));
+
+	free(dup);
+	return strarray;
+}
+
 static char *trim_trail(char *str)
 {
 	unsigned len = strlen(str);
@@ -637,25 +666,53 @@ static char *trim_trail(char *str)
 	return str;
 }
 
+// is_exact - Look for an exact word match
+//
+// Returns true if the user's input string exactly matches a string in
+// the decl field of the kabi database. If user is looking for
+// "struct device", will return false on "struct device_private", whereas
+// the sqlite database will see these as equivalent enough for a match.
+//
+// declstr - haystack, the data returned by sqlite
+// needle  - user's input from the console
+//
+static bool is_exact(char *haystack, char *needle)
+{
+	unsigned len = strlen(needle);
+
+	if ((strlen(haystack) == len) && (!strcmp(haystack, needle)))
+		return true;
+
+	return false;
+}
+
+// check_declstr - looking for one exact match among a number of possibilities
+//
+// count   - the number of hits sqlite got from the user's input
+// declstr - the user's input from the console
+// view    - the sqlite view or table where the hits were made
+// prow    - pointer to a row structure being used to obtain the data
+//
 static bool check_declstr(int count, char *declstr,
 			  char *view, struct row *prow)
 {
 	int i;
 	char sbuf[DECLSIZ];
-	unsigned len = strlen(declstr);
+	char *dup = strdup(prow->decl);
 
-	extract_words(sbuf, prow->decl, declstr, " ", 1, DECLSIZ);
+	extract_words(sbuf, dup, declstr, " ", 1, DECLSIZ);
 	trim_trail(sbuf);
 
 	for (i = 0; i < count; ++i) {
 
-		if ((strlen(sbuf) == len) && (!strcmp(sbuf, declstr)))
+		if (is_exact(sbuf, declstr))
 			return true;
 
 		puts(prow->decl);
 		memset(prow, 0, (sizeof(struct row)));
 		sql_get_one_row(view, i, prow);
 	}
+	free(dup);
 	return false;
 }
 
