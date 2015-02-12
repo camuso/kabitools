@@ -52,12 +52,14 @@ kabi-lookup -[vw] -c|d|e|s symbol [-b datafile]\n\
     are printed to stdout and indented hierarchically.\n\
 \n\
     -c symbol   - Counts the instances of the symbol in the kabi tree. \n\
-    -d symbol   - Prints to stdout every instance of the symbol. It is \n\
-                  advisable to use \"-c symbol\" first. \n\
+    -s symbol   - Prints to stdout every exported function that is implicitly \n\
+                  or explicitly affected by the symbol. In verbose mode, the \n\
+                  chain from the exported function to the symbol is printed.\n\
+                  It is advisable to use \"-c symbol\" first. \n\
     -e symbol   - Specific to EXPORTED functions. Prints the function, \n\
                   and its argument list. With the -v verbose switch, it \n\
                   will print all the descendants of nonscalar arguments. \n\
-    -s symbol   - Seeks a data structure and prints its members to stdout. \n\
+    -d symbol   - Seeks a data structure and prints its members to stdout. \n\
                   The -v switch prints descendants of nonscalar members. \n\
     -v          - verbose lists all descendants of a symbol. \n\
     -w          - whole words only, default is \"match any and all\" \n\
@@ -140,8 +142,6 @@ static void print_cmdline();
 static struct sqlite3 *db = NULL;
 static char *kabitable = "kabitree";
 static char *kabitypes = "kabitype";
-
-
 
 /*****************************************************
 ** Database Access Templates
@@ -369,6 +369,8 @@ enum zstr{
 	ZS_VIEW_OUTER,
 	ZS_VIEW_INNER_LEVEL,
 	ZS_VIEW_OUTER_LEVEL,
+	ZS_UNIONVIEW_INNER,
+	ZS_UNIONVIEW_OUTER,
 };
 
 static char *zstmt[] = {
@@ -404,8 +406,11 @@ static char *zstmt[] = {
 	"create temp view %q as select * from %q where"
 	" left >= %lu AND right <= %lu AND level %s",
 [ZS_VIEW_OUTER_LEVEL] =
-	"create view %q as select * from %q where"
-	" left >= %lu AND right <= %lu AND level %s",
+	"create temp view %q as select * from %q where"
+	" left <= %lu AND right => %lu AND level %s",
+[ZS_UNIONVIEW_OUTER] =
+	"create temp view %q as select * from %q UNION select * from %q"
+	" where %q.left <= left AND %q.right >= right",
 };
 
 // sql_get_one_row - extract one row from a view, given the offset into the view
@@ -523,6 +528,19 @@ bool sql_create_view_on_decl(char *view, char *table,
 				zstmt[ZS_VIEWDECL_ANY];
 		zsql = sqlite3_mprintf(stmt, view, table, declstr);
 	}
+
+	DBG(puts(zsql);)
+	rval = sql_exec(zsql, 0, 0);
+	sqlite3_free(zsql);
+	return rval;
+}
+
+bool sql_create_view_on_union(char *newview, char *viewA, char *viewB,
+			      enum zstr zs)
+{
+	bool rval;
+	char *stmt = zstmt[zs];
+	char *zsql = sqlite3_mprintf(stmt, newview, viewA, viewB, viewB, viewB);
 
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, 0, 0);
@@ -785,7 +803,7 @@ static bool get_struct(struct row *prow)
 	return true;
 }
 
-static int exe_decl(char *declstr, char *datafile)
+static int exe_struct(char *declstr, char *datafile)
 {
 	int i;
 	int rowcount;
@@ -805,7 +823,10 @@ static int exe_decl(char *declstr, char *datafile)
 	for (i = 0; i < rowcount; ++i) {
 		memset(prow, 0, sizeof(struct row));
 		sql_get_one_row(view, i, prow);
-		process_row(prow, ZS_OUTER, NULL);
+		if (kb_flags & KB_VERBOSE)
+			process_row(prow, ZS_OUTER, NULL);
+		else
+			process_row(prow, ZS_OUTER_LEVEL, "== 1");
 	}
 
 	delete_row(prow);
@@ -904,7 +925,7 @@ int exe_count(char *declstr, char *datafile)
 	return EXE_OK;
 }
 
-static int exe_struct(char *declstr, char *datafile)
+static int exe_decl(char *declstr, char *datafile)
 {
 	int level;
 	char *view = "st";
@@ -995,6 +1016,20 @@ static bool parse_opt(char opt, char ***argv)
 	}
 
 	return check_flags();
+}
+
+enum longopt {
+	OPT_NODUPS,
+};
+
+char *longopts[] = {
+	[OPT_NODUPS] = "no-dups",
+};
+
+static bool parse_long_opt(char ***argv)
+{
+
+	return true;
 }
 
 static bool get_options(char **argv, int *idx)
