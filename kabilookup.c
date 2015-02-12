@@ -148,6 +148,7 @@ struct row {
 	};
 	char decl[DECLSIZ];
 	char parentdecl[DECLSIZ];
+	int offset;
 };
 
 struct row *new_row()
@@ -326,15 +327,16 @@ int sql_process_row(void *output, int argc, char **argv, char **colnames)
 //       returned by the database query that called it, and only the
 //       FILE, EXPORTED, and ARG prefixes will be printed.
 //
-int sql_print_row(void *output, int argc, char **argv, char **colnames)
+int sql_print_row(void *prow, int argc, char **argv, char **colnames)
 {
-	int pad = (int)strtoul(argv[COL_LEVEL],0,0);
-	char *padstr = indent(pad);
+	struct row *pr = (struct row *)prow;
+	int level = (int)strtoul(argv[COL_LEVEL],0,0) - pr->offset;
+	char *padstr = indent(level);
 
-	if (!argc || !output || !colnames)
+	if (!argc || !prow || !colnames)
 		return -1;
 
-	if (strtoul(argv[COL_LEVEL],0,0) <= 2)
+	if (level <= 2)
 		printf("%s%s %s\n", padstr, argv[COL_PREFIX], argv[COL_DECL]);
 	else
 		printf("%s%s\n", padstr, argv[COL_DECL]);
@@ -581,18 +583,21 @@ inline void sql_close(sqlite3 *db)
 // size  - destination buffer size
 //
 static bool extract_words(char *sbuf, char *str, char *seek,
-			  char *delim, int qty)
+			  char *delim, int qty, int size)
 {
 	bool found = false;
 	int count = 0;
 	char *c = strtok(str, delim);
+
+	memset(sbuf, '\0', size);
 
 	do {
 		if (!strcmp(c, seek))
 			found = true;
 
 		if (found) {
-			strcpy(sbuf, c);
+			strcat(sbuf, c);
+			strcat(sbuf, " ");
 			++count;
 		}
 
@@ -648,27 +653,26 @@ static bool process_row(struct row *prow, enum zstr zs, char *level)
 
 static bool get_struct(struct row *prow)
 {
-	int i;
-	int count;
-	char *view = "typ";
-	char sbuf[DECLSIZ];
+	char *view = "sv";
 	char *str = strdup(prow->decl);
+	char sbuf[DECLSIZ];
+	int level;
+	struct row *pr;
 
-	extract_words(sbuf, str, "struct", " ", 2);
+	if (sql_exists("sv", "typ", true))
+		sql_exec("drop view sv", 0, 0);
 
-	if (sql_exists("view", "typ", true))
-		sql_exec("drop view typ", 0, 0);
+	extract_words(sbuf, str, "struct", " ", 2, DECLSIZ);
+	sql_create_view_on_decl(view, kabitypes, sbuf, ">= 3");
 
-	sql_create_view_on_decl(view, kabitypes, sbuf, ">= 2");
-	get_count(view, &count);
+	pr = new_row();
+	sql_get_one_row(view, 0, pr);
+	sscanf(pr->level, "%d", &level);
+	pr->offset = level - 3;
+	process_row(pr, ZS_INNER, NULL);
 
-	for (i = 0; i < count; ++i) {
-		memset(prow, 0, sizeof(struct row));
-		sql_get_one_row(view, i, prow);
-		process_row(prow, ZS_INNER, NULL);
-	}
-
-	sql_exec("drop view typ", 0, 0);
+	delete_row(pr);
+	sql_exec("drop view sv", 0, 0);
 	return true;
 }
 
@@ -738,20 +742,23 @@ static int exe_exports(char *declstr, char *datafile)
 
 		sscanf(prow->left,  "%lu", &left);
 		sscanf(prow->right, "%lu", &right);
+		process_row(prow, ZS_OUTER_LEVEL, "== 1");
+
 		sql_exec("drop view kt", 0 , 0);
 		sql_create_view_on_nest(view, kabitable,
 					left, right,
 					ZS_VIEW_INNER_LEVEL, "<= 2");
 		get_count(view, &count);
-		sql_get_one_row(view, 0, prow);
-		process_row(prow, ZS_OUTER_LEVEL, "== 1");
 
-		for (i = 0; i < count; ++i) {
+		for (i = 1; i < count; ++i) {
 			memset(prow, 0, sizeof(struct row));
 			sql_get_one_row(view, i, prow);
+			process_row(prow, ZS_OUTER_LEVEL, "== 2");
+
 			if (!(strstr(prow->decl, "struct ")) &&
 			    !(strstr(prow->decl, "union ")))
 				continue;
+
 			get_struct(prow);
 		}
 	}
@@ -790,14 +797,14 @@ int exe_count(char *declstr, char *datafile)
 static int exe_struct(char *declstr, char *datafile)
 {
 	int level;
-	char *view = "kt";
+	char *view = "st";
 	char lvlstr[INTSIZ];
 	struct row *prow;
 
 	if (!sql_open(datafile))
 		return EXE_NOFILE;
 
-	if (sql_exists("view", "kt", true))
+	if (sql_exists("view", "st", true))
 		sql_exec("drop view kt", 0, 0);
 
 	sql_create_view_on_decl(view, kabitypes, declstr, "> 2");
@@ -812,7 +819,7 @@ static int exe_struct(char *declstr, char *datafile)
 		process_row(prow, ZS_INNER_LEVEL, lvlstr);
 
 	delete_row(prow);
-	sql_exec("drop view kt", 0, 0);
+	sql_exec("drop view st", 0, 0);
 	sql_close(db);
 	return EXE_OK;
 }
