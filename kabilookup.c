@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <asm-generic/errno-base.h>
 #define NDEBUG	// comment out to enable asserts
 #include <assert.h>
@@ -64,6 +65,13 @@ kabi-lookup -[vw] -c|d|e|s symbol [-b datafile]\n\
                   \"../kabi-data.sql\" relative to top of kernel tree. \n\
     -h  this help message.\n";
 
+
+
+/*****************************************************
+** Enums and Flags
+******************************************************/
+
+// User input control flags
 enum kbflags {
 	KB_COUNT	= 1 << 0,
 	KB_DECL		= 1 << 1,
@@ -76,6 +84,8 @@ enum kbflags {
 
 static enum kbflags kb_flags = 0;
 static const int kb_exemask  = KB_COUNT | KB_DECL | KB_EXPORTS | KB_STRUCT;
+
+// Execution message enumerations
 enum exemsg {
 	EXE_OK,
 	EXE_ARG2BIG,
@@ -92,6 +102,7 @@ static int kb_argmask =	(1 << EXE_ARG2BIG)  |
 			(1 << EXE_CONFLICT) |
 			(1 << EXE_BADFORM);
 
+// Execution result messages
 static const char *errstr[] = {
 	[EXE_ARG2BIG]	= "Too many arguments",
 	[EXE_ARG2SML]	= "Not enough arguments",
@@ -103,17 +114,6 @@ static const char *errstr[] = {
 			  " Be more specific.\n",
 	"\0"
 };
-
-enum exemsg;
-static char *indent(int padsiz);
-static void print_cmd_errmsg(enum exemsg err);
-static void print_cmdline();
-
-/*****************************************************
-** global sqlite3 data
-******************************************************/
-static struct sqlite3 *db = NULL;
-static const char *table = "kabitree";
 
 // schema enumeration
 enum schema {
@@ -128,13 +128,33 @@ enum schema {
 	COL_PARENTDECL,
 };
 
+
 /*****************************************************
-** View Management
+** global declarations
+******************************************************/
+
+enum exemsg;
+static char *indent(int padsiz);
+static void print_cmd_errmsg(enum exemsg err);
+static void print_cmdline();
+static struct sqlite3 *db = NULL;
+static char *kabitable = "kabitree";
+static char *kabitypes = "kabitype";
+
+
+
+/*****************************************************
+** Database Access Templates
 ******************************************************/
 
 #define INTSIZ 32
 #define PFXSIZ 16
 #define DECLSIZ 256
+
+enum rowtype {
+	KB_TREE,
+	KB_TYPE,
+};
 
 struct row {
 	char rowid[INTSIZ];
@@ -149,12 +169,14 @@ struct row {
 	char decl[DECLSIZ];
 	char parentdecl[DECLSIZ];
 	int offset;
+	enum rowtype rowtype;
 };
 
-struct row *new_row()
+struct row *new_row(enum rowtype rowtype)
 {
 	struct row *pr = malloc(sizeof(struct row));
 	memset(pr, 0, sizeof(struct row));
+	pr->rowtype = rowtype;
 	return pr;
 }
 
@@ -175,7 +197,7 @@ struct table {
 
 struct table *new_table(int rowcount)
 {
-	struct table *tptr = malloc(sizeof(table));
+	struct table *tptr = malloc(sizeof(struct table));
 	tptr->arraysize = rowcount * sizeof(struct row);
 	tptr->rowcount = rowcount;
 	tptr->array = malloc(tptr->arraysize);
@@ -198,7 +220,12 @@ void copy_row(struct row *drow, struct row *srow)
 	strncpy(drow->left,       srow->left,       INTSIZ-1);
 	strncpy(drow->right,      srow->right,	    INTSIZ-1);
 	strncpy(drow->flags,      srow->flags,      INTSIZ-1);
-	strncpy(drow->prefix,     srow->prefix,     PFXSIZ-1);
+
+	if (drow->rowtype == KB_TREE)
+		strncpy(drow->prefix, srow->prefix, PFXSIZ-1);
+	else
+		strncpy(drow->type, srow->type,     DECLSIZ-1);
+
 	strncpy(drow->decl,       srow->decl,       DECLSIZ-1);
 	strncpy(drow->parentdecl, srow->parentdecl, DECLSIZ-1);
 }
@@ -206,26 +233,6 @@ void copy_row(struct row *drow, struct row *srow)
 /*****************************************************
 ** SQLite utilities and wrappers
 ******************************************************/
-// if this were c++, db and table would be private members
-// of a sql class, accessible only by member function calls.
-
-static char *kabitable = "kabitree";
-static char *kabitypes = "kabitype";
-
-inline struct sqlite3 *sql_get_db()
-{
-	return db;
-}
-
-inline void sql_set_kabitable(const char *tablename)
-{
-	kabitable = (char *)tablename;
-}
-
-inline char *sql_get_kabitable()
-{
-	return kabitable;
-}
 
 bool sql_exec(const char *stmt,
 	      int (*cb)(void *, int, char**, char**),
@@ -255,7 +262,7 @@ int sql_process_field(void *output, int argc, char **argv, char **colnames)
 	return 0;
 }
 
-int sql_process_data(void *array, int argc, char **argv, char **colnames)
+int sql_process_blob(void *array, int argc, char **argv, char **colnames)
 {
 	int i;
 	char **strary = (char **)array;
@@ -279,10 +286,14 @@ int sql_process_data(void *array, int argc, char **argv, char **colnames)
 int sql_process_row(void *output, int argc, char **argv, char **colnames)
 {
 	int i;
-	struct row *pr = (struct row *)output;
+	int pfxsiz;
+	struct row *pr;
 
 	if (!argc || !colnames)
 		return -1;
+
+	pr = (struct row *)output;
+	pfxsiz = pr->rowtype == KB_TYPE ? DECLSIZ-1 : PFXSIZ-1;
 
 	for (i = 0; i < argc; ++i) {
 		DBG(printf("%s ", argv[i]);)
@@ -304,7 +315,7 @@ int sql_process_row(void *output, int argc, char **argv, char **colnames)
 			strncpy(pr->flags, argv[i], INTSIZ-1);
 			break;
 		case COL_PREFIX	    :
-			strncpy(pr->prefix, argv[i], PFXSIZ-1);
+			strncpy(pr->prefix, argv[i], pfxsiz);
 			break;
 		case COL_DECL	    :
 			strncpy(pr->decl, argv[i], DECLSIZ-1);
@@ -331,7 +342,7 @@ int sql_print_row(void *prow, int argc, char **argv, char **colnames)
 {
 	struct row *pr = (struct row *)prow;
 	int level = (int)strtoul(argv[COL_LEVEL],0,0) - pr->offset;
-	char *padstr = indent(level);
+	char *padstr = indent(level >=0 ? level : 0);
 
 	if (!argc || !prow || !colnames)
 		return -1;
@@ -519,6 +530,12 @@ bool sql_create_view_on_decl(char *view, char *table,
 	return rval;
 }
 
+// sql_exists - determines if a table or view already exists
+//
+// type - "view" or "table"
+// name - the name assigned to the view or table when it was created
+// temp - call with true if view was created as a temp
+//
 bool sql_exists(char *type, char *name, bool temp)
 {
 	char answer[INTSIZ];
@@ -570,7 +587,7 @@ inline void sql_close(sqlite3 *db)
 }
 
 /*****************************************************
-** Mine the database and Format the Results
+** String Manipulation
 ******************************************************/
 
 // extract_words - extracts a number of words from one string to another
@@ -609,6 +626,39 @@ static bool extract_words(char *sbuf, char *str, char *seek,
 	return true;
 }
 
+static char *trim_trail(char *str)
+{
+	unsigned len = strlen(str);
+	char *c = str + len;
+
+	while (isspace(*(--c)))
+		*c = 0;
+
+	return str;
+}
+
+static bool check_declstr(int count, char *declstr,
+			  char *view, struct row *prow)
+{
+	int i;
+	char sbuf[DECLSIZ];
+	unsigned len = strlen(declstr);
+
+	extract_words(sbuf, prow->decl, declstr, " ", 1, DECLSIZ);
+	trim_trail(sbuf);
+
+	for (i = 0; i < count; ++i) {
+
+		if ((strlen(sbuf) == len) && (!strcmp(sbuf, declstr)))
+			return true;
+
+		puts(prow->decl);
+		memset(prow, 0, (sizeof(struct row)));
+		sql_get_one_row(view, i, prow);
+	}
+	return false;
+}
+
 static char *indent(int padsiz)
 {
 	static char buf[DECLSIZ];
@@ -625,6 +675,10 @@ static char *indent(int padsiz)
 	return buf;
 }
 
+/*****************************************************
+** Mine the database and Format the Results
+******************************************************/
+
 static bool get_count(char *view, int *count)
 {
 	char countstr[INTSIZ];
@@ -639,15 +693,11 @@ static bool process_row(struct row *prow, enum zstr zs, char *level)
 {
 	long left;
 	long right;
-	struct row *pr = new_row();
 
-	memset(pr, 0, sizeof(struct row));
-	copy_row(pr, prow);
-	sscanf(pr->left,  "%lu", &left);
-	sscanf(pr->right, "%lu", &right);
+	sscanf(prow->left,  "%lu", &left);
+	sscanf(prow->right, "%lu", &right);
 
 	sql_get_nest(kabitable, left, right, zs, level, (void *)prow);
-	delete_row(pr);
 	return true;
 }
 
@@ -659,18 +709,20 @@ static bool get_struct(struct row *prow)
 	int level;
 	struct row *pr;
 
-	if (sql_exists("sv", "typ", true))
+	if (sql_exists("view", "sv", true))
 		sql_exec("drop view sv", 0, 0);
 
 	extract_words(sbuf, str, "struct", " ", 2, DECLSIZ);
 	sql_create_view_on_decl(view, kabitypes, sbuf, ">= 2");
 
-	pr = new_row();
+	pr = new_row(KB_TYPE);
 	sql_get_one_row(view, 0, pr);
 	sscanf(pr->level, "%d", &level);
 	pr->offset = level - 3;
+	strncpy(pr->type, prow->decl, DECLSIZ);
 	process_row(pr, ZS_INNER, NULL);
 
+	free(str);
 	delete_row(pr);
 	sql_exec("drop view sv", 0, 0);
 	return true;
@@ -689,7 +741,7 @@ static int exe_decl(char *declstr, char *datafile)
 	if (sql_exists("view", "kt", true))
 		sql_exec("drop view kt", 0, 0);
 
-	prow = new_row();
+	prow = new_row(KB_TREE);
 	sql_create_view_on_decl(view, kabitable, declstr, NULL);
 	get_count(view, &rowcount);
 
@@ -721,18 +773,19 @@ static int exe_exports(char *declstr, char *datafile)
 	sql_create_view_on_decl(view, kabitable, declstr, "== 1");
 	get_count(view, &count);
 
-	if (count == 0) {
+	if (count < 1)  {
 		rval = EXE_NOTFOUND;
 		goto out;
 	}
 
-	if (count > 1) {
+	prow = new_row(KB_TREE);
+	sql_get_one_row(view, 0, prow);
+
+	if ((count > 1) &&(!check_declstr(count, declstr, view, prow))) {
 		rval = EXE_2MANY;
 		goto out;
 	}
 
-	prow = new_row();
-	sql_get_one_row(view, 0, prow);
 	printf("FILE: %s\n", prow->parentdecl);
 
 	if (kb_flags & KB_VERBOSE) {
@@ -784,7 +837,7 @@ int exe_count(char *declstr, char *datafile)
 	if (sql_exists("view", "kt", true))
 		sql_exec("drop view kt", 0, 0);
 
-	prow = new_row();
+	prow = new_row(KB_TREE);
 	sql_create_view_on_decl(view, kabitable, declstr, NULL);
 	get_count(view, &count);
 	printf("There are %d symbols matching \"%s\".\n", count, declstr);
@@ -807,11 +860,12 @@ static int exe_struct(char *declstr, char *datafile)
 	if (sql_exists("view", "st", true))
 		sql_exec("drop view kt", 0, 0);
 
-	sql_create_view_on_decl(view, kabitypes, declstr, "> 2");
-	prow = new_row();
+	sql_create_view_on_decl(view, kabitypes, declstr, ">= 2");
+	prow = new_row(KB_TYPE);
 	sql_get_one_row(view, 0, prow);
 	sscanf(prow->level, "%d", &level);
-	sprintf(lvlstr, "<= %d", level+1);
+	sprintf(lvlstr, "<= %d", level);
+	prow->offset = level - 3;
 
 	if (kb_flags & KB_VERBOSE)
 		process_row(prow, ZS_INNER, NULL);
