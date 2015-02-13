@@ -87,6 +87,7 @@ enum kbflags {
 	KB_WHOLE_WORD	= 1 << 5,
 	KB_DATABASE	= 1 << 6,
 	KB_NODUPS	= 1 << 7,
+	KB_ARGS		= 1 << 8,
 };
 
 static enum kbflags kb_flags = 0;
@@ -143,13 +144,15 @@ enum schema {
 ** global declarations
 ******************************************************/
 
-enum exemsg;
-static char *indent(int padsiz);
-static void print_cmd_errmsg(enum exemsg err);
-static void print_cmdline();
 static struct sqlite3 *db = NULL;
 static char *kabitable = "kabitree";
 static char *kabitypes = "kabitype";
+enum exemsg;
+
+static char *indent(int padsiz);
+static void print_cmd_errmsg(enum exemsg err);
+static void print_cmdline();
+static int count_bits(unsigned mask);
 
 /*****************************************************
 ** Database Access Templates
@@ -162,6 +165,10 @@ static char *kabitypes = "kabitype";
 enum rowtype {
 	KB_TREE,
 	KB_TYPE,
+};
+
+enum rowflags {
+	ROW_NODUPS = (1 << 0),
 };
 
 struct row {
@@ -178,6 +185,7 @@ struct row {
 	char parentdecl[DECLSIZ];
 	int offset;
 	enum rowtype rowtype;
+	enum rowflags rfags;
 };
 
 struct row *new_row(enum rowtype rowtype)
@@ -348,21 +356,29 @@ int sql_process_row(void *output, int argc, char **argv, char **colnames)
 //
 int sql_print_row(void *prow, int argc, char **argv, char **colnames)
 {
-	struct row *pr = (struct row *)prow;
-	int level = (int)strtoul(argv[COL_LEVEL],0,0) - pr->offset;
-	char *padstr = indent(level >=0 ? level : 0);
+	char *padstr;
+	int level;
 
-	if (!argc || !prow || !colnames)
+	if (!argc || !colnames)
 		return -1;
+
+	level = (int)strtoul(argv[COL_LEVEL],0,0);
+
+	if (prow)
+		level -= ((struct row *)prow)->offset;
+
+	padstr = indent(level >= 0 ? level : 0);
 
 	if (level <= 2)
 		printf("%s%s %s\n", padstr, argv[COL_PREFIX], argv[COL_DECL]);
 	else
 		printf("%s%s\n", padstr, argv[COL_DECL]);
+
 	return 0;
 }
 
 enum zstr{
+	ZS_LEVEL,
 	ZS_DECL_ANY,
 	ZS_DECL_WORD,
 	ZS_INNER,
@@ -379,9 +395,12 @@ enum zstr{
 	ZS_VIEW_OUTER_LEVEL,
 	ZS_UNIONVIEW_INNER,
 	ZS_UNIONVIEW_OUTER,
+	ZS_VIEW_LEVEL,
 };
 
 static char *zstmt[] = {
+[ZS_LEVEL] =
+	"select * from %q where level %s",
 [ZS_DECL_ANY]  =
 	"select * from %q where decl like '%%%q%%'",
 [ZS_DECL_WORD] =
@@ -418,7 +437,8 @@ static char *zstmt[] = {
 	" left <= %lu AND right => %lu AND level %s",
 [ZS_UNIONVIEW_OUTER] =
 	"create temp view %q as select * from %q UNION select * from %q"
-	" where %q.left <= left AND %q.right >= right",
+	" where left <= %q.left AND right >= %q.right",
+[ZS_VIEW_LEVEL] = "create temp view %q as select from %q where level %s",
 };
 
 // sql_get_one_row - extract one row from a view, given the offset into the view
@@ -447,6 +467,14 @@ bool sql_get_rows_on_decl(char *viewname, char *declstr, void *output)
 
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, sql_process_row, output);
+	sqlite3_free(zsql);
+	return rval;
+}
+
+bool sql_get_level(char *vw, char *level)
+{
+	char *zsql = sqlite3_mprintf(zstmt[ZS_LEVEL], vw, level);
+	bool rval = sql_exec(zsql, sql_print_row, NULL);
 	sqlite3_free(zsql);
 	return rval;
 }
@@ -543,6 +571,14 @@ bool sql_create_view_on_decl(char *view, char *table,
 	return rval;
 }
 
+bool sql_create_view_on_level(char *vwb, char *vwa, char *level)
+{
+	char *zsql = sqlite3_mprintf(zstmt[ZS_VIEW_LEVEL], vwb, vwa, level);
+	bool rval = sql_exec(zsql, 0, 0);
+	sqlite3_free(zsql);
+	return rval;
+}
+
 bool sql_create_view_on_union(char *newview, char *viewA, char *viewB,
 			      enum zstr zs)
 {
@@ -577,6 +613,14 @@ bool sql_exists(char *type, char *name, bool temp)
 		return false;
 
 	return true;
+}
+
+bool sql_drop_view(char *view)
+{
+	char *zsql = sqlite3_mprintf("drop view %q", view);
+	bool rval = sql_exec(zsql, 0, 0);
+	sqlite3_free(zsql);
+	return rval;
 }
 
 // sql_row_count - counts the number of rows in a view
@@ -811,34 +855,43 @@ static bool get_struct(struct row *prow)
 	return true;
 }
 
-static int exe_struct(char *declstr, char *datafile)
+static void loop_view(char *vw)
 {
 	int i;
-	int rowcount;
-	char *view = "kt";
-	struct row *prow;
+	int count;
+	struct row *pr = new_row(KB_TREE);
+
+	get_count(vw, &count);
+
+	for (i = 0; i < count; ++i) {
+		memset(pr, 0, sizeof(struct row));
+		sql_get_one_row(vw, i, pr);
+		process_row(pr, ZS_OUTER, NULL);
+	}
+	delete_row(pr);
+}
+
+static int exe_struct(char *declstr, char *datafile)
+{
+	char *vwa = "vwa";
+	char *vwb = "vwb";
 
 	if (!sql_open(datafile))
 		return EXE_NOFILE;
 
-	if (sql_exists("view", "kt", true))
-		sql_exec("drop view kt", 0, 0);
+	sql_create_view_on_decl(vwa, kabitable, declstr, NULL);
 
-	prow = new_row(KB_TREE);
-	sql_create_view_on_decl(view, kabitable, declstr, NULL);
-	get_count(view, &rowcount);
-
-	for (i = 0; i < rowcount; ++i) {
-		memset(prow, 0, sizeof(struct row));
-		sql_get_one_row(view, i, prow);
-		if (kb_flags & KB_VERBOSE)
-			process_row(prow, ZS_OUTER, NULL);
-		else
-			process_row(prow, ZS_OUTER_LEVEL, "== 1");
+	if (kb_flags & KB_VERBOSE) {
+		loop_view(vwa);
+		goto out;
 	}
 
-	delete_row(prow);
-	sql_exec("drop view kt", 0, 0);
+	sql_create_view_on_union(vwb, kabitable, vwa,
+				 ZS_UNIONVIEW_OUTER);
+	sql_get_level(vwb, "== 1");
+	sql_drop_view(vwb);
+out:
+	sql_drop_view(vwa);
 	sql_close(db);
 	return EXE_OK;
 }
@@ -852,9 +905,6 @@ static int exe_exports(char *declstr, char *datafile)
 
 	if (!sql_open(datafile))
 		return EXE_NOFILE;
-
-	if (sql_exists("view", "kt", true))
-		sql_exec("drop view kt", 0, 0);
 
 	sql_create_view_on_decl(view, kabitable, declstr, "== 1");
 	get_count(view, &count);
@@ -920,9 +970,6 @@ int exe_count(char *declstr, char *datafile)
 	if (!sql_open(datafile))
 		return EXE_NOFILE;
 
-	if (sql_exists("view", "kt", true))
-		sql_exec("drop view kt", 0, 0);
-
 	prow = new_row(KB_TREE);
 	sql_create_view_on_decl(view, kabitable, declstr, NULL);
 	get_count(view, &count);
@@ -950,7 +997,7 @@ static int exe_decl(char *declstr, char *datafile)
 	prow = new_row(KB_TYPE);
 	sql_get_one_row(view, 0, prow);
 	sscanf(prow->level, "%d", &level);
-	sprintf(lvlstr, "<= %d", level);
+	sprintf(lvlstr, "<= %d", level + 1);
 	prow->offset = level - 3;
 
 	if (kb_flags & KB_VERBOSE)
@@ -1028,24 +1075,30 @@ static bool parse_opt(char opt, char ***argv)
 
 enum longopt {
 	OPT_NODUPS,
+	OPT_ARGS,
 };
 
 char *longopts[] = {
 	[OPT_NODUPS] = "no-dups",
+	[OPT_ARGS] = "args",
 };
 
-static bool parse_long_opt(char *argstr, char ***argv)
+static bool parse_long_opt(char *argstr)
 {
 	unsigned i;
-	unsigned foo = sizeof((unsigned *)longopts)/sizeof(char *);
 
-	for (i = 0; i < sizeof((unsigned)*longopts/sizeof(char *)); ++i)
+	for (i = 0; i < sizeof((long)*longopts)/sizeof(char *); ++i)
 		if(!strcmp(++argstr, longopts[i]))
 			break;
 	switch (i) {
 	case OPT_NODUPS :
 		kb_flags |= KB_NODUPS;
 		break;
+	case OPT_ARGS	:
+		kb_flags |= KB_ARGS;
+		break;
+	default		:
+		return false;
 	}
 
 	return true;
@@ -1063,7 +1116,7 @@ static bool get_options(char **argv, int *idx)
 		argstr = &(*argv++)[1];
 
 		if (*argstr == '-')
-			if(parse_long_opt(argstr, &argv))
+			if(parse_long_opt(argstr))
 				continue;
 
 		for (i = 0; argstr[i]; ++i)
