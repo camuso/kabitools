@@ -65,6 +65,10 @@ kabi-lookup -[vw] -c|d|e|s symbol [-b datafile]\n\
     -w          - whole words only, default is \"match any and all\" \n\
     -b datafile - Optional sqlite database file. The default is \n\
                   \"../kabi-data.sql\" relative to top of kernel tree. \n\
+    --no-dups   - A structure can appear more than once in the nest of an \n\
+                  exported function, for example a pointer back to itself as\n\
+                  parent to one of its descendants. This switch limits the \n\
+                  appearance of an exported function to just once. \n\
     -h  this help message.\n";
 
 
@@ -82,6 +86,7 @@ enum kbflags {
 	KB_VERBOSE	= 1 << 4,
 	KB_WHOLE_WORD	= 1 << 5,
 	KB_DATABASE	= 1 << 6,
+	KB_NODUPS	= 1 << 7,
 };
 
 static enum kbflags kb_flags = 0;
@@ -1029,8 +1034,19 @@ char *longopts[] = {
 	[OPT_NODUPS] = "no-dups",
 };
 
-static bool parse_long_opt(char ***argv)
+static bool parse_long_opt(char *argstr, char ***argv)
 {
+	unsigned i;
+	unsigned foo = sizeof((unsigned *)longopts)/sizeof(char *);
+
+	for (i = 0; i < sizeof((unsigned)*longopts/sizeof(char *)); ++i)
+		if(!strcmp(++argstr, longopts[i]))
+			break;
+	switch (i) {
+	case OPT_NODUPS :
+		kb_flags |= KB_NODUPS;
+		break;
+	}
 
 	return true;
 }
@@ -1045,6 +1061,10 @@ static bool get_options(char **argv, int *idx)
 
 		// Point to the first character of the actual option
 		argstr = &(*argv++)[1];
+
+		if (*argstr == '-')
+			if(parse_long_opt(argstr, &argv))
+				continue;
 
 		for (i = 0; argstr[i]; ++i)
 			if (!parse_opt(argstr[i], &argv))
