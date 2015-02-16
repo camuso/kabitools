@@ -185,7 +185,7 @@ struct row {
 	char parentdecl[DECLSIZ];
 	int offset;
 	enum rowtype rowtype;
-	enum rowflags rfags;
+	enum rowflags rowflags;
 };
 
 struct row *new_row(enum rowtype rowtype)
@@ -348,6 +348,16 @@ int sql_process_row(void *output, int argc, char **argv, char **colnames)
 	return 0;
 }
 
+bool filter_dups(struct row *pr, char **argv)
+{
+	char decl[DECLSIZ];
+
+	if (!pr)
+		return false;
+
+	return true;
+}
+
 // sql_print_row - callback to print one row from a select call
 //
 //       This function will print rows in the order in which they are
@@ -358,14 +368,20 @@ int sql_print_row(void *prow, int argc, char **argv, char **colnames)
 {
 	char *padstr;
 	int level;
+	struct row *pr;
 
 	if (!argc || !colnames)
 		return -1;
 
 	level = (int)strtoul(argv[COL_LEVEL],0,0);
 
-	if (prow)
-		level -= ((struct row *)prow)->offset;
+	if (prow) {
+		pr = (struct row *)prow;
+		if ((pr->rowflags & ROW_NODUPS) && (filter_dups(pr, argv)))
+			return 0;
+
+		level -= pr->offset;
+	}
 
 	padstr = indent(level >= 0 ? level : 0);
 
@@ -396,6 +412,10 @@ enum zstr{
 	ZS_UNIONVIEW_INNER,
 	ZS_UNIONVIEW_OUTER,
 	ZS_VIEW_LEVEL,
+	ZS_NV_UNIQUE_STRUCT2EXPORT,
+	ZS_NV_STRUCT2EXPORT,
+	ZS_VB_UNIQUE_STRUCT2EXPORT,
+	ZS_VB_STRUCT2EXPORT,
 };
 
 static char *zstmt[] = {
@@ -438,7 +458,33 @@ static char *zstmt[] = {
 [ZS_UNIONVIEW_OUTER] =
 	"create temp view %q as select * from %q UNION select * from %q"
 	" where left <= %q.left AND right >= %q.right",
-[ZS_VIEW_LEVEL] = "create temp view %q as select from %q where level %s",
+[ZS_VIEW_LEVEL] =
+	"create temp view %q as select from %q where level %s",
+
+// Concise struct search
+// List only the exported symbols that contain the struct being sought
+// not the struct itself
+[ZS_NV_UNIQUE_STRUCT2EXPORT] =
+	// non verbose no duplicates
+	"select * from %q where level == 1 and (select rowid from"
+	" %q UNION select rowid from %q where left <= %q.left AND"
+	" right >= %q.right)",
+[ZS_NV_STRUCT2EXPORT]	=
+	// non verbose list all including duplicates
+	"select %q.* from %q,%q where %q.level == 1"
+	" and %q.left <= %q.left and %q.right >= %q.right",
+
+// Verbose struct search
+// List the exported symbols that contain the struct and the whole nest
+// from the exported symbol down to the struct.
+[ZS_VB_UNIQUE_STRUCT2EXPORT] =
+	// verbose list with no duplicates
+	"select * from %q union select %q.* from %q,%q where"
+	" %q.level=1 and %q.left <= %q.left and %q.right >= %q.right",
+[ZS_VB_STRUCT2EXPORT] =
+	// verbose list including duplicates
+	"select kabitree.* from kabitree,aa where kabitree.left <= aa.left"
+	" and kabitree.right >= aa.right",
 };
 
 // sql_get_one_row - extract one row from a view, given the offset into the view
@@ -474,6 +520,47 @@ bool sql_get_rows_on_decl(char *viewname, char *declstr, void *output)
 bool sql_get_level(char *vw, char *level)
 {
 	char *zsql = sqlite3_mprintf(zstmt[ZS_LEVEL], vw, level);
+	bool rval = sql_exec(zsql, sql_print_row, NULL);
+	sqlite3_free(zsql);
+	return rval;
+}
+
+bool sql_concise_unique_struct2export(char *table, char *vw)
+{
+	char *zsql = sqlite3_mprintf(zstmt[ZS_NV_UNIQUE_STRUCT2EXPORT],
+				     table, table, vw, vw, vw);
+	bool rval = sql_exec(zsql, sql_print_row, NULL);
+	sqlite3_free(zsql);
+	return rval;
+}
+
+bool sql_concise_struct2export(char *table, char *vw)
+{
+	char *zsql = sqlite3_mprintf(zstmt[ZS_NV_STRUCT2EXPORT], table, table,
+				     vw, table, table, vw, table, vw);
+	bool rval = sql_exec(zsql, sql_print_row, NULL);
+	sqlite3_free(zsql);
+	return rval;
+}
+
+bool sql_verbose_unique_struct2export(char *table, char *vw)
+{
+	char *zsql = sqlite3_mprintf(zstmt[ZS_VB_UNIQUE_STRUCT2EXPORT],
+				     vw, table, table, vw, table,
+				     table, vw, table, vw);
+	struct row *pr = new_row(KB_TREE);
+	bool rval;
+
+	pr->rowflags |= ROW_NODUPS;
+	rval = sql_exec(zsql, sql_print_row, (void *)pr);
+	sqlite3_free(zsql);
+	return rval;
+}
+
+bool sql_verbose_struct2export(char *table, char *vw)
+{
+	char *zsql = sqlite3_mprintf(zstmt[ZS_VB_STRUCT2EXPORT], table, table,
+				     vw, table, vw, table, vw);
 	bool rval = sql_exec(zsql, sql_print_row, NULL);
 	sqlite3_free(zsql);
 	return rval;
@@ -855,7 +942,7 @@ static bool get_struct(struct row *prow)
 	return true;
 }
 
-static void loop_view(char *vw)
+static void get_verbose_exports(char *vw)
 {
 	int i;
 	int count;
@@ -871,26 +958,36 @@ static void loop_view(char *vw)
 	delete_row(pr);
 }
 
+static void get_verbose_struct2exports(char *vw)
+{
+	if (kb_flags & KB_NODUPS)
+		sql_verbose_unique_struct2export(kabitable, vw);
+	else
+		sql_verbose_struct2export(kabitable, vw);
+}
+
+static void get_concise_struct2export(char *vw)
+{
+	if (kb_flags & KB_NODUPS)
+		sql_concise_unique_struct2export(kabitable, vw);
+	else
+		sql_concise_struct2export(kabitable, vw);
+}
+
 static int exe_struct(char *declstr, char *datafile)
 {
 	char *vwa = "vwa";
-	char *vwb = "vwb";
 
 	if (!sql_open(datafile))
 		return EXE_NOFILE;
 
 	sql_create_view_on_decl(vwa, kabitable, declstr, NULL);
 
-	if (kb_flags & KB_VERBOSE) {
-		loop_view(vwa);
-		goto out;
-	}
+	if (kb_flags & KB_VERBOSE)
+		get_verbose_struct2exports(vwa);
+	else
+		get_concise_struct2export(vwa);
 
-	sql_create_view_on_union(vwb, kabitable, vwa,
-				 ZS_UNIONVIEW_OUTER);
-	sql_get_level(vwb, "== 1");
-	sql_drop_view(vwb);
-out:
 	sql_drop_view(vwa);
 	sql_close(db);
 	return EXE_OK;
