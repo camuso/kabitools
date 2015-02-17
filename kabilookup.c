@@ -348,14 +348,22 @@ int sql_process_row(void *output, int argc, char **argv, char **colnames)
 	return 0;
 }
 
-bool filter_dups(struct row *pr, char **argv)
+// is_dup - Returns true if the current record is a dup of a previous one
+//
+// NOTE: Not re-entrant, not thread-safe.
+//
+bool is_dup(struct row *pr, char **argv, int level)
 {
-	char decl[DECLSIZ];
+	static char decl[DECLSIZ];
+	static bool dup = false;
 
 	if (!pr)
 		return false;
 
-	return true;
+	if (level == 1)
+		if (!(dup = !strcmp(argv[COL_DECL], decl)))
+			strcpy(decl, argv[COL_DECL]);
+	return dup;
 }
 
 // sql_print_row - callback to print one row from a select call
@@ -377,7 +385,7 @@ int sql_print_row(void *prow, int argc, char **argv, char **colnames)
 
 	if (prow) {
 		pr = (struct row *)prow;
-		if ((pr->rowflags & ROW_NODUPS) && (filter_dups(pr, argv)))
+		if ((pr->rowflags & ROW_NODUPS) && (is_dup(pr, argv, level)))
 			return 0;
 
 		level -= pr->offset;
@@ -394,37 +402,24 @@ int sql_print_row(void *prow, int argc, char **argv, char **colnames)
 }
 
 enum zstr{
-	ZS_LEVEL,
-	ZS_DECL_ANY,
-	ZS_DECL_WORD,
 	ZS_INNER,
 	ZS_OUTER,
 	ZS_INNER_LEVEL,
 	ZS_OUTER_LEVEL,
+	ZS_OUTER_VIEW,
 	ZS_VIEWDECL_ANY,
 	ZS_VIEWDECL_WORD,
 	ZS_VIEWDECL_ANY_LEVEL,
 	ZS_VIEWDECL_WORD_LEVEL,
 	ZS_VIEW_INNER,
-	ZS_VIEW_OUTER,
 	ZS_VIEW_INNER_LEVEL,
-	ZS_VIEW_OUTER_LEVEL,
-	ZS_UNIONVIEW_INNER,
 	ZS_UNIONVIEW_OUTER,
 	ZS_VIEW_LEVEL,
 	ZS_NV_UNIQUE_STRUCT2EXPORT,
 	ZS_NV_STRUCT2EXPORT,
-	ZS_VB_UNIQUE_STRUCT2EXPORT,
-	ZS_VB_STRUCT2EXPORT,
 };
 
 static char *zstmt[] = {
-[ZS_LEVEL] =
-	"select * from %q where level %s",
-[ZS_DECL_ANY]  =
-	"select * from %q where decl like '%%%q%%'",
-[ZS_DECL_WORD] =
-	"select * from %q where decl like '%%%q %%'",
 [ZS_INNER] =
 	"select * from %q where left >= %lu AND right <= %lu",
 [ZS_OUTER] =
@@ -433,6 +428,9 @@ static char *zstmt[] = {
 	"select * from %q where left >= %lu AND right <= %lu AND level %s",
 [ZS_OUTER_LEVEL] =
 	"select * from %q where left <= %lu AND right >= %lu AND level %s",
+[ZS_OUTER_VIEW] =
+	"select %q.* from %q,%q"
+	" where %q.left <= %q.left and %q.right >= %q.right",
 [ZS_VIEWDECL_ANY] =
 	"create temp view %q as select * from %q where decl like '%%%q%%'",
 [ZS_VIEWDECL_WORD] =
@@ -446,18 +444,9 @@ static char *zstmt[] = {
 [ZS_VIEW_INNER] =
 	"create temp view %q as select * from %q where"
 	" left >= %lu AND right <= %lu",
-[ZS_VIEW_OUTER] =
-	"create temp view %q as select * from %q"
-	" where left >= %lu AND right <= %lu",
 [ZS_VIEW_INNER_LEVEL] =
 	"create temp view %q as select * from %q where"
 	" left >= %lu AND right <= %lu AND level %s",
-[ZS_VIEW_OUTER_LEVEL] =
-	"create temp view %q as select * from %q where"
-	" left <= %lu AND right => %lu AND level %s",
-[ZS_UNIONVIEW_OUTER] =
-	"create temp view %q as select * from %q UNION select * from %q"
-	" where left <= %q.left AND right >= %q.right",
 [ZS_VIEW_LEVEL] =
 	"create temp view %q as select from %q where level %s",
 
@@ -473,18 +462,6 @@ static char *zstmt[] = {
 	// non verbose list all including duplicates
 	"select %q.* from %q,%q where %q.level == 1"
 	" and %q.left <= %q.left and %q.right >= %q.right",
-
-// Verbose struct search
-// List the exported symbols that contain the struct and the whole nest
-// from the exported symbol down to the struct.
-[ZS_VB_UNIQUE_STRUCT2EXPORT] =
-	// verbose list with no duplicates
-	"select * from %q union select %q.* from %q,%q where"
-	" %q.level=1 and %q.left <= %q.left and %q.right >= %q.right",
-[ZS_VB_STRUCT2EXPORT] =
-	// verbose list including duplicates
-	"select kabitree.* from kabitree,aa where kabitree.left <= aa.left"
-	" and kabitree.right >= aa.right",
 };
 
 // sql_get_one_row - extract one row from a view, given the offset into the view
@@ -499,28 +476,6 @@ bool sql_get_one_row(char *viewname, int offset, struct row *retrow)
 				     viewname, offset);
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, sql_process_row, (void *)retrow);
-	sqlite3_free(zsql);
-	return rval;
-}
-
-bool sql_get_rows_on_decl(char *viewname, char *declstr, void *output)
-{
-	bool rval;
-	char *stmt = kb_flags & KB_WHOLE_WORD ?
-				zstmt[ZS_DECL_WORD] :
-				zstmt[ZS_DECL_ANY];
-	char *zsql = sqlite3_mprintf(stmt, viewname, declstr);
-
-	DBG(puts(zsql);)
-	rval = sql_exec(zsql, sql_process_row, output);
-	sqlite3_free(zsql);
-	return rval;
-}
-
-bool sql_get_level(char *vw, char *level)
-{
-	char *zsql = sqlite3_mprintf(zstmt[ZS_LEVEL], vw, level);
-	bool rval = sql_exec(zsql, sql_print_row, NULL);
 	sqlite3_free(zsql);
 	return rval;
 }
@@ -545,29 +500,38 @@ bool sql_concise_struct2export(char *table, char *vw)
 
 bool sql_verbose_unique_struct2export(char *table, char *vw)
 {
-	char *zsql = sqlite3_mprintf(zstmt[ZS_VB_UNIQUE_STRUCT2EXPORT],
-				     vw, table, table, vw, table,
-				     table, vw, table, vw);
-	struct row *pr = new_row(KB_TREE);
 	bool rval;
-
+	struct row *pr = new_row(KB_TREE);
+	char *zsql = sqlite3_mprintf(zstmt[ZS_OUTER_VIEW], table, table, vw,
+				     table, vw, table, vw );
 	pr->rowflags |= ROW_NODUPS;
 	rval = sql_exec(zsql, sql_print_row, (void *)pr);
 	sqlite3_free(zsql);
+	delete_row(pr);
 	return rval;
 }
 
 bool sql_verbose_struct2export(char *table, char *vw)
 {
-	char *zsql = sqlite3_mprintf(zstmt[ZS_VB_STRUCT2EXPORT], table, table,
-				     vw, table, vw, table, vw);
+	char *zsql = sqlite3_mprintf(zstmt[ZS_OUTER_VIEW], table, table, vw,
+				     table, vw, table, vw);
 	bool rval = sql_exec(zsql, sql_print_row, NULL);
 	sqlite3_free(zsql);
 	return rval;
 }
 
-// sql_get_nest - create a view based on the nest boundaries
-//                           can be inner or outer, depending on zs
+bool sql_get_nest(char *table, char *vw, enum zstr zs)
+{
+	char *zsql = sqlite3_mprintf(zstmt[zs], table, table, vw,
+				     table, vw, table, vw);
+	bool rval = sql_exec(zsql, sql_print_row, NULL);
+	sqlite3_free(zsql);
+	return rval;
+}
+
+
+// sql_create_nest_view - create a view based on the nest boundaries
+//                        can be inner or outer, depending on zs
 //
 // table - name of table or view from which to extract the nest
 // left  - leftmost boundary of nest
@@ -575,11 +539,11 @@ bool sql_verbose_struct2export(char *table, char *vw)
 // zs    - an enum that selects a command string from the zstmt array
 // level - used if the selected zs needs it. Otherwise NULL to satisfy
 //         the argument list.
-// dest  - data area to pass to the callback, which copy the data from
+// dest  - data area to pass to the callback, which copies the data from
 //         the view into the data area.
 //
-bool sql_get_nest(const char *view, long left, long right,
-		  enum zstr zs, char *level, void *dest)
+bool sql_create_nest_view(const char *view, long left, long right,
+			  enum zstr zs, char *level, void *dest)
 {
 	bool rval;
 	char *zsql;
@@ -911,7 +875,7 @@ static bool process_row(struct row *prow, enum zstr zs, char *level)
 	sscanf(prow->left,  "%lu", &left);
 	sscanf(prow->right, "%lu", &right);
 
-	sql_get_nest(kabitable, left, right, zs, level, (void *)prow);
+	sql_create_nest_view(kabitable, left, right, zs, level, (void *)prow);
 	return true;
 }
 
@@ -940,22 +904,6 @@ static bool get_struct(struct row *prow)
 	delete_row(pr);
 	sql_exec("drop view sv", 0, 0);
 	return true;
-}
-
-static void get_verbose_exports(char *vw)
-{
-	int i;
-	int count;
-	struct row *pr = new_row(KB_TREE);
-
-	get_count(vw, &count);
-
-	for (i = 0; i < count; ++i) {
-		memset(pr, 0, sizeof(struct row));
-		sql_get_one_row(vw, i, pr);
-		process_row(pr, ZS_OUTER, NULL);
-	}
-	delete_row(pr);
 }
 
 static void get_verbose_struct2exports(char *vw)
