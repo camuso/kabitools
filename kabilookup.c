@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
 #include <asm-generic/errno-base.h>
 #define NDEBUG	// comment out to enable asserts
 #include <assert.h>
@@ -154,6 +155,14 @@ static void print_cmd_errmsg(enum exemsg err);
 static void print_cmdline();
 static int count_bits(unsigned mask);
 
+long get_timestamp()
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_REALTIME, &ts);
+	return (ts.tv_sec << 32) + ts.tv_nsec;
+}
+
 /*****************************************************
 ** Database Access Templates
 ******************************************************/
@@ -244,6 +253,69 @@ void copy_row(struct row *drow, struct row *srow)
 
 	strncpy(drow->decl,       srow->decl,       DECLSIZ-1);
 	strncpy(drow->parentdecl, srow->parentdecl, DECLSIZ-1);
+}
+
+struct duprec {
+	struct duprec *next;
+	struct duprec *prev;
+	int level;
+	bool isdup;
+	char str[DECLSIZ];
+};
+
+struct duprec *duplist = NULL;
+
+struct duprec *new_duprec(int level)
+{
+	struct duprec *dup = (struct duprec *)malloc(sizeof(struct duprec));
+	struct duprec *tmp = duplist;
+
+	if (duplist) {
+
+		while (tmp->next != duplist)
+			tmp = tmp->next;
+
+		tmp->next = dup;
+		dup->prev = tmp;
+		dup->next = duplist;
+		duplist->prev = dup;
+	} else {
+		duplist = dup;
+		dup->next = dup;
+		dup->prev = dup;
+	}
+	dup->isdup = false;
+	dup->level = level;
+	return dup;
+}
+
+struct duprec *find_duprec(int level)
+{
+	struct duprec *tmp = duplist;
+
+	do {
+		if ((tmp)->level == level)
+			return tmp;
+		tmp = tmp->next;
+	} while (tmp != duplist);
+
+	return NULL;
+}
+
+static inline void delete_duprec(struct duprec *dup)
+{
+	free(dup);
+}
+
+void delete_duplist(struct duprec *duplist)
+{
+	struct duprec *tmp = duplist->prev;
+	do {
+		tmp = tmp->prev;
+		delete_duprec(tmp->next);
+	} while(tmp != duplist);
+	delete_duprec(duplist);
+	duplist = NULL;
 }
 
 /*****************************************************
@@ -348,22 +420,39 @@ int sql_process_row(void *output, int argc, char **argv, char **colnames)
 	return 0;
 }
 
-// is_dup - Returns true if the current record is a dup of a previous one
+// test_dup - Returns true if the current record has the same decl field as
+//            a previous one
 //
-// NOTE: Not re-entrant, not thread-safe.
+// NOTE: Expects the duplist to be initialized with at least one entry.
 //
-bool is_dup(struct row *pr, char **argv, int level)
+bool test_dup(char *str, int level)
 {
-	static char decl[DECLSIZ];
-	static bool dup = false;
+	struct duprec *dup;
 
-	if (!pr)
+	if (!(dup = find_duprec(level)))
 		return false;
 
-	if (level == 1)
-		if (!(dup = !strcmp(argv[COL_DECL], decl)))
-			strcpy(decl, argv[COL_DECL]);
-	return dup;
+	if (!strcmp(str, dup->str))
+		return (dup->isdup = true);
+	else {
+		strcpy(dup->str, str);
+		return (dup->isdup = false);
+	}
+
+	return false;
+}
+
+// is_dup - Looks at the duplist entry for the level to see if it's a dup
+//          for that level.
+//
+bool is_dup(int level)
+{
+	struct duprec *dup;
+
+	if (!(dup = find_duprec(level)))
+		return false;
+
+	return dup->isdup;
 }
 
 // sql_print_row - callback to print one row from a select call
@@ -376,31 +465,51 @@ int sql_print_row(void *prow, int argc, char **argv, char **colnames)
 {
 	char *padstr;
 	int level;
-	struct row *pr;
+	struct row *pr = NULL;
 
 	if (!argc || !colnames)
 		return -1;
 
 	level = (int)strtoul(argv[COL_LEVEL],0,0);
 
+	if (level == 0)
+		return 0;
+
 	if (prow) {
 		pr = (struct row *)prow;
-		if ((pr->rowflags & ROW_NODUPS) && (is_dup(pr, argv, level)))
-			return 0;
+
+		if (pr->rowflags & ROW_NODUPS) {
+
+			if (level <= 1) {
+				test_dup(argv[COL_PARENTDECL], 0);
+				if (test_dup(argv[COL_DECL], 1))
+					return 0;
+			} else if (is_dup(1))
+				return 0;
+		}
 
 		level -= pr->offset;
 	}
 
 	padstr = indent(level >= 0 ? level : 0);
 
-	if (level <= 2)
-		printf("%s%s %s\n", padstr, argv[COL_PREFIX], argv[COL_DECL]);
-	else
+	switch (level) {
+	case 0: return 0;
+	case 1: if (!is_dup(0))
+			printf("FILE: %s\n", argv[COL_PARENTDECL]);
+	case 2:	printf("%s%s %s\n", padstr, argv[COL_PREFIX], argv[COL_DECL]);
+		break;
+	default:
 		printf("%s%s\n", padstr, argv[COL_DECL]);
+		break;
+	}
 
 	return 0;
 }
 
+
+// SQLite Query Strings
+//
 enum zstr{
 	ZS_INNER,
 	ZS_OUTER,
@@ -482,10 +591,14 @@ bool sql_get_one_row(char *viewname, int offset, struct row *retrow)
 
 bool sql_concise_unique_struct2export(char *table, char *vw)
 {
+	bool rval;
+	struct row *pr = new_row(KB_TREE);
 	char *zsql = sqlite3_mprintf(zstmt[ZS_NV_UNIQUE_STRUCT2EXPORT],
 				     table, table, vw, vw, vw);
-	bool rval = sql_exec(zsql, sql_print_row, NULL);
+	pr->rowflags |= ROW_NODUPS;
+	rval = sql_exec(zsql, sql_print_row, (void *)pr);
 	sqlite3_free(zsql);
+	delete_row(pr);
 	return rval;
 }
 
@@ -929,6 +1042,8 @@ static int exe_struct(char *declstr, char *datafile)
 	if (!sql_open(datafile))
 		return EXE_NOFILE;
 
+	new_duprec(0);
+	new_duprec(1);
 	sql_create_view_on_decl(vwa, kabitable, declstr, NULL);
 
 	if (kb_flags & KB_VERBOSE)
@@ -936,6 +1051,7 @@ static int exe_struct(char *declstr, char *datafile)
 	else
 		get_concise_struct2export(vwa);
 
+	delete_duplist(duplist);
 	sql_drop_view(vwa);
 	sql_close(db);
 	return EXE_OK;
@@ -962,12 +1078,10 @@ static int exe_exports(char *declstr, char *datafile)
 	prow = new_row(KB_TREE);
 	sql_get_one_row(view, 0, prow);
 
-	if ((count > 1) &&(!check_declstr(count, declstr, view, prow))) {
+	if ((count > 1) && (!check_declstr(count, declstr, view, prow))) {
 		rval = EXE_2MANY;
 		goto out;
 	}
-
-	printf("FILE: %s\n", prow->parentdecl);
 
 	if (kb_flags & KB_VERBOSE) {
 		int i;
