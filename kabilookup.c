@@ -455,6 +455,33 @@ bool is_dup(int level)
 	return dup->isdup;
 }
 
+
+static void sql_print_row_nodups(int level, char **argv)
+{
+	char *padstr = indent(level >= 0 ? level : 0);
+
+	if (level == 0)
+		return;
+
+	if (level <= 1) {
+		test_dup(argv[COL_PARENTDECL], 0);
+		if ((kb_flags & KB_VERBOSE) && test_dup(argv[COL_DECL], 1))
+			return;
+	} else if (is_dup(1))
+		return;
+
+	switch (level) {
+	case 0: return;
+	case 1: if (!is_dup(0))
+			printf("FILE: %s\n", argv[COL_PARENTDECL]);
+	case 2:	printf("%s%s %s\n", padstr, argv[COL_PREFIX], argv[COL_DECL]);
+		break;
+	default:
+		printf("%s%s\n", padstr, argv[COL_DECL]);
+		break;
+	}
+}
+
 // sql_print_row - callback to print one row from a select call
 //
 //       This function will print rows in the order in which they are
@@ -472,20 +499,12 @@ int sql_print_row(void *prow, int argc, char **argv, char **colnames)
 
 	level = (int)strtoul(argv[COL_LEVEL],0,0);
 
-	if (level == 0)
-		return 0;
-
 	if (prow) {
 		pr = (struct row *)prow;
 
-		if (pr->rowflags & ROW_NODUPS) {
-
-			if (level <= 1) {
-				test_dup(argv[COL_PARENTDECL], 0);
-				if (test_dup(argv[COL_DECL], 1))
-					return 0;
-			} else if (is_dup(1))
-				return 0;
+		if ((pr->rowflags & ROW_NODUPS) && (level <= 1)) {
+			sql_print_row_nodups(level, argv);
+			return 0;
 		}
 
 		level -= pr->offset;
@@ -493,16 +512,10 @@ int sql_print_row(void *prow, int argc, char **argv, char **colnames)
 
 	padstr = indent(level >= 0 ? level : 0);
 
-	switch (level) {
-	case 0: return 0;
-	case 1: if (!is_dup(0))
-			printf("FILE: %s\n", argv[COL_PARENTDECL]);
-	case 2:	printf("%s%s %s\n", padstr, argv[COL_PREFIX], argv[COL_DECL]);
-		break;
-	default:
+	if (level <= 2)
+		printf("%s%s %s\n", padstr, argv[COL_PREFIX], argv[COL_DECL]);
+	else
 		printf("%s%s\n", padstr, argv[COL_DECL]);
-		break;
-	}
 
 	return 0;
 }
@@ -564,9 +577,8 @@ static char *zstmt[] = {
 // not the struct itself
 [ZS_NV_UNIQUE_STRUCT2EXPORT] =
 	// non verbose no duplicates
-	"select * from %q where level == 1 and (select rowid from"
-	" %q UNION select rowid from %q where left <= %q.left AND"
-	" right >= %q.right)",
+	"select * from %q where level <= 1 and (select %q.rowid from"
+	" %q,%q where %q.left <= %q.left AND %q.right >= %q.right)",
 [ZS_NV_STRUCT2EXPORT]	=
 	// non verbose list all including duplicates
 	"select %q.* from %q,%q where %q.level == 1"
@@ -591,22 +603,10 @@ bool sql_get_one_row(char *viewname, int offset, struct row *retrow)
 
 bool sql_concise_unique_struct2export(char *table, char *vw)
 {
-	bool rval;
-	struct row *pr = new_row(KB_TREE);
 	char *zsql = sqlite3_mprintf(zstmt[ZS_NV_UNIQUE_STRUCT2EXPORT],
-				     table, table, vw, vw, vw);
-	pr->rowflags |= ROW_NODUPS;
-	rval = sql_exec(zsql, sql_print_row, (void *)pr);
-	sqlite3_free(zsql);
-	delete_row(pr);
-	return rval;
-}
-
-bool sql_concise_struct2export(char *table, char *vw)
-{
-	char *zsql = sqlite3_mprintf(zstmt[ZS_NV_STRUCT2EXPORT], table, table,
-				     vw, table, table, vw, table, vw);
-	bool rval = sql_exec(zsql, sql_print_row, NULL);
+				     table, table, table, vw,
+				     table, vw, table, vw);
+	bool rval = sql_exec(zsql, sql_print_row, 0);
 	sqlite3_free(zsql);
 	return rval;
 }
@@ -1027,14 +1027,6 @@ static void get_verbose_struct2exports(char *vw)
 		sql_verbose_struct2export(kabitable, vw);
 }
 
-static void get_concise_struct2export(char *vw)
-{
-	if (kb_flags & KB_NODUPS)
-		sql_concise_unique_struct2export(kabitable, vw);
-	else
-		sql_concise_struct2export(kabitable, vw);
-}
-
 static int exe_struct(char *declstr, char *datafile)
 {
 	char *vwa = "vwa";
@@ -1049,7 +1041,7 @@ static int exe_struct(char *declstr, char *datafile)
 	if (kb_flags & KB_VERBOSE)
 		get_verbose_struct2exports(vwa);
 	else
-		get_concise_struct2export(vwa);
+		sql_concise_unique_struct2export(kabitable, vwa);
 
 	delete_duplist(duplist);
 	sql_drop_view(vwa);
