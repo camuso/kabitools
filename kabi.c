@@ -126,6 +126,20 @@ FILE *datafile;
 FILE *typefile;
 
 /*****************************************************
+** Forward Declarations
+******************************************************/
+
+struct knode;
+struct knodelist;
+struct used;
+struct usedlist;
+static struct used *lookup_used(struct usedlist *list, struct knode *kn);
+static void add_new_used(struct usedlist **list,
+			 struct knode *kn,
+			 struct symbol *sym);
+static void extract_type(struct knode *kn, char *sbuf);
+
+/*****************************************************
 ** enumerated flags and masks
 ******************************************************/
 
@@ -202,6 +216,11 @@ struct knode {
 	long right;
 };
 
+struct topknode {
+	struct usedlist used;
+	struct knode knode;
+};
+
 DECLARE_PTR_LIST(knodelist, struct knode);
 static struct knodelist *knodes = NULL;
 
@@ -215,6 +234,17 @@ static struct knode *alloc_knode()
 
 	memset(kptr, 0, knsize);
 	return kptr;
+}
+static struct topknode *alloc_topknode()
+{
+	int tknsize = sizeof(struct topknode);
+	struct topknode *tkptr;
+
+	if(!(tkptr = (struct topknode *)malloc(tknsize)))
+		return NULL;
+
+	memset(kptr, 0, tknsize);
+	return tkptr;
 }
 
 static inline void *delete_last_knode(struct knodelist  **list)
@@ -277,71 +307,14 @@ static struct knode *map_knode(struct knode *parent,
 	return kn;
 }
 
-/*****************************************************
-** Output formatting
-******************************************************/
+static struct knode *map_topknode
 
-static void extract_type(struct knode *kn, char *sbuf)
-{
-	char *str;
-
-	memset(sbuf, 0, STRBUFSIZ);
-
-	FOR_EACH_PTR_NOTAG(kn->declist, str) {
-		strcat(sbuf, str);
-		strcat(sbuf, " ");
-	} END_FOR_EACH_PTR_NOTAG(str);
-}
-
-static void compose_declaration(struct knode *kn, char *sbuf)
-{
-	extract_type(kn, sbuf);
-
-	if (kn->flags & CTL_POINTER)
-		strcat(sbuf, "*");
-
-	if (kn->name)
-		strcat(sbuf, kn->name);
-}
-
-static void format_declaration(struct knode *kn)
-{
-	char *sbuf = calloc(STRBUFSIZ, 1);
-	struct knode *parent = kn->parent;
-
-	compose_declaration(kn, sbuf);
-	fprintf(datafile, ",%s", sbuf);
-
-	if (kn == parent)
-		goto out;
-
-	if (!parent || (kn->flags & CTL_FILE)) {
-		fprintf(datafile, ",");
-		goto out;
-	}
-
-	if (parent->declist) {
-		compose_declaration(parent, sbuf);
-		fprintf(datafile, ",%s", sbuf);
-	}
-	else
-		fprintf(datafile, ",%s", parent->name);
-out:
-	free(sbuf);
-	putc('\n', datafile);
-}
-
-static char *pad_out(int padsize, char padchar)
-{
-	static char buf[STRBUFSIZ];
-	memset(buf, 0, STRBUFSIZ);
-	while(padsize--)
-		buf[padsize] = padchar;
-	return buf;
-}
 /*****************************************************
 ** used declaration and utilities
 ******************************************************/
+
+struct knode;
+
 struct used {
 	struct symbol *symbol;
 	struct knodelist *users;
@@ -417,6 +390,68 @@ static bool is_used(struct usedlist **list,
 	}
 }
 
+/*****************************************************
+** Output formatting
+******************************************************/
+
+static void extract_type(struct knode *kn, char *sbuf)
+{
+	char *str;
+
+	memset(sbuf, 0, STRBUFSIZ);
+
+	FOR_EACH_PTR_NOTAG(kn->declist, str) {
+		strcat(sbuf, str);
+		strcat(sbuf, " ");
+	} END_FOR_EACH_PTR_NOTAG(str);
+}
+
+static void compose_declaration(struct knode *kn, char *sbuf)
+{
+	extract_type(kn, sbuf);
+
+	if (kn->flags & CTL_POINTER)
+		strcat(sbuf, "*");
+
+	if (kn->name)
+		strcat(sbuf, kn->name);
+}
+
+static void format_declaration(struct knode *kn)
+{
+	char *sbuf = calloc(STRBUFSIZ, 1);
+	struct knode *parent = kn->parent;
+
+	compose_declaration(kn, sbuf);
+	fprintf(datafile, ",%s", sbuf);
+
+	if (kn == parent)
+		goto out;
+
+	if (!parent || (kn->flags & CTL_FILE)) {
+		fprintf(datafile, ",");
+		goto out;
+	}
+
+	if (parent->declist) {
+		compose_declaration(parent, sbuf);
+		fprintf(datafile, ",%s", sbuf);
+	}
+	else
+		fprintf(datafile, ",%s", parent->name);
+out:
+	free(sbuf);
+	putc('\n', datafile);
+}
+
+static char *pad_out(int padsize, char padchar)
+{
+	static char buf[STRBUFSIZ];
+	memset(buf, 0, STRBUFSIZ);
+	while(padsize--)
+		buf[padsize] = padchar;
+	return buf;
+}
 
 /*****************************************************
 ** sparse probing and mining
