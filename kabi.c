@@ -202,11 +202,13 @@ static inline int string_list_size(struct string_list *list)
 ******************************************************/
 
 struct knode {
+	struct knode *primordial;
 	struct knode *parent;
 	struct knodelist *children;
 	struct symbol *symbol;
 	struct symbol_list *symbol_list;
 	struct string_list *declist;
+	struct usedlist *redlist;
 	char *name;
 	char *typnam;
 	char *file;
@@ -214,11 +216,6 @@ struct knode {
 	int level;
 	long left;
 	long right;
-};
-
-struct topknode {
-	struct usedlist used;
-	struct knode knode;
 };
 
 DECLARE_PTR_LIST(knodelist, struct knode);
@@ -235,31 +232,25 @@ static struct knode *alloc_knode()
 	memset(kptr, 0, knsize);
 	return kptr;
 }
-static struct topknode *alloc_topknode()
-{
-	int tknsize = sizeof(struct topknode);
-	struct topknode *tkptr;
-
-	if(!(tkptr = (struct topknode *)malloc(tknsize)))
-		return NULL;
-
-	memset(kptr, 0, tknsize);
-	return tkptr;
-}
-
-static inline void *delete_last_knode(struct knodelist  **list)
-{
-	return (struct knode *)delete_ptr_list_last((struct ptr_list **)list);
-}
 
 static inline void add_knode (struct knodelist **klist, struct knode *k)
 {
 	add_ptr_list(klist, k);
 }
 
+static inline struct knode *first_knode(struct knodelist *head)
+{
+	return first_ptr_list((struct ptr_list *)head);
+}
+
 static inline struct knode *last_knode(struct knodelist *head)
 {
 	return last_ptr_list((struct ptr_list *)head);
+}
+
+static inline void *delete_last_knode(struct knodelist  **list)
+{
+	return (struct knode *)delete_ptr_list_last((struct ptr_list **)list);
 }
 
 static inline int knode_list_size(struct knodelist *list)
@@ -295,11 +286,13 @@ static struct knode *map_knode(struct knode *parent,
 	long timestamp = get_timestamp();
 
 	kn = alloc_knode();
+	kn->primordial = parent->primordial;
 	kn->parent = parent;
 	kn->file = parent->file;
 	kn->flags |= flags;
 	kn->symbol = symbol;
 	kn->level = parent->level + 1;
+	kn->redlist = parent->redlist;
 	kn->left = timestamp;
 
 	add_knode(&parent->children, kn);
@@ -307,13 +300,9 @@ static struct knode *map_knode(struct knode *parent,
 	return kn;
 }
 
-static struct knode *map_topknode
-
 /*****************************************************
 ** used declaration and utilities
 ******************************************************/
-
-struct knode;
 
 struct used {
 	struct symbol *symbol;
@@ -423,7 +412,7 @@ static void format_declaration(struct knode *kn)
 	struct knode *parent = kn->parent;
 
 	compose_declaration(kn, sbuf);
-	fprintf(datafile, ",%s", sbuf);
+	fprintf(datafile, ",%s ", sbuf);
 
 	if (kn == parent)
 		goto out;
@@ -435,10 +424,10 @@ static void format_declaration(struct knode *kn)
 
 	if (parent->declist) {
 		compose_declaration(parent, sbuf);
-		fprintf(datafile, ",%s", sbuf);
+		fprintf(datafile, ",%s ", sbuf);
 	}
 	else
-		fprintf(datafile, ",%s", parent->name);
+		fprintf(datafile, ",%s ", parent->name);
 out:
 	free(sbuf);
 	putc('\n', datafile);
@@ -545,7 +534,7 @@ static void get_symbols
 		// 	struct list_head *next;
 		// 	struct list_head *prev;
 		// };
-		if (!(is_used(&redlist, kn, sym)))
+		if (!(is_used(&kn->primordial->redlist, kn, sym)))
 			proc_symlist(kn, kn->symbol_list, CTL_NESTED);
 
 		kn->right = get_timestamp();
@@ -562,6 +551,7 @@ static void build_branch(struct knode *parent, char *symname, char *file)
 
 		kn->file = file;
 		kn->name = symname;
+		kn->primordial = kn;
 
 		kabiflag = true;
 		get_declist(kn, sym);
@@ -798,11 +788,12 @@ static void show_users(struct knodelist *klist, int level)
 static void write_knodes(struct knodelist *klist)
 {
 	struct knode *kn;
+	int ksize = ptr_list_size(klist);
 
 	FOR_EACH_PTR(klist, kn) {
 		char *pfx = get_prefix(kn->flags);
 
-		// Top of the tree has no name, just descendants
+		// Skip the top of the tree. It's just a placeholder
 		if (kn->parent == kn)
 			goto nextlevel;
 
@@ -815,14 +806,13 @@ static void write_knodes(struct knodelist *klist)
 		format_declaration(kn);
 
 		if (showusers && (kn->flags & CTL_NESTED)) {
-			struct used *u = lookup_used(redlist, kn);
+			struct used *u = lookup_used(kn->primordial->redlist, kn);
 			if (u)
 				show_users(u->users, kn->level);
 		}
 nextlevel:
-		if (kn->children) {
+		if (kn->children)
 			write_knodes(kn->children);
-		}
 
 	} END_FOR_EACH_PTR(kn);
 }
@@ -839,23 +829,42 @@ static struct knode *get_kn_from_parent(char *typnam, struct knode *parent)
 	return NULL;
 }
 
-static void write_types(struct usedlist *rlist)
+static void write_types(struct knodelist *klist)
 {
-	struct used *un;
+	struct knode *kn;
 
-	FOR_EACH_PTR(rlist, un) {
-		char sbuf[STRBUFSIZ];
-		struct knode *parent = first_user(un->users);
-		struct knode *kn = get_kn_from_parent(un->typnam, parent);
+	FOR_EACH_PTR(klist, kn) {
 
-		if (!kn)
-			continue;
+		struct usedlist *rlist;
+		struct used *un;
 
-		fprintf(typefile, "%d,%lu,%lu,%08x",
-			kn->level, kn->left, kn->right, kn->flags);
-		extract_type(kn, sbuf);
-		fprintf(typefile, ",%s\n", sbuf);
-	} END_FOR_EACH_PTR(un);
+		// Only interested in EXPORTED symbols. The redlists of
+		// encountered types is kept there. The definition of each
+		// type nested under an imported symbol is catalogued just
+		// once for that symbol.
+		if ((kn->parent == kn) || (!(kn->flags & CTL_EXPORTED)))
+			goto nextlevel;
+
+		rlist = kn->redlist;
+
+		FOR_EACH_PTR(rlist, un) {
+			char sbuf[STRBUFSIZ];
+			struct knode *parent = first_user(un->users);
+			struct knode *kn = get_kn_from_parent(un->typnam, parent);
+
+			if (!kn)
+				continue;
+
+			fprintf(typefile, "%d,%lu,%lu,%08x",
+				kn->level, kn->left, kn->right, kn->flags);
+			extract_type(kn, sbuf);
+			fprintf(typefile, ",%s \n", sbuf);
+		} END_FOR_EACH_PTR(un);
+nextlevel:
+		if (kn->children)
+			write_types(kn->children);
+
+	} END_FOR_EACH_PTR(kn);
 }
 
 /*****************************************************
@@ -976,7 +985,7 @@ int main(int argc, char **argv)
 	if (!open_file(&typefile, typefilename))
 		return 1;
 
-	write_types(redlist);
+	write_types(knodes);
 
 	return 0;
 }
