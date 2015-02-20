@@ -311,7 +311,6 @@ struct used {
 };
 
 DECLARE_PTR_LIST(usedlist, struct used);
-static struct usedlist *redlist = NULL;
 
 static struct used *alloc_used()
 {
@@ -788,7 +787,6 @@ static void show_users(struct knodelist *klist, int level)
 static void write_knodes(struct knodelist *klist)
 {
 	struct knode *kn;
-	int ksize = ptr_list_size(klist);
 
 	FOR_EACH_PTR(klist, kn) {
 		char *pfx = get_prefix(kn->flags);
