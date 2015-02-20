@@ -107,11 +107,20 @@ enum exemsg {
 	EXE_2MANY,
 };
 
-static int kb_argmask =	(1 << EXE_ARG2BIG)  |
-			(1 << EXE_ARG2SML)  |
-			(1 << EXE_CONFLICT) |
-			(1 << EXE_BADFORM   |
-			(1 << EXE_INVARG));
+// Fixed level enums for declaration types that have fixe levels
+enum levels {
+	LVL_FILE,
+	LVL_EXPORTED,
+	LVL_ARG,
+	LVL_RETURN = LVL_ARG,
+	LVL_NESTED,
+};
+
+static int kb_argmask =	((1 << EXE_ARG2BIG)  |
+			 (1 << EXE_ARG2SML)  |
+			 (1 << EXE_CONFLICT) |
+			 (1 << EXE_BADFORM)  |
+			 (1 << EXE_INVARG));
 
 // Execution result messages
 static const char *errstr[] = {
@@ -126,20 +135,6 @@ static const char *errstr[] = {
 			  " Be more specific.\n",
 	"\0"
 };
-
-// schema enumeration
-enum schema {
-	COL_ROWID,
-	COL_LEVEL,
-	COL_LEFT,
-	COL_RIGHT,
-	COL_FLAGS,
-	COL_PREFIX,
-	COL_TYPE = COL_PREFIX,
-	COL_DECL,
-	COL_PARENTDECL,
-};
-
 
 /*****************************************************
 ** global declarations
@@ -164,7 +159,7 @@ long get_timestamp()
 }
 
 /*****************************************************
-** Database Access Templates
+** Database Access Utilities
 ******************************************************/
 
 #define INTSIZ 32
@@ -177,12 +172,31 @@ enum rowtype {
 };
 
 enum rowflags {
-	ROW_NODUPS = (1 << 0),
+	ROW_NODUPS	= (1 << 0),
+	ROW_DONE	= (1 << 1),
+};
+
+enum columns {
+	COL_ROWID,
+	COL_LEVEL,
+	COL_LEFT,
+	COL_RIGHT,
+	COL_FLAGS,
+	COL_PREFIX,
+	COL_TYPE = COL_PREFIX,
+	COL_DECL,
+	COL_PARENTDECL,
+	COL_OFFSET,
+	COL_ROWTYPE,
+	COL_ROWFLAGS,
 };
 
 struct row {
 	char rowid[INTSIZ];
-	char level[INTSIZ];
+	union {
+		char level[INTSIZ];
+		int ilevel;
+	};
 	char left[INTSIZ];
 	char right[INTSIZ];
 	char flags[INTSIZ];
@@ -255,92 +269,51 @@ void copy_row(struct row *drow, struct row *srow)
 	strncpy(drow->parentdecl, srow->parentdecl, DECLSIZ-1);
 }
 
-struct duprec {
-	struct duprec *next;
-	struct duprec *prev;
-	int level;
-	bool isdup;
-	char str[DECLSIZ];
+/*****************************************************
+** Duplicate Record Management
+******************************************************/
+
+// This is a global used by the callback routines to sort out duplicates.
+// To make it threadsafe, we can add a mutex, but this is intended to run
+// single-threaded for now.
+
+static struct table *signal_table = NULL;
+
+enum dupman {
+	DM_FILE,
+	DM_EXPORTED,
+	DM_ARG,
+	DM_DECL,
+	DM_TBLSIZE,
 };
 
-struct duprec *duplist = NULL;
-
-struct duprec *new_duprec(int level)
+static void init_signal_table(char *decl)
 {
-	struct duprec *dup = (struct duprec *)malloc(sizeof(struct duprec));
-	struct duprec *tmp = duplist;
+	struct table *pt = signal_table;
+	struct row **ppr = &pt->rows;
+	struct row *pr = ppr[DM_DECL];
+	int len = strlen(decl);
+	int i;
 
-	if (duplist) {
+	strncpy(pr->decl, decl, len);
 
-		while (tmp->next != duplist)
-			tmp = tmp->next;
-
-		tmp->next = dup;
-		dup->prev = tmp;
-		dup->next = duplist;
-		duplist->prev = dup;
-	} else {
-		duplist = dup;
-		dup->next = dup;
-		dup->prev = dup;
+	for (i = 0; i < DM_TBLSIZE; ++i) {
+		pr = ppr[i];
+		pr->rowtype = KB_TREE;
+		pr->rowflags |= ROW_NODUPS;
 	}
-	dup->isdup = false;
-	dup->level = level;
-	return dup;
 }
 
-struct duprec *find_duprec(int level)
+static inline struct table *get_signal_table()
 {
-	struct duprec *tmp = duplist;
-
-	do {
-		if ((tmp)->level == level)
-			return tmp;
-		tmp = tmp->next;
-	} while (tmp != duplist);
-
-	return NULL;
-}
-
-static inline void delete_duprec(struct duprec *dup)
-{
-	free(dup);
-}
-
-void delete_duplist(struct duprec *duplist)
-{
-	struct duprec *tmp = duplist->prev;
-	do {
-		tmp = tmp->prev;
-		delete_duprec(tmp->next);
-	} while(tmp != duplist);
-	delete_duprec(duplist);
-	duplist = NULL;
+	return signal_table;
 }
 
 /*****************************************************
-** SQLite utilities and wrappers
+** Callbacks for SQLite execution of query statements
 ******************************************************/
 
-bool sql_exec(const char *stmt,
-	      int (*cb)(void *, int, char**, char**),
-	      void *arg)
-{
-	char *errmsg;
-	int ret = sqlite3_exec(db, stmt, cb, arg, &errmsg);
-
-	if (ret != SQLITE_OK) {
-		fprintf(stderr,
-			"\nsql_exec: Error in statement: %s [%s].\n",
-			stmt, errmsg);
-		sqlite3_free(errmsg);
-		return false;
-	}
-	sqlite3_free(errmsg);
-	return true;
-}
-
-int sql_process_field(void *output, int argc, char **argv, char **colnames)
+int cb_process_field(void *output, int argc, char **argv, char **colnames)
 {
 	if (argc != 1 || !colnames)
 		return -1;
@@ -350,7 +323,7 @@ int sql_process_field(void *output, int argc, char **argv, char **colnames)
 	return 0;
 }
 
-int sql_process_blob(void *array, int argc, char **argv, char **colnames)
+int cb_process_blob(void *array, int argc, char **argv, char **colnames)
 {
 	int i;
 	char **strary = (char **)array;
@@ -365,13 +338,13 @@ int sql_process_blob(void *array, int argc, char **argv, char **colnames)
 	return 0;
 }
 
-// sql_process_row - callback to process one row from a select call
+// cb_process_row - callback to process one row from a select call
 //
 // NOTE: the "output" parameter, though cast as void * for the SQLite API,
 //       must have been orignially created as struct row *, preferably
 //       with a call to new_row().
 //
-int sql_process_row(void *output, int argc, char **argv, char **colnames)
+int cb_process_row(void *output, int argc, char **argv, char **colnames)
 {
 	int i;
 	int pfxsiz;
@@ -425,18 +398,19 @@ int sql_process_row(void *output, int argc, char **argv, char **colnames)
 //
 // NOTE: Expects the duplist to be initialized with at least one entry.
 //
-bool test_dup(char *str, int level)
+bool test_dup(struct table *pt, enum dupman dm, char *decl)
 {
-	struct duprec *dup;
+	struct row **ppr = &pt->rows;
+	char *thisdecl = ppr[dm]->decl;
+	int len = strlen(decl);
 
-	if (!(dup = find_duprec(level)))
-		return false;
-
-	if (!strcmp(str, dup->str))
-		return (dup->isdup = true);
+	if (!strncmp(thisdecl, decl, len))
+		//return (dup->isdup = true);
+		;
 	else {
-		strcpy(dup->str, str);
-		return (dup->isdup = false);
+		//strcpy(dup->str, str);
+		//return (dup->isdup = false);
+		;
 	}
 
 	return false;
@@ -445,18 +419,17 @@ bool test_dup(char *str, int level)
 // is_dup - Looks at the duplist entry for the level to see if it's a dup
 //          for that level.
 //
-bool is_dup(int level)
+bool is_dup(enum dupman dm, char *decl)
 {
 	struct duprec *dup;
 
-	if (!(dup = find_duprec(level)))
+	//if (!(dup = find_duprec(level)))
 		return false;
 
-	return dup->isdup;
+	//return dup->isdup;
 }
 
-
-static void sql_print_row_nodups(int level, char **argv)
+static void print_row_nodups(int level, char **argv)
 {
 	char *padstr = indent(level >= 0 ? level : 0);
 
@@ -482,13 +455,56 @@ static void sql_print_row_nodups(int level, char **argv)
 	}
 }
 
-// sql_print_row - callback to print one row from a select call
+int cb_print_vb_struct2export(void *decl, int argc, char **argv, char **colnames)
+{
+	char *padstr;
+	int level;
+	struct table *pt = get_signal_table();
+	struct row **ppr = &pt->rows;
+	int len = strlen(decl);
+	strncpy ppr[DM_DECL]->decl;
+
+	if (!argc || !colnames)
+		return -1;
+
+	if (ppr[DM_DECL]->rowflags & ROW_DONE)
+		return 0;
+
+	level = (int)strtoul(argv[COL_LEVEL],0,0);
+
+	if ((level == LVL_FILE) ||
+			((level > LVL_ARG) && (level <= ppr[DM_DECL]->ilevel)))
+		return 0;
+
+	ppr[DM_DECL]->ilevel = level;
+	padstr = indent(level);
+
+	switch (level) {
+	case LVL_FILE	: return 0;
+	//LVL_EXPORTED	:
+	//	if (!strcmp())
+	};
+
+	if (level <= LVL_ARG)
+		printf("%s%s %s\n", padstr, argv[COL_PREFIX], argv[COL_DECL]);
+	else
+		printf("%s%s\n", padstr, argv[COL_DECL]);
+
+
+
+	if (!strcmp(decl, argv[COL_DECL]))
+		ppr[DM_DECL]->rowflags |= ROW_DONE;
+
+	return 0;
+}
+
+// cb_print_row - callback to print one row from a select query
 //
 //       This function will print rows in the order in which they are
 //       returned by the database query that called it, and only the
 //       FILE, EXPORTED, and ARG prefixes will be printed.
 //
-int sql_print_row(void *prow, int argc, char **argv, char **colnames)
+int cb_print_row(void *prow, int argc, char **argv, char **colnames)
 {
 	char *padstr;
 	int level;
@@ -503,7 +519,7 @@ int sql_print_row(void *prow, int argc, char **argv, char **colnames)
 		pr = (struct row *)prow;
 
 		if ((pr->rowflags & ROW_NODUPS) && (level <= 1)) {
-			sql_print_row_nodups(level, argv);
+			print_row_nodups(level, argv);
 			return 0;
 		}
 
@@ -520,6 +536,28 @@ int sql_print_row(void *prow, int argc, char **argv, char **colnames)
 	return 0;
 }
 
+
+/*****************************************************
+** SQLite utilities and wrappers
+******************************************************/
+
+bool sql_exec(const char *stmt,
+	      int (*cb)(void *, int, char**, char**),
+	      void *arg)
+{
+	char *errmsg;
+	int ret = sqlite3_exec(db, stmt, cb, arg, &errmsg);
+
+	if (ret != SQLITE_OK) {
+		fprintf(stderr,
+			"\nsql_exec: Error in statement: %s [%s].\n",
+			stmt, errmsg);
+		sqlite3_free(errmsg);
+		return false;
+	}
+	sqlite3_free(errmsg);
+	return true;
+}
 
 // SQLite Query Strings
 //
@@ -539,6 +577,7 @@ enum zstr{
 	ZS_VIEW_LEVEL,
 	ZS_NV_UNIQUE_STRUCT2EXPORT,
 	ZS_NV_STRUCT2EXPORT,
+	ZS_VB_STRUCT2EXPORT,
 };
 
 static char *zstmt[] = {
@@ -571,6 +610,9 @@ static char *zstmt[] = {
 	" left >= %lu AND right <= %lu AND level %s",
 [ZS_VIEW_LEVEL] =
 	"create temp view %q as select from %q where level %s",
+[ZS_VB_STRUCT2EXPORT] =
+	"select * from kabitree kt where left <= kt.left and right >= kt.right"
+	" and (select rowid from kabitree where decl like '%struct device %')",
 
 // Concise struct search
 // List only the exported symbols that contain the struct being sought
@@ -596,7 +638,7 @@ bool sql_get_one_row(char *viewname, int offset, struct row *retrow)
 	char *zsql = sqlite3_mprintf("select * from %q limit 1 offset %d",
 				     viewname, offset);
 	DBG(puts(zsql);)
-	rval = sql_exec(zsql, sql_process_row, (void *)retrow);
+	rval = sql_exec(zsql, cb_process_row, (void *)retrow);
 	sqlite3_free(zsql);
 	return rval;
 }
@@ -606,30 +648,39 @@ bool sql_concise_unique_struct2export(char *table, char *vw)
 	char *zsql = sqlite3_mprintf(zstmt[ZS_NV_UNIQUE_STRUCT2EXPORT],
 				     table, table, table, vw,
 				     table, vw, table, vw);
-	bool rval = sql_exec(zsql, sql_print_row, 0);
+	bool rval = sql_exec(zsql, cb_print_row, 0);
 	sqlite3_free(zsql);
 	return rval;
 }
 
-bool sql_verbose_unique_struct2export(char *table, char *vw)
+bool sql_verbose_unique_struct2export(char *table, char *vw, char *decl)
 {
 	bool rval;
-	struct row *pr = new_row(KB_TREE);
+	struct table *pt = new_table(DM_TBLSIZE);
 	char *zsql = sqlite3_mprintf(zstmt[ZS_OUTER_VIEW], table, table, vw,
 				     table, vw, table, vw );
-	pr->rowflags |= ROW_NODUPS;
-	rval = sql_exec(zsql, sql_print_row, (void *)pr);
+	init_signal_table(decl);
+	rval = sql_exec(zsql, cb_print_row, (void *)decl);
 	sqlite3_free(zsql);
-	delete_row(pr);
+	delete_table(pt);
 	return rval;
 }
 
-bool sql_verbose_struct2export(char *table, char *vw)
+bool sql_verbose_struct2export(char *table, char *vw, char *decl)
 {
+	bool rval;
+	int len = strlen(decl);
+	struct table *pt = new_table(DM_TBLSIZE);
+	struct row **ppr = &pt->rows;
 	char *zsql = sqlite3_mprintf(zstmt[ZS_OUTER_VIEW], table, table, vw,
 				     table, vw, table, vw);
-	bool rval = sql_exec(zsql, sql_print_row, NULL);
+	init_signal_table(decl);
+	strncpy(ppr[DM_DECL]->decl, decl, len);
+
+
+	rval = sql_exec(zsql, cb_print_vb_struct2export, (void *)decl);
 	sqlite3_free(zsql);
+	delete_table(pt);
 	return rval;
 }
 
@@ -637,13 +688,13 @@ bool sql_get_nest(char *table, char *vw, enum zstr zs)
 {
 	char *zsql = sqlite3_mprintf(zstmt[zs], table, table, vw,
 				     table, vw, table, vw);
-	bool rval = sql_exec(zsql, sql_print_row, NULL);
+	bool rval = sql_exec(zsql, cb_print_row, NULL);
 	sqlite3_free(zsql);
 	return rval;
 }
 
 
-// sql_create_nest_view - create a view based on the nest boundaries
+// sql_print_nest_view - create a view based on the nest boundaries
 //                        can be inner or outer, depending on zs
 //
 // table - name of table or view from which to extract the nest
@@ -655,7 +706,7 @@ bool sql_get_nest(char *table, char *vw, enum zstr zs)
 // dest  - data area to pass to the callback, which copies the data from
 //         the view into the data area.
 //
-bool sql_create_nest_view(const char *view, long left, long right,
+bool sql_print_nest_view(const char *view, long left, long right,
 			  enum zstr zs, char *level, void *dest)
 {
 	bool rval;
@@ -667,12 +718,12 @@ bool sql_create_nest_view(const char *view, long left, long right,
 		zsql = sqlite3_mprintf(zstmt[zs], view, left, right);
 
 	DBG(puts(zsql);)
-	rval = sql_exec(zsql, sql_print_row, dest);
+	rval = sql_exec(zsql, cb_print_row, dest);
 	sqlite3_free(zsql);
 	return rval;
 }
 
-// sql_create_view_on_nest - create a view based on the nest boundaries
+// sql_create_nest_view - create a view based on the nest boundaries
 //                           can be inner or outer, depending on zs
 //
 // view	 - name of view to create
@@ -683,7 +734,7 @@ bool sql_create_nest_view(const char *view, long left, long right,
 // level - used if the selected zs needs it. Otherwise NULL to satisfy
 //         the argument list.
 //
-bool sql_create_view_on_nest(char *view, char *table,
+bool sql_create_nest_view(char *view, char *table,
 				   long left, long right,
 				   enum zstr zs, char *level)
 {
@@ -770,7 +821,7 @@ bool sql_exists(char *type, char *name, bool temp)
 				     "type='%q' AND name='%q'",
 				     master, type, name);
 
-	sql_exec(zsql, sql_process_field, (void *)answer);
+	sql_exec(zsql, cb_process_field, (void *)answer);
 	sqlite3_free(zsql);
 
 	if (!strcmp(answer, "0"))
@@ -988,7 +1039,7 @@ static bool process_row(struct row *prow, enum zstr zs, char *level)
 	sscanf(prow->left,  "%lu", &left);
 	sscanf(prow->right, "%lu", &right);
 
-	sql_create_nest_view(kabitable, left, right, zs, level, (void *)prow);
+	sql_print_nest_view(kabitable, left, right, zs, level, (void *)prow);
 	return true;
 }
 
@@ -1019,12 +1070,12 @@ static bool get_struct(struct row *prow)
 	return true;
 }
 
-static void get_verbose_struct2exports(char *vw)
+static void get_verbose_struct2exports(char *vw, char *declstr)
 {
 	if (kb_flags & KB_NODUPS)
-		sql_verbose_unique_struct2export(kabitable, vw);
+		sql_verbose_unique_struct2export(kabitable, vw, declstr);
 	else
-		sql_verbose_struct2export(kabitable, vw);
+		sql_verbose_struct2export(kabitable, vw, declstr);
 }
 
 static int exe_struct(char *declstr, char *datafile)
@@ -1034,16 +1085,13 @@ static int exe_struct(char *declstr, char *datafile)
 	if (!sql_open(datafile))
 		return EXE_NOFILE;
 
-	new_duprec(0);
-	new_duprec(1);
 	sql_create_view_on_decl(vwa, kabitable, declstr, NULL);
 
 	if (kb_flags & KB_VERBOSE)
-		get_verbose_struct2exports(vwa);
+		get_verbose_struct2exports(vwa, declstr);
 	else
 		sql_concise_unique_struct2export(kabitable, vwa);
 
-	delete_duplist(duplist);
 	sql_drop_view(vwa);
 	sql_close(db);
 	return EXE_OK;
@@ -1085,8 +1133,7 @@ static int exe_exports(char *declstr, char *datafile)
 		process_row(prow, ZS_OUTER_LEVEL, "== 1");
 
 		sql_exec("drop view kt", 0 , 0);
-		sql_create_view_on_nest(view, kabitable,
-					left, right,
+		sql_create_nest_view(view, kabitable, left, right,
 					ZS_VIEW_INNER_LEVEL, "<= 2");
 		get_count(view, &count);
 
