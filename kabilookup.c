@@ -405,7 +405,6 @@ int cb_print_vb_struct2export(void *table, int argc, char **argv, char **colname
 	int level;
 	struct table *pt = (struct table *)table;
 	struct row *pr = pt->rows;
-	int len = strlen(pr[DM_DECL].decl);
 
 	if (!argc || !colnames)
 		return -1;
@@ -438,7 +437,7 @@ int cb_print_vb_struct2export(void *table, int argc, char **argv, char **colname
 		break;
 	}
 
-	if (!strncmp(pr[DM_DECL].decl, argv[COL_DECL], len))
+	if (!strcmp(pr[DM_DECL].decl, argv[COL_DECL]))
 		pr[DM_DECL].rowflags |= ROW_DONE;
 
 	return 0;
@@ -504,8 +503,6 @@ enum zstr{
 	ZS_OUTER,
 	ZS_INNER_LEVEL,
 	ZS_OUTER_LEVEL,
-	ZS_COLUMN,
-	ZS_COLUMN_WORD,
 	ZS_OUTER_VIEW,
 	ZS_VIEWDECL_ANY,
 	ZS_VIEWDECL_WORD,
@@ -524,7 +521,7 @@ static char *zstmt[] = {
 [ZS_INNER] =
 	"select * from %q where left >= %lu AND right <= %lu",
 [ZS_OUTER] =
-	"select * from %q where left <= %q AND right >= %q",
+	"select * from %q where left <= %lu AND right >= %lu",
 [ZS_INNER_LEVEL] =
 	"select * from %q where left >= %lu AND right <= %lu AND level %s",
 [ZS_OUTER_LEVEL] =
@@ -606,30 +603,16 @@ bool sql_verbose_unique_struct2export(char *table, char *vw, char *decl)
 	return rval;
 }
 
-int cb_verbose_struct2export(void *data, int argc, char **argv, char **colnames)
-{
-	bool rval;
-	char *zsql;
-
-	if (!argc || !colnames)
-		return -1;
-
-	zsql = sqlite3_mprintf(zstmt[ZS_OUTER], (char *)data,
-			       argv[COL_LEFT], argv[COL_RIGHT]);
-	rval = sql_exec(zsql, cb_print_row, NULL);
-	sqlite3_free(zsql);
-	return rval ? 0 : -1;
-}
-
 bool sql_verbose_struct2export(char *table, char *decl)
 {
 	bool rval;
-	char *zsql;
-
-	zsql = sqlite3_mprintf("select * from %q where decl like '%%%q %%'",
-			       table, decl);
-	rval = sql_exec(zsql, cb_verbose_struct2export, (void *)table);
+	struct table *pt = new_table(DM_TBLSIZE);
+	char *zsql = sqlite3_mprintf(zstmt[ZS_VB_STRUCT2EXPORT],
+				     table, table, decl);
+	init_signal_table(pt, decl);
+	rval = sql_exec(zsql, cb_print_vb_struct2export, (void *)pt);
 	sqlite3_free(zsql);
+	delete_table(pt);
 	return rval;
 }
 
