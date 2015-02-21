@@ -150,14 +150,6 @@ static void print_cmd_errmsg(enum exemsg err);
 static void print_cmdline();
 static int count_bits(unsigned mask);
 
-long get_timestamp()
-{
-	struct timespec ts;
-
-	clock_gettime(CLOCK_REALTIME, &ts);
-	return (ts.tv_sec << 32) + ts.tv_nsec;
-}
-
 /*****************************************************
 ** Database Access Utilities
 ******************************************************/
@@ -173,7 +165,8 @@ enum rowtype {
 
 enum rowflags {
 	ROW_NODUPS	= (1 << 0),
-	ROW_DONE	= (1 << 1),
+	ROW_ISDUP	= (1 << 1),
+	ROW_DONE	= (1 << 2),
 };
 
 enum columns {
@@ -273,12 +266,6 @@ void copy_row(struct row *drow, struct row *srow)
 ** Duplicate Record Management
 ******************************************************/
 
-// This is a global used by the callback routines to sort out duplicates.
-// To make it threadsafe, we can add a mutex, but this is intended to run
-// single-threaded for now.
-
-static struct table *signal_table = NULL;
-
 enum dupman {
 	DM_FILE,
 	DM_EXPORTED,
@@ -287,26 +274,44 @@ enum dupman {
 	DM_TBLSIZE,
 };
 
-static void init_signal_table(char *decl)
+static void init_signal_table(struct table *pt, char *decl)
 {
-	struct table *pt = signal_table;
-	struct row **ppr = &pt->rows;
-	struct row *pr = ppr[DM_DECL];
+	struct row *pr = pt->rows;
 	int len = strlen(decl);
 	int i;
 
-	strncpy(pr->decl, decl, len);
+	strncpy(pr[DM_DECL].decl, decl, len);
 
-	for (i = 0; i < DM_TBLSIZE; ++i) {
-		pr = ppr[i];
-		pr->rowtype = KB_TREE;
-		pr->rowflags |= ROW_NODUPS;
+	for (i = 0; i < DM_TBLSIZE; ++i)
+		pr[i].rowtype = KB_TREE;
+}
+
+// test_dup - Returns true if the current record has the same decl field as
+//            a previous one
+//
+static bool test_dup(struct table *pt, enum dupman dm, char *decl)
+{
+	struct row *pr = pt->rows;
+	char *thisdecl = pr[dm].decl;
+	int len = strlen(decl);
+
+	if (strncmp(thisdecl, decl, len)) {
+		strncpy(pr[dm].decl, decl, len);
+		pr[dm].rowflags &= ~ROW_ISDUP;
+		return false;
+	} else {
+		pr[dm].rowflags |= ROW_ISDUP;
+		return true;
 	}
 }
 
-static inline struct table *get_signal_table()
+// is_dup - Compares the decl arg with the corresponding column in the
+//          row in the signal_table indext by the dm parameter
+//
+static inline bool is_dup(struct table *pt, enum dupman dm)
 {
-	return signal_table;
+	struct row *pr = pt->rows;
+	return (pr[dm].rowflags & ROW_ISDUP) != 0;
 }
 
 /*****************************************************
@@ -393,107 +398,47 @@ int cb_process_row(void *output, int argc, char **argv, char **colnames)
 	return 0;
 }
 
-// test_dup - Returns true if the current record has the same decl field as
-//            a previous one
-//
-// NOTE: Expects the duplist to be initialized with at least one entry.
-//
-bool test_dup(struct table *pt, enum dupman dm, char *decl)
-{
-	struct row **ppr = &pt->rows;
-	char *thisdecl = ppr[dm]->decl;
-	int len = strlen(decl);
 
-	if (!strncmp(thisdecl, decl, len))
-		//return (dup->isdup = true);
-		;
-	else {
-		//strcpy(dup->str, str);
-		//return (dup->isdup = false);
-		;
-	}
-
-	return false;
-}
-
-// is_dup - Looks at the duplist entry for the level to see if it's a dup
-//          for that level.
-//
-bool is_dup(enum dupman dm, char *decl)
-{
-	struct duprec *dup;
-
-	//if (!(dup = find_duprec(level)))
-		return false;
-
-	//return dup->isdup;
-}
-
-static void print_row_nodups(int level, char **argv)
-{
-	char *padstr = indent(level >= 0 ? level : 0);
-
-	if (level == 0)
-		return;
-
-	if (level <= 1) {
-		test_dup(argv[COL_PARENTDECL], 0);
-		if ((kb_flags & KB_VERBOSE) && test_dup(argv[COL_DECL], 1))
-			return;
-	} else if (is_dup(1))
-		return;
-
-	switch (level) {
-	case 0: return;
-	case 1: if (!is_dup(0))
-			printf("FILE: %s\n", argv[COL_PARENTDECL]);
-	case 2:	printf("%s%s %s\n", padstr, argv[COL_PREFIX], argv[COL_DECL]);
-		break;
-	default:
-		printf("%s%s\n", padstr, argv[COL_DECL]);
-		break;
-	}
-}
-
-int cb_print_vb_struct2export(void *decl, int argc, char **argv, char **colnames)
+int cb_print_vb_struct2export(void *table, int argc, char **argv, char **colnames)
 {
 	char *padstr;
 	int level;
-	struct table *pt = get_signal_table();
-	struct row **ppr = &pt->rows;
-	int len = strlen(decl);
-	strncpy ppr[DM_DECL]->decl;
+	struct table *pt = (struct table *)table;
+	struct row *pr = pt->rows;
 
 	if (!argc || !colnames)
 		return -1;
 
-	if (ppr[DM_DECL]->rowflags & ROW_DONE)
+	if (pr[DM_DECL].rowflags & ROW_DONE)
 		return 0;
 
 	level = (int)strtoul(argv[COL_LEVEL],0,0);
 
 	if ((level == LVL_FILE) ||
-			((level > LVL_ARG) && (level <= ppr[DM_DECL]->ilevel)))
+			((level > LVL_ARG) && (level <= pr[DM_DECL].ilevel)))
 		return 0;
 
-	ppr[DM_DECL]->ilevel = level;
+	if (level <= LVL_ARG)
+		pr[DM_DECL].rowflags &= ~ROW_DONE;
+
+	pr[DM_DECL].ilevel = level;
 	padstr = indent(level);
 
 	switch (level) {
-	case LVL_FILE	: return 0;
-	//LVL_EXPORTED	:
-	//	if (!strcmp())
-	};
-
-	if (level <= LVL_ARG)
+	case LVL_FILE	  : return 0;
+	case LVL_EXPORTED :
+		if (!test_dup(pt, DM_FILE, argv[COL_PARENTDECL]))
+			printf("FILE: %s\n", argv[COL_PARENTDECL]);
+	case LVL_ARG	  :
 		printf("%s%s %s\n", padstr, argv[COL_PREFIX], argv[COL_DECL]);
-	else
+		break;
+	default:
 		printf("%s%s\n", padstr, argv[COL_DECL]);
+		break;
+	}
 
-
-
-	if (!strcmp(decl, argv[COL_DECL]))
-		ppr[DM_DECL]->rowflags |= ROW_DONE;
+	if (!strcmp(pr[DM_DECL].decl, argv[COL_DECL]))
+		pr[DM_DECL].rowflags |= ROW_DONE;
 
 	return 0;
 }
@@ -507,24 +452,16 @@ int cb_print_vb_struct2export(void *decl, int argc, char **argv, char **colnames
 int cb_print_row(void *prow, int argc, char **argv, char **colnames)
 {
 	char *padstr;
-	int level;
-	struct row *pr = NULL;
+	int level = 0;
+	struct row *pr = (struct row *)prow;
 
 	if (!argc || !colnames)
 		return -1;
 
 	level = (int)strtoul(argv[COL_LEVEL],0,0);
 
-	if (prow) {
-		pr = (struct row *)prow;
-
-		if ((pr->rowflags & ROW_NODUPS) && (level <= 1)) {
-			print_row_nodups(level, argv);
-			return 0;
-		}
-
+	if (prow)
 		level -= pr->offset;
-	}
 
 	padstr = indent(level >= 0 ? level : 0);
 
@@ -611,8 +548,8 @@ static char *zstmt[] = {
 [ZS_VIEW_LEVEL] =
 	"create temp view %q as select from %q where level %s",
 [ZS_VB_STRUCT2EXPORT] =
-	"select * from kabitree kt where left <= kt.left and right >= kt.right"
-	" and (select rowid from kabitree where decl like '%struct device %')",
+	"select * from %q aa where left <= aa.left and right >= aa.right"
+	" and (select rowid from %q where decl like '%%%q %%')",
 
 // Concise struct search
 // List only the exported symbols that contain the struct being sought
@@ -659,26 +596,21 @@ bool sql_verbose_unique_struct2export(char *table, char *vw, char *decl)
 	struct table *pt = new_table(DM_TBLSIZE);
 	char *zsql = sqlite3_mprintf(zstmt[ZS_OUTER_VIEW], table, table, vw,
 				     table, vw, table, vw );
-	init_signal_table(decl);
+	init_signal_table(pt, decl);
 	rval = sql_exec(zsql, cb_print_row, (void *)decl);
 	sqlite3_free(zsql);
 	delete_table(pt);
 	return rval;
 }
 
-bool sql_verbose_struct2export(char *table, char *vw, char *decl)
+bool sql_verbose_struct2export(char *table, char *decl)
 {
 	bool rval;
-	int len = strlen(decl);
 	struct table *pt = new_table(DM_TBLSIZE);
-	struct row **ppr = &pt->rows;
-	char *zsql = sqlite3_mprintf(zstmt[ZS_OUTER_VIEW], table, table, vw,
-				     table, vw, table, vw);
-	init_signal_table(decl);
-	strncpy(ppr[DM_DECL]->decl, decl, len);
-
-
-	rval = sql_exec(zsql, cb_print_vb_struct2export, (void *)decl);
+	char *zsql = sqlite3_mprintf(zstmt[ZS_VB_STRUCT2EXPORT],
+				     table, table, decl);
+	init_signal_table(pt, decl);
+	rval = sql_exec(zsql, cb_print_vb_struct2export, (void *)pt);
 	sqlite3_free(zsql);
 	delete_table(pt);
 	return rval;
@@ -848,7 +780,7 @@ bool sql_row_count(char *view, char *count)
 	char *zsql = sqlite3_mprintf("select count () from %q", view);
 
 	DBG(puts(zsql);)
-	rval = sql_exec(zsql, sql_process_field, (void *)count);
+	rval = sql_exec(zsql, cb_process_field, (void *)count);
 	sqlite3_free(zsql);
 	return rval;
 }
@@ -1075,7 +1007,7 @@ static void get_verbose_struct2exports(char *vw, char *declstr)
 	if (kb_flags & KB_NODUPS)
 		sql_verbose_unique_struct2export(kabitable, vw, declstr);
 	else
-		sql_verbose_struct2export(kabitable, vw, declstr);
+		sql_verbose_struct2export(kabitable, declstr);
 }
 
 static int exe_struct(char *declstr, char *datafile)
