@@ -270,7 +270,7 @@ enum dupman {
 	DM_FILE,
 	DM_EXPORTED,
 	DM_ARG,
-	DM_DECL,
+	DM_NESTED,
 	DM_TBLSIZE,
 };
 
@@ -280,7 +280,7 @@ static void init_signal_table(struct table *pt, char *decl)
 	int len = strlen(decl);
 	int i;
 
-	strncpy(pr[DM_DECL].decl, decl, len);
+	strncpy(pr[DM_NESTED].decl, decl, len);
 
 	for (i = 0; i < DM_TBLSIZE; ++i)
 		pr[i].rowtype = KB_TREE;
@@ -312,6 +312,20 @@ static inline bool is_dup(struct table *pt, enum dupman dm)
 {
 	struct row *pr = pt->rows;
 	return (pr[dm].rowflags & ROW_ISDUP) != 0;
+}
+
+static inline void clr_dup(struct table *pt, enum dupman dm)
+{
+	struct row *pr = pt->rows;
+	pr[dm].rowflags &= ~ROW_ISDUP;
+}
+
+static void clr_dup_loop(struct table *pt, enum dupman min, enum dupman max)
+{
+	unsigned i;
+	struct row *pr = pt->rows;
+	for (i = min; i <= max; ++i)
+		pr[i].rowflags &= ~ROW_ISDUP;
 }
 
 /*****************************************************
@@ -402,43 +416,56 @@ int cb_process_row(void *output, int argc, char **argv, char **colnames)
 int cb_print_vb_struct2export(void *table, int argc, char **argv, char **colnames)
 {
 	char *padstr;
-	int level;
+	int level = (int)strtoul(argv[COL_LEVEL],0,0);;
 	struct table *pt = (struct table *)table;
 	struct row *pr = pt->rows;
 
 	if (!argc || !colnames)
 		return -1;
 
-	if (pr[DM_DECL].rowflags & ROW_DONE)
+	if ((level > LVL_FILE) &&
+			(is_dup(pt, DM_EXPORTED) ||
+			 is_dup(pt, DM_ARG) ||
+			 is_dup(pt, DM_NESTED)))
 		return 0;
 
-	level = (int)strtoul(argv[COL_LEVEL],0,0);
-
-	if ((level == LVL_FILE) ||
-			((level > LVL_ARG) && (level <= pr[DM_DECL].ilevel)))
-		return 0;
-
-	if (level <= LVL_ARG)
-		pr[DM_DECL].rowflags &= ~ROW_DONE;
-
-	pr[DM_DECL].ilevel = level;
 	padstr = indent(level);
 
 	switch (level) {
-	case LVL_FILE	  : return 0;
+	case LVL_FILE	  :
+		clr_dup_loop(pt, LVL_FILE, LVL_NESTED);
+		return 0;
+
 	case LVL_EXPORTED :
-		if (!test_dup(pt, DM_FILE, argv[COL_PARENTDECL]))
+		if (test_dup(pt, DM_FILE, argv[COL_PARENTDECL]))
+			return 0;
+		else
 			printf("FILE: %s\n", argv[COL_PARENTDECL]);
-	case LVL_ARG	  :
-		printf("%s%s %s\n", padstr, argv[COL_PREFIX], argv[COL_DECL]);
+
+		if (test_dup(pt, DM_EXPORTED, argv[COL_DECL]))
+			return 0;
+		else
+			printf("%s%s %s\n", padstr, argv[COL_PREFIX],
+			       argv[COL_DECL]);
 		break;
+
+	case LVL_ARG	  :
+		if (test_dup(pt, DM_ARG, argv[COL_DECL]))
+			return 0;
+		else
+			printf("%s%s %s\n", padstr, argv[COL_PREFIX],
+			       argv[COL_DECL]);
+		break;
+
 	default:
-		printf("%s%s\n", padstr, argv[COL_DECL]);
+		if (test_dup(pt, DM_NESTED, argv[COL_DECL]))
+			return 0;
+		else {
+			pr[DM_NESTED].ilevel = level;
+			printf("%s%s\n", padstr, argv[COL_DECL]);
+		}
 		break;
 	}
-
-	if (!strcmp(pr[DM_DECL].decl, argv[COL_DECL]))
-		pr[DM_DECL].rowflags |= ROW_DONE;
 
 	return 0;
 }
@@ -548,8 +575,8 @@ static char *zstmt[] = {
 [ZS_VIEW_LEVEL] =
 	"create temp view %q as select from %q where level %s",
 [ZS_VB_STRUCT2EXPORT] =
-	"select * from %q aa where left <= aa.left and right >= aa.right"
-	" and (select rowid from %q where decl like '%%%q %%')",
+	"select %q.* from %q,%q where %q.left <= %q.left"
+	" and %q.right >= %q.right",
 
 // Concise struct search
 // List only the exported symbols that contain the struct being sought
@@ -597,22 +624,19 @@ bool sql_verbose_unique_struct2export(char *table, char *vw, char *decl)
 	char *zsql = sqlite3_mprintf(zstmt[ZS_OUTER_VIEW], table, table, vw,
 				     table, vw, table, vw );
 	init_signal_table(pt, decl);
-	rval = sql_exec(zsql, cb_print_row, (void *)decl);
+	rval = sql_exec(zsql, cb_print_vb_struct2export, (void *)pt);
 	sqlite3_free(zsql);
 	delete_table(pt);
 	return rval;
 }
 
-bool sql_verbose_struct2export(char *table, char *decl)
+bool sql_verbose_struct2export(char *table, char *vw)
 {
 	bool rval;
-	struct table *pt = new_table(DM_TBLSIZE);
-	char *zsql = sqlite3_mprintf(zstmt[ZS_VB_STRUCT2EXPORT],
-				     table, table, decl);
-	init_signal_table(pt, decl);
-	rval = sql_exec(zsql, cb_print_vb_struct2export, (void *)pt);
+	char *zsql = sqlite3_mprintf(zstmt[ZS_VB_STRUCT2EXPORT], table,
+				     table, vw, table, vw, table, vw);
+	rval = sql_exec(zsql, cb_print_row, 0);
 	sqlite3_free(zsql);
-	delete_table(pt);
 	return rval;
 }
 
@@ -1007,7 +1031,7 @@ static void get_verbose_struct2exports(char *vw, char *declstr)
 	if (kb_flags & KB_NODUPS)
 		sql_verbose_unique_struct2export(kabitable, vw, declstr);
 	else
-		sql_verbose_struct2export(kabitable, declstr);
+		sql_verbose_struct2export(kabitable, vw);
 }
 
 static int exe_struct(char *declstr, char *datafile)
