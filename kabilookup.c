@@ -413,60 +413,7 @@ int cb_process_row(void *output, int argc, char **argv, char **colnames)
 	return 0;
 }
 
-
-int cb_print_nv_struct2export(void *table,
-			      int argc,
-			      char **argv,
-			      char **colnames)
-{
-	int level = (int)strtoul(argv[COL_LEVEL],0,0);;
-	char *padstr = indent(level);
-	struct table *pt = (struct table *)table;
-	struct row *pr = pt->rows;
-
-	if (!argc || !colnames)
-		return -1;
-
-	if ((level > LVL_FILE) && ((is_dup(pt, DM_EXPORTED) &&
-				    is_dup(pt, DM_ARG)) ||
-				  is_dup(pt, DM_NESTED)))
-		return 0;
-
-	switch (level) {
-	case LVL_FILE	  :
-		clr_dup_loop(pt, LVL_FILE, LVL_NESTED);
-		return 0;
-
-	case LVL_EXPORTED :
-		if (!test_dup(pt, DM_FILE, argv[COL_PARENTDECL]))
-			printf("FILE: %s\n", argv[COL_PARENTDECL]);
-
-		if (!test_dup(pt, DM_EXPORTED, argv[COL_DECL]))
-			printf("%s%s %s\n", padstr, argv[COL_PREFIX],
-			       argv[COL_DECL]);
-		break;
-
-	case LVL_ARG	  :
-		if (!(test_dup(pt, DM_ARG, argv[COL_DECL]) &&
-				is_dup(pt, DM_EXPORTED)))
-			printf("%s%s %s\n", padstr, argv[COL_PREFIX],
-			       argv[COL_DECL]);
-		break;
-
-	default:
-		if (test_dup(pt, DM_NESTED, argv[COL_DECL]))
-			return 0;
-		else {
-			pr[DM_NESTED].ilevel = level;
-			printf("%s%s\n", padstr, argv[COL_DECL]);
-		}
-		break;
-	}
-
-	return 0;
-}
-
-int cb_print_vb_struct2export(void *table,
+int cb_print_nodup_struct2export(void *table,
 			      int argc,
 			      char **argv,
 			      char **colnames)
@@ -647,7 +594,7 @@ bool sql_concise_struct2export(char *table, char *vw, char *decl)
 {
 	bool rval;
 	int (*cb)(void *, int, char ** ,char **)
-			= decl ? cb_print_nv_struct2export : cb_print_row;
+			= decl ? cb_print_nodup_struct2export : cb_print_row;
 	struct table *pt = new_table(DM_TBLSIZE);
 	char *zsql = sqlite3_mprintf(zstmt[ZS_OUTER_VIEW_LEVEL],
 				     table, table, vw,
@@ -664,7 +611,7 @@ bool sql_verbose_struct2export(char *table, char *vw, char *decl)
 {
 	bool rval;
 	int (*cb)(void *, int, char ** ,char **)
-			= decl ? cb_print_vb_struct2export : cb_print_row;
+			= decl ? cb_print_nodup_struct2export : cb_print_row;
 	struct table *pt = new_table(DM_TBLSIZE);
 	char *zsql = sqlite3_mprintf(zstmt[ZS_OUTER_VIEW],
 				     table, table, vw,
