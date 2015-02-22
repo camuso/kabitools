@@ -296,6 +296,7 @@ static bool test_dup(struct table *pt, enum dupman dm, char *decl)
 	int len = strlen(decl);
 
 	if (strncmp(thisdecl, decl, len)) {
+		memset(pr[dm].decl, 0, DECLSIZ);
 		strncpy(pr[dm].decl, decl, len);
 		pr[dm].rowflags &= ~ROW_ISDUP;
 		return false;
@@ -415,21 +416,22 @@ int cb_process_row(void *output, int argc, char **argv, char **colnames)
 
 int cb_print_vb_struct2export(void *table, int argc, char **argv, char **colnames)
 {
-	char *padstr;
 	int level = (int)strtoul(argv[COL_LEVEL],0,0);;
+	char *padstr = indent(level);
 	struct table *pt = (struct table *)table;
 	struct row *pr = pt->rows;
 
 	if (!argc || !colnames)
 		return -1;
 
+	// TODO:
+	// Need to refine this logic!
+	//
 	if ((level > LVL_FILE) &&
 			(is_dup(pt, DM_EXPORTED) ||
 			 is_dup(pt, DM_ARG) ||
 			 is_dup(pt, DM_NESTED)))
 		return 0;
-
-	padstr = indent(level);
 
 	switch (level) {
 	case LVL_FILE	  :
@@ -437,14 +439,12 @@ int cb_print_vb_struct2export(void *table, int argc, char **argv, char **colname
 		return 0;
 
 	case LVL_EXPORTED :
-		if (test_dup(pt, DM_FILE, argv[COL_PARENTDECL]))
-			return 0;
-		else
+		if (strstr(argv[COL_DECL], "ore_get_rw_state"))
+			puts(argv[COL_DECL]);
+		if (!test_dup(pt, DM_FILE, argv[COL_PARENTDECL]))
 			printf("FILE: %s\n", argv[COL_PARENTDECL]);
 
-		if (test_dup(pt, DM_EXPORTED, argv[COL_DECL]))
-			return 0;
-		else
+		if (!test_dup(pt, DM_EXPORTED, argv[COL_DECL]))
 			printf("%s%s %s\n", padstr, argv[COL_PREFIX],
 			       argv[COL_DECL]);
 		break;
