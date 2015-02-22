@@ -414,7 +414,10 @@ int cb_process_row(void *output, int argc, char **argv, char **colnames)
 }
 
 
-int cb_print_vb_struct2export(void *table, int argc, char **argv, char **colnames)
+int cb_print_nv_struct2export(void *table,
+			      int argc,
+			      char **argv,
+			      char **colnames)
 {
 	int level = (int)strtoul(argv[COL_LEVEL],0,0);;
 	char *padstr = indent(level);
@@ -424,13 +427,9 @@ int cb_print_vb_struct2export(void *table, int argc, char **argv, char **colname
 	if (!argc || !colnames)
 		return -1;
 
-	// TODO:
-	// Need to refine this logic!
-	//
-	if ((level > LVL_FILE) &&
-			(is_dup(pt, DM_EXPORTED) ||
-			 is_dup(pt, DM_ARG) ||
-			 is_dup(pt, DM_NESTED)))
+	if ((level > LVL_FILE) && ((is_dup(pt, DM_EXPORTED) &&
+				    is_dup(pt, DM_ARG)) ||
+				  is_dup(pt, DM_NESTED)))
 		return 0;
 
 	switch (level) {
@@ -439,8 +438,6 @@ int cb_print_vb_struct2export(void *table, int argc, char **argv, char **colname
 		return 0;
 
 	case LVL_EXPORTED :
-		if (strstr(argv[COL_DECL], "ore_get_rw_state"))
-			puts(argv[COL_DECL]);
 		if (!test_dup(pt, DM_FILE, argv[COL_PARENTDECL]))
 			printf("FILE: %s\n", argv[COL_PARENTDECL]);
 
@@ -450,9 +447,8 @@ int cb_print_vb_struct2export(void *table, int argc, char **argv, char **colname
 		break;
 
 	case LVL_ARG	  :
-		if (test_dup(pt, DM_ARG, argv[COL_DECL]))
-			return 0;
-		else
+		if (!(test_dup(pt, DM_ARG, argv[COL_DECL]) &&
+				is_dup(pt, DM_EXPORTED)))
 			printf("%s%s %s\n", padstr, argv[COL_PREFIX],
 			       argv[COL_DECL]);
 		break;
@@ -470,39 +466,109 @@ int cb_print_vb_struct2export(void *table, int argc, char **argv, char **colname
 	return 0;
 }
 
+int cb_print_vb_struct2export(void *table,
+			      int argc,
+			      char **argv,
+			      char **colnames)
+{
+	int level;
+	char *padstr;
+	struct table *pt = (struct table *)table;
+	struct row *pr;
+
+	if (!table || !argv || !argc || !colnames)
+		return -1;
+
+	level = (int)strtoul(argv[COL_LEVEL],0,0);
+	padstr = indent(level);
+	pr = pt->rows;
+
+	if ((level > LVL_FILE) && ((is_dup(pt, DM_EXPORTED) &&
+				    is_dup(pt, DM_ARG)) ||
+				  is_dup(pt, DM_NESTED)))
+		return 0;
+
+	switch (level) {
+	case LVL_FILE	  :
+		clr_dup_loop(pt, LVL_FILE, LVL_NESTED);
+		return 0;
+
+	case LVL_EXPORTED :
+		if (!test_dup(pt, DM_FILE, argv[COL_PARENTDECL]))
+			printf("FILE: %s\n", argv[COL_PARENTDECL]);
+
+		if (!test_dup(pt, DM_EXPORTED, argv[COL_DECL]))
+			printf("%s%s %s\n", padstr, argv[COL_PREFIX],
+			       argv[COL_DECL]);
+		break;
+
+	case LVL_ARG	  :
+		if (!(test_dup(pt, DM_ARG, argv[COL_DECL]) &&
+				is_dup(pt, DM_EXPORTED)))
+			printf("%s%s %s\n", padstr, argv[COL_PREFIX],
+			       argv[COL_DECL]);
+		break;
+
+	default:
+		if (!test_dup(pt, DM_NESTED, argv[COL_DECL])) {
+			pr[DM_NESTED].ilevel = level;
+			printf("%s%s\n", padstr, argv[COL_DECL]);
+		}
+		break;
+	}
+
+	return 0;
+}
+
 // cb_print_row - callback to print one row from a select query
 //
 //       This function will print rows in the order in which they are
 //       returned by the database query that called it, and only the
 //       FILE, EXPORTED, and ARG prefixes will be printed.
 //
-int cb_print_row(void *prow, int argc, char **argv, char **colnames)
+int cb_print_row(void *table, int argc, char **argv, char **colnames)
 {
+	int level;
 	char *padstr;
-	int level = 0;
-	struct row *pr = (struct row *)prow;
+	struct table *pt = (struct table *)table;
+	struct row *pr;
+	bool dup = false;
 
-	if (!argc || !colnames)
+	if (!argv || !argc || !colnames)
 		return -1;
 
 	level = (int)strtoul(argv[COL_LEVEL],0,0);
 
-	if (prow)
-		level -= pr->offset;
+	if (table) {
+		pr = pt->rows;
+		level -= pr[DM_NESTED].offset;
+		dup = test_dup(pt, DM_FILE, argv[COL_PARENTDECL]);
+	}
 
 	padstr = indent(level >= 0 ? level : 0);
 
-	if (level <= 2)
+	switch (level) {
+	case LVL_FILE	  :
+		return 0;
+
+	case LVL_EXPORTED :
+		if (!dup)
+			printf("FILE: %s\n", argv[COL_PARENTDECL]);
+
+	case LVL_ARG	  :
 		printf("%s%s %s\n", padstr, argv[COL_PREFIX], argv[COL_DECL]);
-	else
+		break;
+	default		  :
 		printf("%s%s\n", padstr, argv[COL_DECL]);
+		break;
+	}
 
 	return 0;
 }
 
 
 /*****************************************************
-** SQLite utilities and wrappers
+** SQLite utilities and query wrappers
 ******************************************************/
 
 bool sql_exec(const char *stmt,
@@ -531,17 +597,14 @@ enum zstr{
 	ZS_INNER_LEVEL,
 	ZS_OUTER_LEVEL,
 	ZS_OUTER_VIEW,
+	ZS_OUTER_VIEW_LEVEL,
 	ZS_VIEWDECL_ANY,
 	ZS_VIEWDECL_WORD,
 	ZS_VIEWDECL_ANY_LEVEL,
 	ZS_VIEWDECL_WORD_LEVEL,
 	ZS_VIEW_INNER,
 	ZS_VIEW_INNER_LEVEL,
-	ZS_UNIONVIEW_OUTER,
 	ZS_VIEW_LEVEL,
-	ZS_NV_UNIQUE_STRUCT2EXPORT,
-	ZS_NV_STRUCT2EXPORT,
-	ZS_VB_STRUCT2EXPORT,
 };
 
 static char *zstmt[] = {
@@ -556,6 +619,9 @@ static char *zstmt[] = {
 [ZS_OUTER_VIEW] =
 	"select %q.* from %q,%q"
 	" where %q.left <= %q.left and %q.right >= %q.right",
+[ZS_OUTER_VIEW_LEVEL] =
+	"select %q.* from %q,%q"
+	" where %q.left <= %q.left and %q.right >= %q.right and %q.level %s",
 [ZS_VIEWDECL_ANY] =
 	"create temp view %q as select * from %q where decl like '%%%q%%'",
 [ZS_VIEWDECL_WORD] =
@@ -574,69 +640,40 @@ static char *zstmt[] = {
 	" left >= %lu AND right <= %lu AND level %s",
 [ZS_VIEW_LEVEL] =
 	"create temp view %q as select from %q where level %s",
-[ZS_VB_STRUCT2EXPORT] =
-	"select %q.* from %q,%q where %q.left <= %q.left"
-	" and %q.right >= %q.right",
-
-// Concise struct search
-// List only the exported symbols that contain the struct being sought
-// not the struct itself
-[ZS_NV_UNIQUE_STRUCT2EXPORT] =
-	// non verbose no duplicates
-	"select * from %q where level <= 1 and (select %q.rowid from"
-	" %q,%q where %q.left <= %q.left AND %q.right >= %q.right)",
-[ZS_NV_STRUCT2EXPORT]	=
-	// non verbose list all including duplicates
-	"select %q.* from %q,%q where %q.level == 1"
-	" and %q.left <= %q.left and %q.right >= %q.right",
 };
 
-// sql_get_one_row - extract one row from a view, given the offset into the view
-//
-// NOTE: the struct row * must have been orignially created elsewhere,
-//       preferably with a call to new_row().
-//
-bool sql_get_one_row(char *viewname, int offset, struct row *retrow)
+
+bool sql_concise_struct2export(char *table, char *vw, char *decl)
 {
 	bool rval;
-	char *zsql = sqlite3_mprintf("select * from %q limit 1 offset %d",
-				     viewname, offset);
-	DBG(puts(zsql);)
-	rval = sql_exec(zsql, cb_process_row, (void *)retrow);
-	sqlite3_free(zsql);
-	return rval;
-}
-
-bool sql_concise_unique_struct2export(char *table, char *vw)
-{
-	char *zsql = sqlite3_mprintf(zstmt[ZS_NV_UNIQUE_STRUCT2EXPORT],
-				     table, table, table, vw,
-				     table, vw, table, vw);
-	bool rval = sql_exec(zsql, cb_print_row, 0);
-	sqlite3_free(zsql);
-	return rval;
-}
-
-bool sql_verbose_unique_struct2export(char *table, char *vw, char *decl)
-{
-	bool rval;
+	int (*cb)(void *, int, char ** ,char **)
+			= decl ? cb_print_nv_struct2export : cb_print_row;
 	struct table *pt = new_table(DM_TBLSIZE);
-	char *zsql = sqlite3_mprintf(zstmt[ZS_OUTER_VIEW], table, table, vw,
-				     table, vw, table, vw );
-	init_signal_table(pt, decl);
-	rval = sql_exec(zsql, cb_print_vb_struct2export, (void *)pt);
+	char *zsql = sqlite3_mprintf(zstmt[ZS_OUTER_VIEW_LEVEL],
+				     table, table, vw,
+				     table, vw, table, vw, table, " == 1" );
+	if (decl)
+		init_signal_table(pt, decl);
+	rval = sql_exec(zsql, cb, (void *)pt);
 	sqlite3_free(zsql);
 	delete_table(pt);
 	return rval;
 }
 
-bool sql_verbose_struct2export(char *table, char *vw)
+bool sql_verbose_struct2export(char *table, char *vw, char *decl)
 {
 	bool rval;
-	char *zsql = sqlite3_mprintf(zstmt[ZS_VB_STRUCT2EXPORT], table,
-				     table, vw, table, vw, table, vw);
-	rval = sql_exec(zsql, cb_print_row, 0);
+	int (*cb)(void *, int, char ** ,char **)
+			= decl ? cb_print_vb_struct2export : cb_print_row;
+	struct table *pt = new_table(DM_TBLSIZE);
+	char *zsql = sqlite3_mprintf(zstmt[ZS_OUTER_VIEW],
+				     table, table, vw,
+				     table, vw, table, vw );
+	if (decl)
+		init_signal_table(pt, decl);
+	rval = sql_exec(zsql, cb, (void *)pt);
 	sqlite3_free(zsql);
+	delete_table(pt);
 	return rval;
 }
 
@@ -659,14 +696,15 @@ bool sql_get_nest(char *table, char *vw, enum zstr zs)
 // zs    - an enum that selects a command string from the zstmt array
 // level - used if the selected zs needs it. Otherwise NULL to satisfy
 //         the argument list.
-// dest  - data area to pass to the callback, which copies the data from
-//         the view into the data area.
+// prow  - struct row
 //
 bool sql_print_nest_view(const char *view, long left, long right,
-			  enum zstr zs, char *level, void *dest)
+			  enum zstr zs, char *level, struct row *prow)
 {
 	bool rval;
 	char *zsql;
+	struct table *pt = new_table(DM_TBLSIZE);
+	struct row *pr = pt->rows;
 
 	if (level)
 		zsql = sqlite3_mprintf(zstmt[zs], view, left, right, level);
@@ -674,8 +712,10 @@ bool sql_print_nest_view(const char *view, long left, long right,
 		zsql = sqlite3_mprintf(zstmt[zs], view, left, right);
 
 	DBG(puts(zsql);)
-	rval = sql_exec(zsql, cb_print_row, dest);
+	pr[DM_NESTED].offset = prow->offset;
+	rval = sql_exec(zsql, cb_print_row, pt);
 	sqlite3_free(zsql);
+	delete_table(pt);
 	return rval;
 }
 
@@ -691,8 +731,8 @@ bool sql_print_nest_view(const char *view, long left, long right,
 //         the argument list.
 //
 bool sql_create_nest_view(char *view, char *table,
-				   long left, long right,
-				   enum zstr zs, char *level)
+			  long left, long right,
+			  enum zstr zs, char *level)
 {
 	bool rval;
 	char *zsql;
@@ -714,27 +754,17 @@ bool sql_create_nest_view(char *view, char *table,
 // view	 - name of view to create
 // table - name of table from which to create the view
 // decl  - string in decl column to be sought.
-// level - used if the selected zs needs it. Otherwise NULL to satisfy
-//         the argument list.
 //
-bool sql_create_view_on_decl(char *view, char *table,
-			     char *declstr, char *level)
+bool sql_create_view_on_decl(char *view, char *table, char *declstr)
 {
 	bool rval;
 	char *zsql;
 	char *stmt;
 
-	if  (level) {
-		stmt = kb_flags & KB_WHOLE_WORD ?
-				zstmt[ZS_VIEWDECL_WORD_LEVEL] :
-				zstmt[ZS_VIEWDECL_ANY_LEVEL];
-		zsql = sqlite3_mprintf(stmt, view, table, declstr, level);
-	} else {
-		stmt = kb_flags & KB_WHOLE_WORD ?
-				zstmt[ZS_VIEWDECL_WORD] :
-				zstmt[ZS_VIEWDECL_ANY];
-		zsql = sqlite3_mprintf(stmt, view, table, declstr);
-	}
+	stmt = kb_flags & KB_WHOLE_WORD ?
+			zstmt[ZS_VIEWDECL_WORD] :
+			zstmt[ZS_VIEWDECL_ANY];
+	zsql = sqlite3_mprintf(stmt, view, table, declstr);
 
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, 0, 0);
@@ -759,6 +789,22 @@ bool sql_create_view_on_union(char *newview, char *viewA, char *viewB,
 
 	DBG(puts(zsql);)
 	rval = sql_exec(zsql, 0, 0);
+	sqlite3_free(zsql);
+	return rval;
+}
+
+// sql_get_one_row - extract one row from a view, given the offset into the view
+//
+// NOTE: the struct row * must have been orignially created elsewhere,
+//       preferably with a call to new_row().
+//
+bool sql_get_one_row(char *viewname, int offset, struct row *retrow)
+{
+	bool rval;
+	char *zsql = sqlite3_mprintf("select * from %q limit 1 offset %d",
+				     viewname, offset);
+	DBG(puts(zsql);)
+	rval = sql_exec(zsql, cb_process_row, (void *)retrow);
 	sqlite3_free(zsql);
 	return rval;
 }
@@ -995,7 +1041,7 @@ static bool process_row(struct row *prow, enum zstr zs, char *level)
 	sscanf(prow->left,  "%lu", &left);
 	sscanf(prow->right, "%lu", &right);
 
-	sql_print_nest_view(kabitable, left, right, zs, level, (void *)prow);
+	sql_print_nest_view(kabitable, left, right, zs, level, prow);
 	return true;
 }
 
@@ -1011,7 +1057,7 @@ static bool get_struct(struct row *prow)
 		sql_exec("drop view sv", 0, 0);
 
 	extract_words(sbuf, str, "struct", " ", 2, DECLSIZ);
-	sql_create_view_on_decl(view, kabitypes, sbuf, ">= 2");
+	sql_create_view_on_decl(view, kabitypes, sbuf);
 
 	pr = new_row(KB_TYPE);
 	sql_get_one_row(view, 0, pr);
@@ -1029,9 +1075,17 @@ static bool get_struct(struct row *prow)
 static void get_verbose_struct2exports(char *vw, char *declstr)
 {
 	if (kb_flags & KB_NODUPS)
-		sql_verbose_unique_struct2export(kabitable, vw, declstr);
+		sql_verbose_struct2export(kabitable, vw, declstr);
 	else
-		sql_verbose_struct2export(kabitable, vw);
+		sql_verbose_struct2export(kabitable, vw, NULL);
+}
+
+static void get_concise_struct2exports(char *vw, char *declstr)
+{
+	if (kb_flags & KB_NODUPS)
+		sql_concise_struct2export(kabitable, vw, declstr);
+	else
+		sql_concise_struct2export(kabitable, vw, NULL);
 }
 
 static int exe_struct(char *declstr, char *datafile)
@@ -1041,12 +1095,12 @@ static int exe_struct(char *declstr, char *datafile)
 	if (!sql_open(datafile))
 		return EXE_NOFILE;
 
-	sql_create_view_on_decl(vwa, kabitable, declstr, NULL);
+	sql_create_view_on_decl(vwa, kabitable, declstr);
 
 	if (kb_flags & KB_VERBOSE)
 		get_verbose_struct2exports(vwa, declstr);
 	else
-		sql_concise_unique_struct2export(kabitable, vwa);
+		get_concise_struct2exports(vwa, declstr);
 
 	sql_drop_view(vwa);
 	sql_close(db);
@@ -1063,7 +1117,7 @@ static int exe_exports(char *declstr, char *datafile)
 	if (!sql_open(datafile))
 		return EXE_NOFILE;
 
-	sql_create_view_on_decl(view, kabitable, declstr, "== 1");
+	sql_create_view_on_decl(view, kabitable, declstr);
 	get_count(view, &count);
 
 	if (count < 1)  {
@@ -1125,9 +1179,9 @@ int exe_count(char *declstr, char *datafile)
 		return EXE_NOFILE;
 
 	prow = new_row(KB_TREE);
-	sql_create_view_on_decl(view, kabitable, declstr, NULL);
+	sql_create_view_on_decl(view, kabitable, declstr);
 	get_count(view, &count);
-	printf("There are %d symbols matching \"%s\".\n", count, declstr);
+	printf("%d\n", count);
 	delete_row(prow);
 	sql_exec("drop view kt", 0, 0);
 	sql_close(db);
@@ -1136,7 +1190,9 @@ int exe_count(char *declstr, char *datafile)
 
 static int exe_decl(char *declstr, char *datafile)
 {
+	int rval;
 	int level;
+	int count;
 	char *view = "st";
 	char lvlstr[INTSIZ];
 	struct row *prow;
@@ -1147,22 +1203,37 @@ static int exe_decl(char *declstr, char *datafile)
 	if (sql_exists("view", "st", true))
 		sql_exec("drop view kt", 0, 0);
 
-	sql_create_view_on_decl(view, kabitypes, declstr, ">= 2");
+	sql_create_view_on_decl(view, kabitypes, declstr);
+	get_count(view, &count);
+
+	if (count < 1)  {
+		rval = EXE_NOTFOUND;
+		goto out;
+	}
+
 	prow = new_row(KB_TYPE);
 	sql_get_one_row(view, 0, prow);
 	sscanf(prow->level, "%d", &level);
+
+	if (level < LVL_ARG) {
+		rval = EXE_INVARG;
+		goto out;
+	}
+
 	sprintf(lvlstr, "<= %d", level + 1);
-	prow->offset = level - 3;
+	prow->offset = level - LVL_NESTED;
 
 	if (kb_flags & KB_VERBOSE)
 		process_row(prow, ZS_INNER, NULL);
 	else
 		process_row(prow, ZS_INNER_LEVEL, lvlstr);
 
+	rval = EXE_OK;
+out:
 	delete_row(prow);
 	sql_exec("drop view st", 0, 0);
 	sql_close(db);
-	return EXE_OK;
+	return rval;
 }
 
 /*****************************************************
