@@ -53,7 +53,6 @@ typelog="../kabi-types.csv"
 datafile="../kabi-data.sql"
 errfile="/dev/null"
 
-
 usage() {
 	echo -e "$usagestr"
 	cd $currentdir
@@ -125,9 +124,15 @@ find $subdir -name \*.i -exec sh -c \
 	'grep -qm1 "__ksymtab_" $3; \
 	if [ $? -eq 0 ]; then \
 		echo $3; \
-		redhat/kabi/kabi-parser -d $1 -t $2 $3 2>$4; \
+		redhat/kabi/kabi-parser -d $1 -t $2 $3 2>$4 ; \
 	fi' \
 	sh $datalog $typelog '{}' $errfile \;
+
+grep -qm1 "EXPORTED" $datalog
+if [ $? -ne 0 ]; then
+	rm -f $datalog
+	exit 0;
+fi
 
 echo
 echo "Importing csv files:"
@@ -135,7 +140,7 @@ echo -e "\t$datalog"
 echo -e "\t$typelog"
 echo "to database: $datafile"
 echo
-echo "This can take a couple minutes."
+echo "This can take a couple minutes, depending on the size of the .csv file."
 echo
 sqlite3 $datafile <<EOF
 create table ktree (level integer, left integer64, right integer64, flags integer, prefix text, decl text, parentdecl text);
@@ -159,7 +164,7 @@ DIFF=$(( $END - $START ))
 minutes=$(( $DIFF / 60 ))
 seconds=$(( $DIFF % 60 ))
 echo
-echo "Elapsed time: $minutes minutes and $seconds seconds"
+echo "Elapsed time to render $subdir: $minutes minutes and $seconds seconds"
 echo
 exit 0
 
