@@ -117,6 +117,10 @@ cat /dev/null > $typelog
 
 START=$(date +%s)
 
+echo "datalog: $datalog"
+echo "typelog: $typelog"
+echo "datafile: $datafile"
+
 find $subdir -name \*.i -exec sh -c \
 	'grep -qm1 "__ksymtab_" $3; \
 	if [ $? -eq 0 ]; then \
