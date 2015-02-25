@@ -114,6 +114,7 @@ enum levels {
 	LVL_ARG,
 	LVL_RETURN = LVL_ARG,
 	LVL_NESTED,
+	LVL_COUNT
 };
 
 static int kb_argmask =	((1 << EXE_ARG2BIG)  |
@@ -212,6 +213,11 @@ struct row *new_row(enum rowtype rowtype)
 	return pr;
 }
 
+void clr_row(struct row *pr)
+{
+	memset(pr, 0, sizeof(struct row));
+}
+
 void delete_row(struct row *pr)
 {
 	free(pr);
@@ -266,42 +272,34 @@ void copy_row(struct row *drow, struct row *srow)
 ** Duplicate Record Management
 ******************************************************/
 
-enum dupman {
-	DM_FILE,
-	DM_EXPORTED,
-	DM_ARG,
-	DM_NESTED,
-	DM_TBLSIZE,
-};
-
 static void init_signal_table(struct table *pt, char *decl)
 {
 	struct row *pr = pt->rows;
 	int len = strlen(decl);
 	int i;
 
-	strncpy(pr[DM_NESTED].decl, decl, len);
+	strncpy(pr[LVL_NESTED].decl, decl, len);
 
-	for (i = 0; i < DM_TBLSIZE; ++i)
+	for (i = 0; i < LVL_COUNT; ++i)
 		pr[i].rowtype = KB_TREE;
 }
 
 // test_dup - Returns true if the current record has the same decl field as
 //            a previous one
 //
-static bool test_dup(struct table *pt, enum dupman dm, char *decl)
+static bool test_dup(struct table *pt, enum levels lvl, char *decl)
 {
 	struct row *pr = pt->rows;
-	char *thisdecl = pr[dm].decl;
+	char *thisdecl = pr[lvl].decl;
 	int len = strlen(decl);
 
 	if (strncmp(thisdecl, decl, len)) {
-		memset(pr[dm].decl, 0, DECLSIZ);
-		strncpy(pr[dm].decl, decl, len);
-		pr[dm].rowflags &= ~ROW_ISDUP;
+		memset(pr[lvl].decl, 0, DECLSIZ);
+		strncpy(pr[lvl].decl, decl, len);
+		pr[lvl].rowflags &= ~ROW_ISDUP;
 		return false;
 	} else {
-		pr[dm].rowflags |= ROW_ISDUP;
+		pr[lvl].rowflags |= ROW_ISDUP;
 		return true;
 	}
 }
@@ -309,19 +307,19 @@ static bool test_dup(struct table *pt, enum dupman dm, char *decl)
 // is_dup - Compares the decl arg with the corresponding column in the
 //          row in the signal_table indext by the dm parameter
 //
-static inline bool is_dup(struct table *pt, enum dupman dm)
+static inline bool is_dup(struct table *pt, enum levels lvl)
 {
 	struct row *pr = pt->rows;
-	return (pr[dm].rowflags & ROW_ISDUP) != 0;
+	return (pr[lvl].rowflags & ROW_ISDUP) != 0;
 }
 
-static inline void clr_dup(struct table *pt, enum dupman dm)
+static inline void clr_dup(struct table *pt, enum levels lvl)
 {
 	struct row *pr = pt->rows;
-	pr[dm].rowflags &= ~ROW_ISDUP;
+	pr[lvl].rowflags &= ~ROW_ISDUP;
 }
 
-static void clr_dup_loop(struct table *pt, enum dupman min, enum dupman max)
+static inline void clr_dup_loop(struct table *pt, enum levels min, enum levels max)
 {
 	unsigned i;
 	struct row *pr = pt->rows;
@@ -430,9 +428,9 @@ int cb_print_nodup_struct2export(void *table,
 	padstr = indent(level);
 	pr = pt->rows;
 
-	if ((level > LVL_FILE) && ((is_dup(pt, DM_EXPORTED) &&
-				    is_dup(pt, DM_ARG)) ||
-				  is_dup(pt, DM_NESTED)))
+	if ((level > LVL_FILE) && ((is_dup(pt, LVL_EXPORTED) &&
+				    is_dup(pt, LVL_ARG)) ||
+				  is_dup(pt, LVL_NESTED)))
 		return 0;
 
 	switch (level) {
@@ -441,24 +439,27 @@ int cb_print_nodup_struct2export(void *table,
 		return 0;
 
 	case LVL_EXPORTED :
-		if (!test_dup(pt, DM_FILE, argv[COL_PARENTDECL]))
+		if (!test_dup(pt, LVL_FILE, argv[COL_PARENTDECL]))
 			printf("FILE: %s\n", argv[COL_PARENTDECL]);
 
-		if (!test_dup(pt, DM_EXPORTED, argv[COL_DECL]))
+		if (!test_dup(pt, LVL_EXPORTED, argv[COL_DECL])) {
 			printf("%s%s %s\n", padstr, argv[COL_PREFIX],
 			       argv[COL_DECL]);
+		}
 		break;
 
 	case LVL_ARG	  :
-		if (!(test_dup(pt, DM_ARG, argv[COL_DECL]) &&
-				is_dup(pt, DM_EXPORTED)))
+		if (!(test_dup(pt, LVL_ARG, argv[COL_DECL]) &&
+				is_dup(pt, LVL_EXPORTED))) {
+			clr_row(&pr[LVL_NESTED]);
 			printf("%s%s %s\n", padstr, argv[COL_PREFIX],
 			       argv[COL_DECL]);
+		}
 		break;
 
 	default:
-		if (!test_dup(pt, DM_NESTED, argv[COL_DECL])) {
-			pr[DM_NESTED].ilevel = level;
+		if (!test_dup(pt, LVL_NESTED, argv[COL_DECL])) {
+			pr[LVL_NESTED].ilevel = level;
 			printf("%s%s\n", padstr, argv[COL_DECL]);
 		}
 		break;
@@ -488,8 +489,8 @@ int cb_print_row(void *table, int argc, char **argv, char **colnames)
 
 	if (table) {
 		pr = pt->rows;
-		level -= pr[DM_NESTED].offset;
-		dup = test_dup(pt, DM_FILE, argv[COL_PARENTDECL]);
+		level -= pr[LVL_NESTED].offset;
+		dup = test_dup(pt, LVL_FILE, argv[COL_PARENTDECL]);
 	}
 
 	padstr = indent(level >= 0 ? level : 0);
@@ -595,7 +596,7 @@ bool sql_concise_struct2export(char *table, char *vw, char *decl)
 	bool rval;
 	int (*cb)(void *, int, char ** ,char **)
 			= decl ? cb_print_nodup_struct2export : cb_print_row;
-	struct table *pt = new_table(DM_TBLSIZE);
+	struct table *pt = new_table(LVL_COUNT);
 	char *zsql = sqlite3_mprintf(zstmt[ZS_OUTER_VIEW_LEVEL],
 				     table, table, vw,
 				     table, vw, table, vw, table, " == 1" );
@@ -612,7 +613,7 @@ bool sql_verbose_struct2export(char *table, char *vw, char *decl)
 	bool rval;
 	int (*cb)(void *, int, char ** ,char **)
 			= decl ? cb_print_nodup_struct2export : cb_print_row;
-	struct table *pt = new_table(DM_TBLSIZE);
+	struct table *pt = new_table(LVL_COUNT);
 	char *zsql = sqlite3_mprintf(zstmt[ZS_OUTER_VIEW],
 				     table, table, vw,
 				     table, vw, table, vw );
@@ -650,7 +651,7 @@ bool sql_print_nest_view(const char *view, long left, long right,
 {
 	bool rval;
 	char *zsql;
-	struct table *pt = new_table(DM_TBLSIZE);
+	struct table *pt = new_table(LVL_COUNT);
 	struct row *pr = pt->rows;
 
 	if (level)
@@ -659,7 +660,7 @@ bool sql_print_nest_view(const char *view, long left, long right,
 		zsql = sqlite3_mprintf(zstmt[zs], view, left, right);
 
 	DBG(puts(zsql);)
-	pr[DM_NESTED].offset = prow->offset;
+	pr[LVL_NESTED].offset = prow->offset;
 	rval = sql_exec(zsql, cb_print_row, pt);
 	sqlite3_free(zsql);
 	delete_table(pt);
