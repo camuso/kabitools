@@ -8,7 +8,7 @@ cmdline=fodir
 usagestr=$(
 cat <<EOF
 
-fodir
+kabi-hpar.sh
 \0
 EOF
 )
@@ -22,6 +22,8 @@ usage() {
 }
 
 #[ $# -gt 0 ] || usage
+
+START=$(date +%s)
 
 for d in $(ls -1d */); do
 	if [ -d "$d" ]; then
@@ -50,5 +52,11 @@ for d in $(ls -1d */); do
 	fi
 done;
 
-echo $count
+END=$(date +%s)
+DIFF=$(( $END - $START ))
 
+minutes=$(( $DIFF / 60 ))
+seconds=$(( $DIFF % 60 ))
+echo
+echo "Total Rendering Time: $minutes minutes and $seconds seconds"
+echo
