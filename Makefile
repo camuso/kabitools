@@ -1,6 +1,8 @@
 
-PARSER_CFLAGS	+= "-I/usr/include/sparse"
-PARSER_LIBS	:= "-lsparse"
+#PARSER_CFLAGS	+= "-I/usr/include/sparse"
+#PARSER_LIBS	:= "-lsparse"
+PARSER_CFLAGS	+= "-I/usr/include/sparksyms"
+PARSER_LIBS	:= "-lsparksyms"
 LOOKUP_CFLAGS	+=
 LOOKUP_LIBS	:= "-lsqlite3"
 

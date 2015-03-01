@@ -53,19 +53,19 @@
 #define NDEBUG	// comment out to enable asserts
 #include <assert.h>
 
-#include <sparse/lib.h>
-#include <sparse/allocate.h>
-#include <sparse/parse.h>
-#include <sparse/symbol.h>
-#include <sparse/expression.h>
-#include <sparse/token.h>
-#include <sparse/ptrlist.h>
+#include <sparksyms/lib.h>
+#include <sparksyms/allocate.h>
+#include <sparksyms/parse.h>
+#include <sparksyms/symbol.h>
+#include <sparksyms/expression.h>
+#include <sparksyms/token.h>
+#include <sparksyms/ptrlist.h>
+#include <sparksyms/checksum.h>
+#include "check_kabi.h"
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-// For this compilation unit only
-//
 #ifdef true
 #undef true
 #endif
@@ -75,6 +75,10 @@
 #define true 1
 #define false 0
 
+#ifndef bool
+typedef unsigned int bool;
+#endif
+
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -82,8 +86,6 @@
 #define DBG(x)
 #define RUN(x) x
 #endif
-
-typedef unsigned int bool;
 
 /*****************************************************
 ** Global declarations
@@ -216,6 +218,7 @@ struct knode {
 	int level;
 	long left;
 	long right;
+	unsigned long crc;
 };
 
 DECLARE_PTR_LIST(knodelist, struct knode);
@@ -446,7 +449,6 @@ static char *pad_out(int padsize, char padchar)
 ******************************************************/
 
 static struct symbol *find_internal_exported(struct symbol_list *, char *);
-static bool starts_with(const char *a, const char *b);
 static const char *get_modstr(unsigned long mod);
 static void get_declist(struct knode *kn, struct symbol *sym);
 static void get_symbols
@@ -523,6 +525,8 @@ static void get_symbols
 
 		kn = map_knode(parent, sym, flags);
 		get_declist(kn, sym);
+		kn->crc = process_symbol(sym, 0xffffffff, 0) ^ 0xffffffff;
+
 		if (sym->ident)
 			kn->name = sym->ident->name;
 
@@ -554,10 +558,14 @@ static void build_branch(struct knode *parent, char *symname, char *file)
 
 		kabiflag = true;
 		get_declist(kn, sym);
+		kn->crc = process_symbol(sym, 0xffffffff, 0) ^ 0xffffffff;
+
 
 		if (kn->symbol_list) {
 			struct knode *bkn = map_knode(kn, basetype, CTL_RETURN);
 			get_declist(bkn, basetype);
+			bkn->crc = process_symbol(basetype,
+						  0xffffffff, 0) ^ 0xffffffff;
 			bkn->right = get_timestamp();
 		}
 
@@ -568,12 +576,9 @@ static void build_branch(struct knode *parent, char *symname, char *file)
 	}
 }
 
-static bool starts_with(const char *a, const char *b)
+static inline bool begins_with(const char *a, const char *b)
 {
-	if(strncmp(a, b, strlen(b)) == 0)
-		return true;
-
-	return false;
+	return (strncmp(a, b, strlen(b)) == 0);
 }
 
 static void build_tree(struct symbol_list *symlist,
@@ -585,7 +590,7 @@ static void build_tree(struct symbol_list *symlist,
 	FOR_EACH_PTR(symlist, sym) {
 
 		if (sym->ident &&
-		    starts_with(sym->ident->name, ksymprefix)) {
+		    begins_with(sym->ident->name, ksymprefix)) {
 			int offset = strlen(ksymprefix);
 			char *symname = &sym->ident->name[offset];
 			build_branch(parent, symname, file);
@@ -949,22 +954,30 @@ int main(int argc, char **argv)
 
 	DBG(puts("got the files");)
 	symlist = sparse_initialize(argc, argv, &filelist);
+	clean_up_symbols(symlist);
+	clear_typedef_symtab();
+	process_files(filelist);
+
+	return 0;
 
 	DBG(puts("created the symlist");)
 	kn = alloc_knode();
 	add_knode(&knodes, kn);
 	kn->parent = kn;
 
+#if 0
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		DBG(printf("sparse file: %s\n", file);)
 		symlist = sparse(file);
 		kn = map_knode(kn, NULL, CTL_FILE);
 		kn->name = file;
 		kn->level = 0;
-		build_tree(symlist, kn, file);
+
+	        // clear_typedef_symtab();
+		// build_tree(symlist, kn, file);
 		kn->right = get_timestamp();
 	} END_FOR_EACH_PTR_NOTAG(file);
-
+#endif
 	DBG(printf("\nhiwater: %d\n", hiwater);)
 
 	if (! kabiflag)
