@@ -53,19 +53,13 @@
 #define NDEBUG	// comment out to enable asserts
 #include <assert.h>
 
-#include <sparksyms/lib.h>
-#include <sparksyms/allocate.h>
-#include <sparksyms/parse.h>
-#include <sparksyms/symbol.h>
-#include <sparksyms/expression.h>
-#include <sparksyms/token.h>
-#include <sparksyms/ptrlist.h>
 #include <sparksyms/checksum.h>
-#include "check_kabi.h"
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
+#ifndef bool
+typedef unsigned int bool;
 #ifdef true
 #undef true
 #endif
@@ -74,9 +68,6 @@
 #endif
 #define true 1
 #define false 0
-
-#ifndef bool
-typedef unsigned int bool;
 #endif
 
 #if !defined(NDEBUG)
@@ -519,13 +510,15 @@ static void get_symbols
 
 	FOR_EACH_PTR(list, sym) {
 		struct knode *kn = NULL;
+		char sbuf[STRBUFSIZ];
 
 		if (parent->symbol == sym)
 			return;
 
 		kn = map_knode(parent, sym, flags);
 		get_declist(kn, sym);
-		kn->crc = process_symbol(sym, 0xffffffff, 0) ^ 0xffffffff;
+		extract_type(kn, sbuf);
+		kn->crc = raw_crc32(sbuf);
 
 		if (sym->ident)
 			kn->name = sym->ident->name;
@@ -549,6 +542,7 @@ static void build_branch(struct knode *parent, char *symname, char *file)
 	struct symbol *sym;
 
 	if ((sym = find_internal_exported(symlist, symname))) {
+		char sbuf[STRBUFSIZ];
 		struct symbol *basetype = sym->ctype.base_type;
 		struct knode *kn = map_knode(parent, NULL, CTL_EXPORTED);
 
@@ -558,14 +552,15 @@ static void build_branch(struct knode *parent, char *symname, char *file)
 
 		kabiflag = true;
 		get_declist(kn, sym);
-		kn->crc = process_symbol(sym, 0xffffffff, 0) ^ 0xffffffff;
+		extract_type(kn, sbuf);
+		kn->crc = raw_crc32(sbuf);
 
 
 		if (kn->symbol_list) {
 			struct knode *bkn = map_knode(kn, basetype, CTL_RETURN);
 			get_declist(bkn, basetype);
-			bkn->crc = process_symbol(basetype,
-						  0xffffffff, 0) ^ 0xffffffff;
+			extract_type(bkn, sbuf);
+			bkn->crc = raw_crc32(sbuf);
 			bkn->right = get_timestamp();
 		}
 
@@ -803,8 +798,8 @@ static void write_knodes(struct knodelist *klist)
 		if (!kp_verbose && kn->flags & CTL_NESTED)
 			return;
 
-		fprintf(datafile, "%d,%lu,%lu,%08x,%s",
-		       kn->level, kn->left, kn->right, kn->flags, pfx);
+		fprintf(datafile, "%d,%08x,%lu,%lu,%08x,%s",
+		       kn->level, kn->crc, kn->left, kn->right, kn->flags, pfx);
 
 		format_declaration(kn);
 
@@ -954,30 +949,22 @@ int main(int argc, char **argv)
 
 	DBG(puts("got the files");)
 	symlist = sparse_initialize(argc, argv, &filelist);
-	clean_up_symbols(symlist);
-	clear_typedef_symtab();
-	process_files(filelist);
-
-	return 0;
 
 	DBG(puts("created the symlist");)
 	kn = alloc_knode();
 	add_knode(&knodes, kn);
 	kn->parent = kn;
 
-#if 0
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		DBG(printf("sparse file: %s\n", file);)
 		symlist = sparse(file);
 		kn = map_knode(kn, NULL, CTL_FILE);
 		kn->name = file;
 		kn->level = 0;
-
-	        // clear_typedef_symtab();
-		// build_tree(symlist, kn, file);
+		build_tree(symlist, kn, file);
 		kn->right = get_timestamp();
 	} END_FOR_EACH_PTR_NOTAG(file);
-#endif
+
 	DBG(printf("\nhiwater: %d\n", hiwater);)
 
 	if (! kabiflag)
