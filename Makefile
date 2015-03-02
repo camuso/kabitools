@@ -1,15 +1,29 @@
 
-#PARSER_CFLAGS	+= "-I/usr/include/sparse"
-#PARSER_LIBS	:= "-lsparse"
-PARSER_CFLAGS	+= "-I/usr/include/sparksyms"
-PARSER_LIBS	:= "-lsparksyms"
+PARSER_CFLAGS	+= -I/usr/include/sparse
+PARSER_LIBS	:= -lsparse
+#PARSER_CFLAGS	+= -I/usr/include/sparksyms
+#PARSER_LIBS	:= -lsparksyms
 LOOKUP_CFLAGS	+=
-LOOKUP_LIBS	:= "-lsqlite3"
+LOOKUP_LIBS	:= -lsqlite3
 
-all	: kabi-parser kabi-lookup
+CFLAGS		+= -I/usr/include/sparse
+LIBS		+= -lsparse -lsqlite3
 
-kabi-parser	: kabi.c
-	cc $(PARSER_CFLAGS) -o kabi-parser kabi.c $(PARSER_LIBS)
+PROGRAMS=kabi-parser kabi-lookup
+LIB_H=checksum.h
+LIB_OBJS=kabi.o kabilookup.o checksum.o
+
+CC = gcc
+LD = gcc
+LDFLAGS += -g
+
+all	: $(PROGRAMS)
+
+clean	:
+	rm -vf *.o $(PROGRAMS)
+
+kabi-parser	: kabi.c checksum.o
+	$(CC) $(PARSER_CFLAGS) -o kabi-parser kabi.c checksum.c $(PARSER_LIBS)
 
 kabi-lookup : kabilookup.c
-	cc $(LOOKUP_CFLAGS) -o kabi-lookup kabilookup.c $(LOOKUP_LIBS)
+	$(CC) $(LOOKUP_CFLAGS) -o kabi-lookup kabilookup.c $(LOOKUP_LIBS)
