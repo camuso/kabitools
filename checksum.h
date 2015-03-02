@@ -21,8 +21,6 @@
  * Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include "symbol.h"
-
 #define HASH_BUCKETS  2048
 
 static const unsigned int crctab32[] = {
