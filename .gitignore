@@ -1,6 +1,14 @@
 *.swp
+*.sql
+*.pro*
+*.tgz
+*.tar
+
+# directories
 sparse/
-cscope.out
+sparksyms/
+sparse-debug/
+
 # Object files
 *.o
 *.ko
@@ -32,6 +40,7 @@ cscope.out
 *.hex
 
 # Specific files
+cscope.out
 kabi
-*.sql
-*.pro*
+kabi-lookup
+kabi-parser
