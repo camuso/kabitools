@@ -15,6 +15,7 @@ LIB_OBJS=kabi.o kabilookup.o checksum.o
 
 CC = gcc
 LD = gcc
+
 LDFLAGS += -g
 
 all	: $(PROGRAMS)
@@ -22,7 +23,7 @@ all	: $(PROGRAMS)
 clean	:
 	rm -vf *.o $(PROGRAMS)
 
-kabi-parser	: kabi.c checksum.o
+kabi-parser	: kabi.c checksum.o kabi-serial.o
 	$(CC) $(PARSER_CFLAGS) -o kabi-parser kabi.c checksum.c $(PARSER_LIBS)
 
 kabi-lookup : kabilookup.c
