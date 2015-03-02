@@ -53,7 +53,11 @@
 #define NDEBUG	// comment out to enable asserts
 #include <assert.h>
 
-#include <sparksyms/checksum.h>
+#include <sparse/symbol.h>
+
+#include "checksum.h"
+#include "kabi-serial.h"
+#include "kabi.h"
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
@@ -118,59 +122,6 @@ static char *typefilename = "../kabi-types.csv";
 FILE *datafile;
 FILE *typefile;
 
-/*****************************************************
-** Forward Declarations
-******************************************************/
-
-struct knode;
-struct knodelist;
-struct used;
-struct usedlist;
-static struct used *lookup_used(struct usedlist *list, struct knode *kn);
-static void add_new_used(struct usedlist **list,
-			 struct knode *kn,
-			 struct symbol *sym);
-static void extract_type(struct knode *kn, char *sbuf);
-
-/*****************************************************
-** enumerated flags and masks
-******************************************************/
-
-enum typemask {
-	SM_UNINITIALIZED = 1 << SYM_UNINITIALIZED,
-	SM_PREPROCESSOR  = 1 << SYM_PREPROCESSOR,
-	SM_BASETYPE	 = 1 << SYM_BASETYPE,
-	SM_NODE		 = 1 << SYM_NODE,
-	SM_PTR		 = 1 << SYM_PTR,
-	SM_FN		 = 1 << SYM_FN,
-	SM_ARRAY	 = 1 << SYM_ARRAY,
-	SM_STRUCT	 = 1 << SYM_STRUCT,
-	SM_UNION	 = 1 << SYM_UNION,
-	SM_ENUM		 = 1 << SYM_ENUM,
-	SM_TYPEDEF	 = 1 << SYM_TYPEDEF,
-	SM_TYPEOF	 = 1 << SYM_TYPEOF,
-	SM_MEMBER	 = 1 << SYM_MEMBER,
-	SM_BITFIELD	 = 1 << SYM_BITFIELD,
-	SM_LABEL	 = 1 << SYM_LABEL,
-	SM_RESTRICT	 = 1 << SYM_RESTRICT,
-	SM_FOULED	 = 1 << SYM_FOULED,
-	SM_KEYWORD	 = 1 << SYM_KEYWORD,
-	SM_BAD		 = 1 << SYM_BAD,
-};
-
-enum ctlflags {
-	CTL_POINTER 	= 1 << 0,
-	CTL_ARRAY	= 1 << 1,
-	CTL_STRUCT	= 1 << 2,
-	CTL_FUNCTION	= 1 << 3,
-	CTL_EXPORTED 	= 1 << 4,
-	CTL_RETURN	= 1 << 5,
-	CTL_ARG		= 1 << 6,
-	CTL_NESTED	= 1 << 7,
-	CTL_GODEEP	= 1 << 8,
-	CTL_DONE	= 1 << 9,
-	CTL_FILE	= 1 << 10,
-};
 
 /*****************************************************
 ** sparse wrappers
@@ -197,6 +148,7 @@ static inline int string_list_size(struct string_list *list)
 struct knode {
 	struct knode *primordial;
 	struct knode *parent;
+	struct knodelist *parents;
 	struct knodelist *children;
 	struct symbol *symbol;
 	struct symbol_list *symbol_list;
@@ -272,7 +224,7 @@ long get_timestamp()
 // the 'right' field with a call to get_timestamp() when processing
 // for the knode is complete. This implements a nested hierarchy
 // using the "modified preorder tree traversal algorithm".
-static struct knode *map_knode(struct knode *parent,
+struct knode *map_knode(struct knode *parent,
 			       struct symbol *symbol,
 			       enum ctlflags flags)
 {
@@ -798,8 +750,8 @@ static void write_knodes(struct knodelist *klist)
 		if (!kp_verbose && kn->flags & CTL_NESTED)
 			return;
 
-		fprintf(datafile, "%d,%08x,%lu,%lu,%08x,%s",
-		       kn->level, kn->crc, kn->left, kn->right, kn->flags, pfx);
+		fprintf(datafile, "%d,%08x,%lu,%lu,%s",
+		       kn->level, (int)kn->crc, kn->left, kn->right, pfx);
 
 		format_declaration(kn);
 
