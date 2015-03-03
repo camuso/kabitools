@@ -24,7 +24,7 @@ clean	:
 	rm -vf *.o $(PROGRAMS)
 
 kabi-parser	: kabi.c checksum.o kabi-serial.o
-	$(CC) $(PARSER_CFLAGS) -o kabi-parser kabi.c checksum.c $(PARSER_LIBS)
+	g++ $(PARSER_CFLAGS) -o kabi-parser -x c kabi.c -x c checksum.c -x c++ kabi-serial.cpp $(PARSER_LIBS)
 
 kabi-lookup : kabilookup.c
 	$(CC) $(LOOKUP_CFLAGS) -o kabi-lookup kabilookup.c $(LOOKUP_LIBS)
