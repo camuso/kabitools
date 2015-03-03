@@ -4,6 +4,17 @@
 /*****************************************************
 ** Forward Declarations
 ******************************************************/
+#ifndef bool
+typedef unsigned int bool;
+#ifdef true
+#undef true
+#endif
+#ifdef false
+#undef false
+#endif
+#define true 1
+#define false 0
+#endif
 
 struct knode;
 struct knodelist;
