@@ -56,23 +56,13 @@
 #include <sparse/symbol.h>
 
 #include "checksum.h"
-#include "kabi-serial.h"
 #include "kabi.h"
+#include "kabi-serial.h"
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-#ifndef bool
-typedef unsigned int bool;
-#ifdef true
-#undef true
-#endif
-#ifdef false
-#undef false
-#endif
-#define true 1
-#define false 0
-#endif
+
 
 #if !defined(NDEBUG)
 #define DBG(x) x
@@ -307,7 +297,7 @@ static void add_new_used(struct usedlist **list,
 	strncpy(newused->typnam, sbuf, STRBUFSIZ);
 }
 
-static bool is_used(struct usedlist **list,
+bool is_used(struct usedlist **list,
 		    struct knode *kn,
 		    struct symbol *sym)
 {
@@ -393,24 +383,24 @@ static char *pad_out(int padsize, char padchar)
 
 static struct symbol *find_internal_exported(struct symbol_list *, char *);
 static const char *get_modstr(unsigned long mod);
-static void get_declist(struct knode *kn, struct symbol *sym);
-static void get_symbols
-		(struct knode *parent,
-		 struct symbol_list *list,
-		 enum ctlflags flags);
+static void get_declist(struct qnode *qn, struct knode *kn, struct symbol *sym);
+static void get_symbols(struct qnode *,
+			struct knode *parent,
+			struct symbol_list *list,
+			enum ctlflags flags);
 
-static void proc_symlist
-		(struct knode *parent,
-		 struct symbol_list *list,
-		 enum ctlflags flags)
+static void proc_symlist(struct qnode *qparent,
+			 struct knode *parent,
+			 struct symbol_list *list,
+			 enum ctlflags flags)
 {
 	struct symbol *sym;
 	FOR_EACH_PTR(list, sym) {
-		get_symbols(parent, sym->symbol_list, flags);
+		get_symbols(qparent, parent, sym->symbol_list, flags);
 	} END_FOR_EACH_PTR(sym);
 }
 
-static void get_declist(struct knode *kn, struct symbol *sym)
+static void get_declist(struct qnode *qn, struct knode *kn, struct symbol *sym)
 {
 	struct symbol *basetype = sym->ctype.base_type;
 	const char *typnam = "\0";
@@ -429,52 +419,83 @@ static void get_declist(struct knode *kn, struct symbol *sym)
 				typnam = get_modstr(basetype->ctype.modifiers);
 		}
 
-		if (basetype->type == SYM_PTR)
+		if (basetype->type == SYM_PTR) {
 			kn->flags |= CTL_POINTER;
-		else
+			qn->flags |= CTL_POINTER;
+		} else {
 			add_string(&kn->declist, (char *)typnam);
+			qn_add_to_declist(qn, (char *)typnam);
+		}
 
 		if ((tm & (SM_STRUCT | SM_UNION))
 		&& (basetype->symbol_list)) {
 			add_symbol(&kn->symbol_list, basetype);
 			kn->flags |= CTL_STRUCT;
+			qn->flags |= CTL_STRUCT;
 		}
 
-		if (tm & SM_FN)
+		if (tm & SM_FN) {
 			kn->flags |= CTL_FUNCTION;
+			qn->flags |= CTL_FUNCTION;
+		}
 	}
 
 	if (basetype->ident) {
 		kn->typnam = basetype->ident->name;
+		qn->typnam = basetype->ident->name;
 		add_string(&kn->declist, basetype->ident->name);
-	} else
+		qn_add_to_declist(qn, basetype->ident->name);
+	} else {
 		kn->typnam = (char *)typnam;
+		qn->typnam = (char *)typnam;
+	}
 
-	get_declist(kn, basetype);
+	get_declist(qn, kn, basetype);
 }
 
-static void get_symbols
-		(struct knode *parent,
-		 struct symbol_list *list,
-		 enum ctlflags flags)
+static void get_symbols	(struct qnode *qparent,
+			 struct knode *parent,
+			 struct symbol_list *list,
+			 enum ctlflags flags)
 {
 	struct symbol *sym;
 
 	FOR_EACH_PTR(list, sym) {
 		struct knode *kn = NULL;
+		struct qnode *qn = NULL;
 		char sbuf[STRBUFSIZ];
+		unsigned long crc;
 
-		if (parent->symbol == sym)
-			return;
+		//if (parent->symbol == sym)
+		//	return;
 
 		kn = map_knode(parent, sym, flags);
-		get_declist(kn, sym);
+		qn = new_qnode(qparent, flags);
+
+		get_declist(qn, kn, sym);
+
 		extract_type(kn, sbuf);
 		kn->crc = raw_crc32(sbuf);
 
-		if (sym->ident)
-			kn->name = sym->ident->name;
+		qn_extract_type(qn, sbuf, STRBUFSIZ);
+		crc = raw_crc32(sbuf);
 
+		if (qn_is_dup(qn, qparent, crc))
+			continue;
+
+		qn->cn->crc = crc;
+
+		if (sym->ident) {
+			kn->name = sym->ident->name;
+			qn->name = sym->ident->name;
+		}
+
+		printf("%s%s %s\n", pad_out(qn->cn->level, ' '), sbuf, qn->name);
+
+		if (kn->symbol_list)
+			proc_symlist(qn, kn, kn->symbol_list, CTL_NESTED);
+
+#if 0
 		// Avoid redundancies and infinite recursions.
 		// Infinite recursions occur when a struct has members
 		// that point back to itself, as in ..
@@ -484,7 +505,7 @@ static void get_symbols
 		// };
 		if (!(is_used(&kn->primordial->redlist, kn, sym)))
 			proc_symlist(kn, kn->symbol_list, CTL_NESTED);
-
+#endif
 		kn->right = get_timestamp();
 	} END_FOR_EACH_PTR(sym);
 }
@@ -497,27 +518,47 @@ static void build_branch(struct knode *parent, char *symname, char *file)
 		char sbuf[STRBUFSIZ];
 		struct symbol *basetype = sym->ctype.base_type;
 		struct knode *kn = map_knode(parent, NULL, CTL_EXPORTED);
+		struct qnode *qn = new_qnode(NULL, CTL_EXPORTED);
 
 		kn->file = file;
 		kn->name = symname;
 		kn->primordial = kn;
 
+		qn->file = file;
+		qn->name = symname;
+		qn->cn->level = 1;
+
 		kabiflag = true;
-		get_declist(kn, sym);
+		get_declist(qn, kn, sym);
+
 		extract_type(kn, sbuf);
+		strcat(sbuf, kn->name);
 		kn->crc = raw_crc32(sbuf);
 
+		qn_extract_type(qn, sbuf, STRBUFSIZ);
+		strcat(sbuf, qn->name);
+		qn->cn->crc = raw_crc32(sbuf);
+
+		printf("EXPORTED: %s\n", sbuf);
 
 		if (kn->symbol_list) {
 			struct knode *bkn = map_knode(kn, basetype, CTL_RETURN);
-			get_declist(bkn, basetype);
+			struct qnode *bqn = new_qnode(qn, CTL_RETURN);
+
+			get_declist(bqn, bkn, basetype);
+
 			extract_type(bkn, sbuf);
 			bkn->crc = raw_crc32(sbuf);
 			bkn->right = get_timestamp();
+
+			qn_extract_type(bqn, sbuf, STRBUFSIZ);
+			bqn->cn->crc = raw_crc32(sbuf);
+
+			printf("RETURN: %s\n", sbuf);
 		}
 
 		if (basetype->arguments)
-			get_symbols(kn, basetype->arguments, CTL_ARG);
+			get_symbols(qn, kn, basetype->arguments, CTL_ARG);
 
 		kn->right = get_timestamp();
 	}
