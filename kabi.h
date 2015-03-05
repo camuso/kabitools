@@ -16,6 +16,9 @@ typedef unsigned int bool;
 #define false 0
 #endif
 
+#define strequal(s1, s2)        (*(s1) == *(s2) && strcmp(s1, s2) == 0)
+#define strnotequal(s1, s2)     (*(s1) != *(s2) || strcmp(s1, s2) != 0)
+
 struct knode;
 struct knodelist;
 struct used;

@@ -50,19 +50,18 @@
 #include <string.h>
 #include <stdint.h>
 #include <time.h>
-#define NDEBUG	// comment out to enable asserts
+//#define NDEBUG	// comment out to enable asserts
 #include <assert.h>
 
 #include <sparse/symbol.h>
 
 #include "checksum.h"
 #include "kabi.h"
+#include "kabi-node.h"
 #include "kabi-serial.h"
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
-
-
 
 #if !defined(NDEBUG)
 #define DBG(x) x
@@ -430,8 +429,8 @@ static void get_declist(struct qnode *qn, struct knode *kn, struct symbol *sym)
 		if ((tm & (SM_STRUCT | SM_UNION))
 		&& (basetype->symbol_list)) {
 			add_symbol(&kn->symbol_list, basetype);
-			kn->flags |= CTL_STRUCT;
-			qn->flags |= CTL_STRUCT;
+			kn->flags |= CTL_STRUCT | CTL_HASLIST;
+			qn->flags |= CTL_STRUCT | CTL_HASLIST;
 		}
 
 		if (tm & SM_FN) {
@@ -466,8 +465,7 @@ static void get_symbols	(struct qnode *qparent,
 		char sbuf[STRBUFSIZ];
 		unsigned long crc;
 
-		//if (parent->symbol == sym)
-		//	return;
+		flags = flags & ~CTL_BACKPTR;
 
 		kn = map_knode(parent, sym, flags);
 		qn = new_qnode(qparent, flags);
@@ -480,7 +478,13 @@ static void get_symbols	(struct qnode *qparent,
 		qn_extract_type(qn, sbuf, STRBUFSIZ);
 		crc = raw_crc32(sbuf);
 
-		if (qn_is_dup(qn, qparent, crc))
+		if (strstr(sbuf, "list_head"))
+			get_declist(qn, kn, sym);
+
+		if (qparent->cn->crc == crc)
+			qn->flags |= CTL_BACKPTR;
+		else if ((qn->flags & CTL_HASLIST)
+			 && qn_is_dup(qn, qparent, crc))
 			continue;
 
 		qn->cn->crc = crc;
@@ -492,20 +496,9 @@ static void get_symbols	(struct qnode *qparent,
 
 		printf("%s%s %s\n", pad_out(qn->cn->level, ' '), sbuf, qn->name);
 
-		if (kn->symbol_list)
+		if ((qn->flags & CTL_HASLIST) && !(qn->flags & CTL_BACKPTR))
 			proc_symlist(qn, kn, kn->symbol_list, CTL_NESTED);
 
-#if 0
-		// Avoid redundancies and infinite recursions.
-		// Infinite recursions occur when a struct has members
-		// that point back to itself, as in ..
-		// struct list_head {
-		// 	struct list_head *next;
-		// 	struct list_head *prev;
-		// };
-		if (!(is_used(&kn->primordial->redlist, kn, sym)))
-			proc_symlist(kn, kn->symbol_list, CTL_NESTED);
-#endif
 		kn->right = get_timestamp();
 	} END_FOR_EACH_PTR(sym);
 }
