@@ -15,6 +15,9 @@
 
 using namespace std;
 
+
+#if 0
+
 namespace boost {
 namespace serialization {
 
@@ -29,9 +32,6 @@ void kb_write_list ()
 		oa << qnodelist;
 	}
 }
-
-#if 0
-
 
 void kb_write_qnode(struct qnode *qn)
 {
@@ -95,8 +95,7 @@ void qn_add_qnode(struct qnode *)
 {
 
 }
-#endif
-
 
 } // namespace serialization
 } // namespace boost
+#endif

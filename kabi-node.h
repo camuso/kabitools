@@ -31,19 +31,6 @@ struct cnode
 #endif
 };
 
-class foo
-{
-public:
-	int bar;
-	char *name;
-
-	template<class Archive>
-        void serialize(Archive &ar, const unsigned int version)
-        {
-		ar & name;
-	}
-};
-
 struct qnode
 {
 	struct cnode *cn;

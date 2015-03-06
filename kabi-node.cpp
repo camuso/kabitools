@@ -30,45 +30,7 @@ struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags)
 	return qn;
 }
 
-void write_foo(foo *f)
-{
-	ofstream ofs("foo.txt");
-	{
-		boost::archive::text_oarchive oa(ofs);
-		oa << f;
-	}
-}
 
-void kb_write_cnode(cnode *cn)
-{
-	ofstream ofs("kabi-list.dat");
-	{
-		boost::archive::text_oarchive oa(ofs);
-		oa << cn;
-	}
-}
-
-void kb_write_qnode(qnode *qn)
-{
-	ofstream ofs("kabi-list.dat");
-	{
-		boost::archive::text_oarchive oa(ofs);
-		oa << qn;
-	}
-}
-
-
-void kb_write_qlist()
-{
-	ofstream ofs("kabi-list.dat");
-
-	{
-		vector<qnode *>qnodelist;
-		get_qnodelist(qnodelist);
-		boost::archive::text_oarchive oa(ofs);
-		oa << cq.qnodelist;
-	}
-}
 
 vector<qnode *>::iterator get_qnodelist_iterator()
 {
@@ -97,8 +59,6 @@ void qn_add_child(struct qnode *qn, struct qnode *child)
 
 struct qnode *qn_lookup_crc(unsigned long crc)
 {
-	qnode *qn = new qnode;
-	cq.qnodelist.push_back(qn);
 	vector<qnode *>::iterator i;
 	for (i = cq.qnodelist.begin(); i < cq.qnodelist.end(); ++i)
 		if ((*i)->cn->crc == crc)
@@ -154,4 +114,64 @@ bool qn_is_dup(struct qnode *qn, struct qnode* parent, unsigned long crc)
 	return false;
 }
 
+#if 0
 
+class foo
+{
+public:
+	int bar;
+	char *name;
+
+	template<class Archive>
+        void serialize(Archive &ar, const unsigned int version)
+        {
+		ar & name;
+	}
+};
+
+ostream & operator<<(ostream &os, const  char *n)
+{
+	os << n;
+	return os;
+}
+
+void write_foo(foo *f)
+{
+	ofstream ofs("foo.txt");
+	{
+		boost::archive::text_oarchive oa(ofs);
+		oa << f;
+	}
+}
+
+void kb_write_cnode(cnode *cn)
+{
+	ofstream ofs("kabi-list.dat");
+	{
+		boost::archive::text_oarchive oa(ofs);
+		oa << cn;
+	}
+}
+
+void kb_write_qnode(qnode *qn)
+{
+	ofstream ofs("kabi-list.dat");
+	{
+		boost::archive::text_oarchive oa(ofs);
+		oa << qn;
+	}
+}
+
+
+void kb_write_qlist()
+{
+	ofstream ofs("kabi-list.dat");
+
+	{
+		vector<qnode *>qnodelist;
+		get_qnodelist(qnodelist);
+		boost::archive::text_oarchive oa(ofs);
+		oa << cq.qnodelist;
+	}
+}
+#endif
