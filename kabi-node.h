@@ -15,71 +15,74 @@ enum ctlflags {
 	CTL_HASLIST	= 1 << 10,
 };
 
-#if 0
-struct cnode {
+struct cnode
+{
 	unsigned long crc;
 	int level;
+#ifdef __cplusplus
+	cnode(){}
+	friend class boost::serialization::access;
+	template<class Archive>
+        void serialize(Archive &ar, const unsigned int version)
+        {
+		ar & crc & level;
+	}
+
+#endif
 };
 
-struct qnode {
+class foo
+{
+public:
+	int bar;
+	char *name;
+
+	template<class Archive>
+        void serialize(Archive &ar, const unsigned int version)
+        {
+		ar & name;
+	}
+};
+
+struct qnode
+{
 	struct cnode *cn;
 	char *name;
 	char *typnam;
 	char *file;
 	enum ctlflags flags;
 #ifdef __cplusplus
-	std::vector<cnode *> parents;
-	std::vector<cnode *> children;
-	std::vector<char *> declist;
-#endif
-};
-#endif
-
-#ifdef __cplusplus
-
-class cnode
-{
-public:
-	cnode(){}
-	unsigned long crc;
-	int level;
-};
-
-class qnode
-{
-public:
 	qnode(){}
-	unsigned long crc;
-	char *name;
-	char *typnam;
-	char *file;
-	enum ctlflags flags;
-};
-
-class kgraph
-{
-public:
 	std::vector<cnode *> parents;
 	std::vector<cnode *> children;
 	std::vector<char *> declist;
 
-	qnode *get_qnode(){return &qn;}
-	cnode *get_cnode(){return &cn;}
-
-private:
-	qnode qn;
-	cnode cn;
 	friend class boost::serialization::access;
 	template<class Archive>
         void serialize(Archive &ar, const unsigned int version)
         {
-		ar & qn.crc & qn.file & qn.flags &qn.name & qn.typnam
-		   & cn.crc & cn.level
-		   & parents & children & declist;
-        }
+		ar & name; // & flags & name & typnam;
+
+		//ar & parents & children & declist;
+	}
+#endif
 };
 
-class std::vector<kgraph> kgraphlist;
+#ifdef __cplusplus
+
+class Cqnodelist
+{
+public:
+	Cqnodelist(){}
+	std::vector<qnode *> qnodelist;
+
+	friend class boost::serialization::access;
+	template<class Archive>
+        void serialize(Archive &ar, const unsigned int version)
+        {
+		ar & qnodelist;
+	}
+};
 
 extern std::vector<qnode *>::iterator get_qnodelist_iterator();
 extern void get_qnodelist(std::vector<qnode *> &qlist);

@@ -13,12 +13,24 @@
 #include "kabi-node.h"
 #include "kabi-serial.h"
 
-//using namespace std;
+using namespace std;
 
-#if 0
 namespace boost {
 namespace serialization {
 
+void kb_write_list ()
+{
+	ofstream ofs("kabi-list.dat");
+
+	{
+		vector<qnode *>qnodelist;
+		get_qnodelist(qnodelist);
+		boost::archive::text_oarchive oa(ofs);
+		oa << qnodelist;
+	}
+}
+
+#if 0
 
 
 void kb_write_qnode(struct qnode *qn)
@@ -83,18 +95,8 @@ void qn_add_qnode(struct qnode *)
 {
 
 }
-
-void kb_write_list ()
-{
-	ofstream ofs("kabi-list.dat");
-
-	{
-		boost::archive::text_oarchive oa(ofs);
-		oa << ql.qnodelist;
-	}
-}
+#endif
 
 
 } // namespace serialization
 } // namespace boost
-#endif
