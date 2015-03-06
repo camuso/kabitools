@@ -1,5 +1,6 @@
 #include <vector>
 #include <cstring>
+#include <fstream>
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
 #include <boost/serialization/vector.hpp>
@@ -8,63 +9,76 @@
 
 using namespace std;
 
-struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags)
-{
-	kgraph *kg = new kgraph;
-
-	if (!parent)
-		parent = kg->get_qnode();
-
-	kg->parents.clear();
-	kg->children.clear();
-	kg->flags = flags;
-
-	kg->cn = cn;
-	kg->level = parent->cn->level + 1;
-	kg->parents.push_back(parent->cn);
-	parent->children.push_back(cn);
-	qnodelist.push_back(qn);
-
-	return qn;
-}
-
-
-#if 0
-vector<qnode *>::iterator get_qnodelist_iterator()
-{
-	return qnodelist.begin();
-}
-
-void get_qnodelist(vector<qnode *> &qlist)
-{
-	qlist = qnodelist;
-}
+Cqnodelist cq;
 
 struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags)
 {
-	struct qnode *qn = new qnode;
-	struct cnode *cn = new cnode;
-
-	memset(qn, 0, sizeof(qnode));
-	memset(cn, 0, sizeof(cnode));
+	qnode *qn = new qnode;
+	cnode *cn = new cnode;
+	qn->cn = cn;
 
 	if (!parent)
 		parent = qn;
 
-	qn->parents.clear();
-	qn->children.clear();
 	qn->flags = flags;
-
-	qn->cn = cn;
-	cn->level = parent->cn->level + 1;
+	qn->cn->level = parent->cn->level + 1;
 	qn->parents.push_back(parent->cn);
-	parent->children.push_back(cn);
-	qnodelist.push_back(qn);
+	parent->children.push_back(qn->cn);
+
+	cq.qnodelist.push_back(qn);
 
 	return qn;
 }
-#endif
 
+void write_foo(foo *f)
+{
+	ofstream ofs("foo.txt");
+	{
+		boost::archive::text_oarchive oa(ofs);
+		oa << f;
+	}
+}
+
+void kb_write_cnode(cnode *cn)
+{
+	ofstream ofs("kabi-list.dat");
+	{
+		boost::archive::text_oarchive oa(ofs);
+		oa << cn;
+	}
+}
+
+void kb_write_qnode(qnode *qn)
+{
+	ofstream ofs("kabi-list.dat");
+	{
+		boost::archive::text_oarchive oa(ofs);
+		oa << qn;
+	}
+}
+
+
+void kb_write_qlist()
+{
+	ofstream ofs("kabi-list.dat");
+
+	{
+		vector<qnode *>qnodelist;
+		get_qnodelist(qnodelist);
+		boost::archive::text_oarchive oa(ofs);
+		oa << cq.qnodelist;
+	}
+}
+
+vector<qnode *>::iterator get_qnodelist_iterator()
+{
+	return cq.qnodelist.begin();
+}
+
+void get_qnodelist(vector<qnode *> &qlist)
+{
+	qlist = cq.qnodelist;
+}
 void delete_qnode(struct qnode *qn)
 {
 	delete qn->cn;
@@ -83,8 +97,10 @@ void qn_add_child(struct qnode *qn, struct qnode *child)
 
 struct qnode *qn_lookup_crc(unsigned long crc)
 {
+	qnode *qn = new qnode;
+	cq.qnodelist.push_back(qn);
 	vector<qnode *>::iterator i;
-	for (i = qnodelist.begin(); i < qnodelist.end(); ++i)
+	for (i = cq.qnodelist.begin(); i < cq.qnodelist.end(); ++i)
 		if ((*i)->cn->crc == crc)
 			return *i;
 	return NULL;
