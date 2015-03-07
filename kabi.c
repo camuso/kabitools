@@ -382,24 +382,22 @@ static char *pad_out(int padsize, char padchar)
 
 static struct symbol *find_internal_exported(struct symbol_list *, char *);
 static const char *get_modstr(unsigned long mod);
-static void get_declist(struct qnode *qn, struct knode *kn, struct symbol *sym);
-static void get_symbols(struct qnode *,
-			struct knode *parent,
+static void get_declist(struct qnode *qn, struct symbol *sym);
+static void get_symbols(struct qnode *qn,
 			struct symbol_list *list,
 			enum ctlflags flags);
 
 static void proc_symlist(struct qnode *qparent,
-			 struct knode *parent,
 			 struct symbol_list *list,
 			 enum ctlflags flags)
 {
 	struct symbol *sym;
 	FOR_EACH_PTR(list, sym) {
-		get_symbols(qparent, parent, sym->symbol_list, flags);
+		get_symbols(qparent, sym->symbol_list, flags);
 	} END_FOR_EACH_PTR(sym);
 }
 
-static void get_declist(struct qnode *qn, struct knode *kn, struct symbol *sym)
+static void get_declist(struct qnode *qn, struct symbol *sym)
 {
 	struct symbol *basetype = sym->ctype.base_type;
 	const char *typnam = "\0";
@@ -418,71 +416,50 @@ static void get_declist(struct qnode *qn, struct knode *kn, struct symbol *sym)
 				typnam = get_modstr(basetype->ctype.modifiers);
 		}
 
-		if (basetype->type == SYM_PTR) {
-			kn->flags |= CTL_POINTER;
+		if (basetype->type == SYM_PTR)
 			qn->flags |= CTL_POINTER;
-		} else {
-			add_string(&kn->declist, (char *)typnam);
+		else
 			qn_add_to_declist(qn, (char *)typnam);
-		}
 
 		if ((tm & (SM_STRUCT | SM_UNION))
-		&& (basetype->symbol_list)) {
-			add_symbol(&kn->symbol_list, basetype);
-			kn->flags |= CTL_STRUCT | CTL_HASLIST;
+		   && (basetype->symbol_list)) {
+			add_symbol((struct symbol_list **)&qn->symlist,
+				    basetype);
 			qn->flags |= CTL_STRUCT | CTL_HASLIST;
 		}
 
-		if (tm & SM_FN) {
-			kn->flags |= CTL_FUNCTION;
+		if (tm & SM_FN)
 			qn->flags |= CTL_FUNCTION;
-		}
 	}
 
 	if (basetype->ident) {
-		kn->typnam = basetype->ident->name;
 		qn->typnam = basetype->ident->name;
-		add_string(&kn->declist, basetype->ident->name);
 		qn_add_to_declist(qn, basetype->ident->name);
-	} else {
-		kn->typnam = (char *)typnam;
+	} else
 		qn->typnam = (char *)typnam;
-	}
 
-	get_declist(qn, kn, basetype);
+	get_declist(qn, basetype);
 }
 
 static void get_symbols	(struct qnode *qparent,
-			 struct knode *parent,
 			 struct symbol_list *list,
 			 enum ctlflags flags)
 {
 	struct symbol *sym;
 
 	FOR_EACH_PTR(list, sym) {
-		struct knode *kn = NULL;
-		struct qnode *qn = NULL;
-		char sbuf[STRBUFSIZ];
 		const char *decl;
 		unsigned long crc;
+		struct qnode *qn = new_qnode(qparent, flags);
 
-		flags = flags & ~CTL_BACKPTR;
-
-		kn = map_knode(parent, sym, flags);
-		qn = new_qnode(qparent, flags);
-
-		get_declist(qn, kn, sym);
-
-		extract_type(kn, sbuf);
-		kn->crc = raw_crc32(sbuf);
-
+		get_declist(qn, sym);
 		decl = qn_extract_type(qn);
 		crc = raw_crc32(decl);
 
 		// DEBUG CODE - creates a breakpoint for the debugger
 		// based on the decl content
-		if (strstr(decl, "list_head"))
-			get_declist(qn, kn, sym);
+		if (strstr(decl, "exception_table_entry"))
+			get_declist(qn, sym);
 
 		if (qparent->cn->crc == crc)
 			qn->flags |= CTL_BACKPTR;
@@ -490,72 +467,57 @@ static void get_symbols	(struct qnode *qparent,
 			 && qn_is_dup(qn, qparent, crc))
 			continue;
 
+		// qnode crc must be inited here, or it will be found and
+		// deleted as a dup by the else if above.
 		qn->cn->crc = crc;
 
-		if (sym->ident) {
-			kn->name = sym->ident->name;
+		if (sym->ident)
 			qn->name = sym->ident->name;
-		}
 
 		printf("%s%s %s\n", pad_out(qn->cn->level, ' '), decl, qn->name);
 
 		if ((qn->flags & CTL_HASLIST) && !(qn->flags & CTL_BACKPTR))
-			proc_symlist(qn, kn, kn->symbol_list, CTL_NESTED);
+			proc_symlist(qn, (struct symbol_list *)qn->symlist,
+				     CTL_NESTED);
 
-		kn->right = get_timestamp();
+		update_qnode(qn);
+
 	} END_FOR_EACH_PTR(sym);
 }
 
-static void build_branch(struct knode *parent, char *symname, char *file)
+static void build_branch(char *symname, char *file)
 {
 	struct symbol *sym;
 
 	if ((sym = find_internal_exported(symlist, symname))) {
-		char sbuf[STRBUFSIZ];
 		const char *decl;
 		struct symbol *basetype = sym->ctype.base_type;
-		struct knode *kn = map_knode(parent, NULL, CTL_EXPORTED);
 		struct qnode *qn = new_firstqnode(CTL_EXPORTED);
-
-		kn->file = file;
-		kn->name = symname;
-		kn->primordial = kn;
 
 		qn->file = file;
 		qn->name = symname;
 		qn->cn->level = 1;
-
 		kabiflag = true;
-		get_declist(qn, kn, sym);
-
-		extract_type(kn, sbuf);
-		strcat(sbuf, kn->name);
-		kn->crc = raw_crc32(sbuf);
-
+		get_declist(qn, sym);
 		decl = cstrcat(qn_extract_type(qn), qn->name);
 		qn->cn->crc = raw_crc32(decl);
+
 		printf("EXPORTED: %s\n", decl);
 
-		if (kn->symbol_list) {
-			struct knode *bkn = map_knode(kn, basetype, CTL_RETURN);
+		if (qn->flags & CTL_HASLIST) {
 			struct qnode *bqn = new_qnode(qn, CTL_RETURN);
 
-			get_declist(bqn, bkn, basetype);
-
-			extract_type(bkn, sbuf);
-			bkn->crc = raw_crc32(sbuf);
-			bkn->right = get_timestamp();
-
+			get_declist(bqn, basetype);
 			decl = qn_extract_type(bqn);
-			bqn->cn->crc = raw_crc32(sbuf);
-
+			bqn->cn->crc = raw_crc32(decl);
 			printf("RETURN: %s\n", decl);
+			update_qnode(bqn);
 		}
 
 		if (basetype->arguments)
-			get_symbols(qn, kn, basetype->arguments, CTL_ARG);
+			get_symbols(qn, basetype->arguments, CTL_ARG);
 
-		kn->right = get_timestamp();
+		update_qnode(qn);
 	}
 }
 
@@ -564,9 +526,7 @@ static inline bool begins_with(const char *a, const char *b)
 	return (strncmp(a, b, strlen(b)) == 0);
 }
 
-static void build_tree(struct symbol_list *symlist,
-		       struct knode *parent,
-		       char *file)
+static void build_tree(struct symbol_list *symlist, char *file)
 {
 	struct symbol *sym;
 
@@ -576,7 +536,7 @@ static void build_tree(struct symbol_list *symlist,
 		    begins_with(sym->ident->name, ksymprefix)) {
 			int offset = strlen(ksymprefix);
 			char *symname = &sym->ident->name[offset];
-			build_branch(parent, symname, file);
+			build_branch(symname, file);
 		}
 
 	} END_FOR_EACH_PTR(sym);
@@ -939,18 +899,11 @@ int main(int argc, char **argv)
 	symlist = sparse_initialize(argc, argv, &filelist);
 
 	DBG(puts("created the symlist");)
-	kn = alloc_knode();
-	add_knode(&knodes, kn);
-	kn->parent = kn;
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		DBG(printf("sparse file: %s\n", file);)
 		symlist = sparse(file);
-		kn = map_knode(kn, NULL, CTL_FILE);
-		kn->name = file;
-		kn->level = 0;
-		build_tree(symlist, kn, file);
-		kn->right = get_timestamp();
+		build_tree(symlist,file);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
 	DBG(printf("\nhiwater: %d\n", hiwater);)
@@ -966,12 +919,11 @@ int main(int argc, char **argv)
 	if (!open_file(&datafile, datafilename))
 		return 1;
 
-	write_knodes(knodes);
-
 	if (!open_file(&typefile, typefilename))
 		return 1;
 
-	write_types(knodes);
+	fclose(datafile);
+	fclose(typefile);
 
 	return 0;
 }

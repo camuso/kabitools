@@ -10,6 +10,7 @@
 using namespace std;
 
 Cqnodelist cq;
+static string initstr = "";
 
 qnode *alloc_qnode()
 {
@@ -21,13 +22,21 @@ qnode *alloc_qnode()
 
 qnode *init_qnode(qnode *parent, qnode *qn, enum ctlflags flags)
 {
-	qn->flags = flags;
+	char *pstr = strdup(initstr.c_str());
+
+	qn->name    = pstr;
+	qn->typnam  = pstr;
+	qn->file    = pstr;
+	qn->symlist = NULL;
+	qn->flags   = flags;
+
 	qn->cn->level = parent->cn->level + 1;
 	qn->parents.push_back(*(parent->cn));
 	parent->children.push_back(*(qn->cn));
 
 	cq.qnodelist.push_back(*qn);
 
+	free(pstr);
 	return qn;
 }
 
@@ -45,9 +54,16 @@ struct qnode *new_firstqnode(enum ctlflags flags)
 	return qn;
 }
 
-void get_qnodelist(vector<qnode> &qlist)
+void update_qnode(struct qnode *qn)
 {
-	qlist = cq.qnodelist;
+	qn->sname   = string(qn->name);
+	qn->stypnam = string(qn->typnam);
+	qn->sfile   = string(qn->file);
+}
+
+vector<qnode> &get_qnodelist()
+{
+	return cq.qnodelist;
 }
 void delete_qnode(struct qnode *qn)
 {

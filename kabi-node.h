@@ -36,6 +36,7 @@ struct qnode
 	char *name;
 	char *typnam;
 	char *file;
+	void *symlist;
 	enum ctlflags flags;
 #ifdef __cplusplus
 	qnode(){}
@@ -70,13 +71,13 @@ public:
 	}
 };
 
-extern std::vector<qnode *>::iterator get_qnodelist_iterator();
-extern void get_qnodelist(std::vector<qnode *> &qlist);
+extern std::vector<qnode> &get_qnodelist();
 extern "C"
 {
 #endif
-struct qnode *new_firstqnode(enum ctlflags flags);
 extern struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags);
+extern struct qnode *new_firstqnode(enum ctlflags flags);
+extern void update_qnode(struct qnode *qn);
 extern void delete_qnode(struct qnode *qn);
 extern void qn_add_parent(struct qnode *qn, struct qnode *parent);
 extern void qn_add_child(struct qnode *qn, struct qnode *child);
@@ -86,7 +87,7 @@ extern bool qn_lookup_child(struct qnode *qn, unsigned long crc);
 extern void qn_add_to_declist(struct qnode *qn, char *decl);
 extern const char *qn_extract_type(struct qnode *qn);
 extern bool qn_is_dup(struct qnode *qn, struct qnode* parent, unsigned long crc);
-const char *cstrcat(const char *d, const char *s);
+extern const char *cstrcat(const char *d, const char *s);
 #ifdef __cplusplus
 }
 #endif
