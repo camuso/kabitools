@@ -463,6 +463,7 @@ static void get_symbols	(struct qnode *qparent,
 		struct knode *kn = NULL;
 		struct qnode *qn = NULL;
 		char sbuf[STRBUFSIZ];
+		const char *decl;
 		unsigned long crc;
 
 		flags = flags & ~CTL_BACKPTR;
@@ -475,10 +476,12 @@ static void get_symbols	(struct qnode *qparent,
 		extract_type(kn, sbuf);
 		kn->crc = raw_crc32(sbuf);
 
-		qn_extract_type(qn, sbuf, STRBUFSIZ);
-		crc = raw_crc32(sbuf);
+		decl = qn_extract_type(qn);
+		crc = raw_crc32(decl);
 
-		if (strstr(sbuf, "list_head"))
+		// DEBUG CODE - creates a breakpoint for the debugger
+		// based on the decl content
+		if (strstr(decl, "list_head"))
 			get_declist(qn, kn, sym);
 
 		if (qparent->cn->crc == crc)
@@ -494,7 +497,7 @@ static void get_symbols	(struct qnode *qparent,
 			qn->name = sym->ident->name;
 		}
 
-		printf("%s%s %s\n", pad_out(qn->cn->level, ' '), sbuf, qn->name);
+		printf("%s%s %s\n", pad_out(qn->cn->level, ' '), decl, qn->name);
 
 		if ((qn->flags & CTL_HASLIST) && !(qn->flags & CTL_BACKPTR))
 			proc_symlist(qn, kn, kn->symbol_list, CTL_NESTED);
@@ -509,9 +512,10 @@ static void build_branch(struct knode *parent, char *symname, char *file)
 
 	if ((sym = find_internal_exported(symlist, symname))) {
 		char sbuf[STRBUFSIZ];
+		const char *decl;
 		struct symbol *basetype = sym->ctype.base_type;
 		struct knode *kn = map_knode(parent, NULL, CTL_EXPORTED);
-		struct qnode *qn = new_qnode(NULL, CTL_EXPORTED);
+		struct qnode *qn = new_firstqnode(CTL_EXPORTED);
 
 		kn->file = file;
 		kn->name = symname;
@@ -528,11 +532,9 @@ static void build_branch(struct knode *parent, char *symname, char *file)
 		strcat(sbuf, kn->name);
 		kn->crc = raw_crc32(sbuf);
 
-		qn_extract_type(qn, sbuf, STRBUFSIZ);
-		strcat(sbuf, qn->name);
-		qn->cn->crc = raw_crc32(sbuf);
-
-		printf("EXPORTED: %s\n", sbuf);
+		decl = cstrcat(qn_extract_type(qn), qn->name);
+		qn->cn->crc = raw_crc32(decl);
+		printf("EXPORTED: %s\n", decl);
 
 		if (kn->symbol_list) {
 			struct knode *bkn = map_knode(kn, basetype, CTL_RETURN);
@@ -544,10 +546,10 @@ static void build_branch(struct knode *parent, char *symname, char *file)
 			bkn->crc = raw_crc32(sbuf);
 			bkn->right = get_timestamp();
 
-			qn_extract_type(bqn, sbuf, STRBUFSIZ);
+			decl = qn_extract_type(bqn);
 			bqn->cn->crc = raw_crc32(sbuf);
 
-			printf("RETURN: %s\n", sbuf);
+			printf("RETURN: %s\n", decl);
 		}
 
 		if (basetype->arguments)

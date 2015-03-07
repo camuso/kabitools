@@ -21,7 +21,6 @@ struct cnode
 	int level;
 #ifdef __cplusplus
 	cnode(){}
-	friend class boost::serialization::access;
 	template<class Archive>
         void serialize(Archive &ar, const unsigned int version)
         {
@@ -40,17 +39,18 @@ struct qnode
 	enum ctlflags flags;
 #ifdef __cplusplus
 	qnode(){}
-	std::vector<cnode *> parents;
-	std::vector<cnode *> children;
-	std::vector<char *> declist;
+	std::string sname;
+	std::string stypnam;
+	std::string sfile;
+	std::string sdecl;
+	std::vector<cnode> parents;
+	std::vector<cnode> children;
 
-	friend class boost::serialization::access;
 	template<class Archive>
         void serialize(Archive &ar, const unsigned int version)
         {
-		ar & name; // & flags & name & typnam;
-
-		//ar & parents & children & declist;
+		ar & sname & stypnam & sfile
+		   & parents & children & sdecl;
 	}
 #endif
 };
@@ -61,9 +61,8 @@ class Cqnodelist
 {
 public:
 	Cqnodelist(){}
-	std::vector<qnode *> qnodelist;
+	std::vector<qnode> qnodelist;
 
-	friend class boost::serialization::access;
 	template<class Archive>
         void serialize(Archive &ar, const unsigned int version)
         {
@@ -76,6 +75,7 @@ extern void get_qnodelist(std::vector<qnode *> &qlist);
 extern "C"
 {
 #endif
+struct qnode *new_firstqnode(enum ctlflags flags);
 extern struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags);
 extern void delete_qnode(struct qnode *qn);
 extern void qn_add_parent(struct qnode *qn, struct qnode *parent);
@@ -84,8 +84,9 @@ extern struct qnode *qn_lookup_crc(unsigned long crc);
 extern bool qn_lookup_parent(struct qnode *qn, unsigned long crc);
 extern bool qn_lookup_child(struct qnode *qn, unsigned long crc);
 extern void qn_add_to_declist(struct qnode *qn, char *decl);
-extern void qn_extract_type(struct qnode *qn, char *sbuf, int len);
+extern const char *qn_extract_type(struct qnode *qn);
 extern bool qn_is_dup(struct qnode *qn, struct qnode* parent, unsigned long crc);
+const char *cstrcat(const char *d, const char *s);
 #ifdef __cplusplus
 }
 #endif
