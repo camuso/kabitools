@@ -19,16 +19,6 @@ typedef unsigned int bool;
 #define strequal(s1, s2)        (*(s1) == *(s2) && strcmp(s1, s2) == 0)
 #define strnotequal(s1, s2)     (*(s1) != *(s2) || strcmp(s1, s2) != 0)
 
-struct knode;
-struct knodelist;
-struct used;
-struct usedlist;
-static struct used *lookup_used(struct usedlist *list, struct knode *kn);
-static void add_new_used(struct usedlist **list,
-			 struct knode *kn,
-			 struct symbol *sym);
-static void extract_type(struct knode *kn, char *sbuf);
-
 /*****************************************************
 ** enumerated flags and masks
 ******************************************************/
