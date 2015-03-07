@@ -34,9 +34,7 @@ qnode *init_qnode(qnode *parent, qnode *qn, enum ctlflags flags)
 	qn->parents.push_back(*(parent->cn));
 	parent->children.push_back(*(qn->cn));
 
-	cq.qnodelist.push_back(*qn);
-
-	free(pstr);
+	//free(pstr);
 	return qn;
 }
 
@@ -59,6 +57,7 @@ void update_qnode(struct qnode *qn)
 	qn->sname   = string(qn->name);
 	qn->stypnam = string(qn->typnam);
 	qn->sfile   = string(qn->file);
+	cq.qnodelist.push_back(*qn);
 }
 
 vector<qnode> &get_qnodelist()
@@ -136,64 +135,47 @@ const char *cstrcat(const char *d, const char *s)
 	return dd.c_str();
 }
 
-#if 0
-
-class foo
+void kb_write_qlist(char *filename)
 {
-public:
-	int bar;
-	char *name;
-
-	template<class Archive>
-        void serialize(Archive &ar, const unsigned int version)
-        {
-		ar & name;
-	}
-};
-
-ostream & operator<<(ostream &os, const  char *n)
-{
-	os << n;
-	return os;
-}
-
-void write_foo(foo *f)
-{
-	ofstream ofs("foo.txt");
+	ofstream ofs(filename);
 	{
 		boost::archive::text_oarchive oa(ofs);
-		oa << f;
+		oa << cq;
 	}
+	ofs.close();
 }
 
-void kb_write_cnode(cnode *cn)
+void kb_read_qlist(char *filename, Cqnodelist &qlist)
 {
-	ofstream ofs("kabi-list.dat");
+	ifstream ifs(filename);
 	{
-		boost::archive::text_oarchive oa(ofs);
-		oa << cn;
+		boost::archive::text_iarchive ia(ifs);
+		ia >> qlist;
 	}
+	ifs.close();
 }
 
-void kb_write_qnode(qnode *qn)
+#include <boost/format.hpp>
+using boost::format;
+
+void kb_dump_qlist(char *filename)
 {
-	ofstream ofs("kabi-list.dat");
-	{
-		boost::archive::text_oarchive oa(ofs);
-		oa << qn;
+	Cqnodelist cqq;
+
+	kb_read_qlist(filename, cqq);
+
+	for (unsigned j = 0; j < cqq.qnodelist.size(); ++j) {
+		qnode *qn = &cqq.qnodelist[j];
+		cout << "file: " << qn->sfile << endl;
+		cout << "decl: ";
+		if (qn->flags & CTL_POINTER) cout << " *";
+		cout << qn->sdecl << endl;
+
+		cout << "\tparents" << endl;
+		for (unsigned k = 0; k < qn->parents.size(); ++k) {
+			struct cnode *cn = &qn->parents[k];
+			cout << format ("\tcrc: %08x level: %d\n")
+				% cn->crc % cn->level;
+		}
 	}
 }
-
-
-void kb_write_qlist()
-{
-	ofstream ofs("kabi-list.dat");
-
-	{
-		vector<qnode *>qnodelist;
-		get_qnodelist(qnodelist);
-		boost::archive::text_oarchive oa(ofs);
-		oa << cq.qnodelist;
-	}
-}
-#endif

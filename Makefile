@@ -1,6 +1,7 @@
 PARSER_CFLAGS	+= -I/usr/include/sparse
 PARSER_LIBS	:= -lsparse -lboost_serialization
-PARSER_OBJS	:= kabi.o checksum.o kabi-node.o kabi-serial.o
+PARSER_OBJS	:= kabi.o checksum.o kabi-node.o
+PARSER_HDRS	:= kabi.h checksum.h kabi-node.h
 
 LOOKUP_CFLAGS	+=
 LOOKUP_LIBS	:= -lsqlite3
@@ -22,7 +23,7 @@ all	: $(PROGRAMS)
 clean	:
 	rm -vf *.o $(PROGRAMS)
 
-kabi-parser	: $(PARSER_OBJS)
+kabi-parser	: $(PARSER_OBJS) $(PARSER_HDRS)
 	 g++ -o kabi-parser $(PARSER_OBJS) $(PARSER_LIBS)
 
 kabi-lookup : kabilookup.c

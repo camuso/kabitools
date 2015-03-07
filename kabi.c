@@ -154,7 +154,7 @@ struct knode {
 };
 
 DECLARE_PTR_LIST(knodelist, struct knode);
-static struct knodelist *knodes = NULL;
+struct knodelist *knodes = NULL;
 
 static struct knode *alloc_knode()
 {
@@ -410,6 +410,7 @@ static void get_declist(struct qnode *qn, struct symbol *sym)
 		typnam = get_type_name(basetype->type);
 
 		if (basetype->type == SYM_BASETYPE) {
+
 			if (! basetype->ctype.modifiers)
 				typnam = "void";
 			else
@@ -455,6 +456,7 @@ static void get_symbols	(struct qnode *qparent,
 		get_declist(qn, sym);
 		decl = qn_extract_type(qn);
 		crc = raw_crc32(decl);
+		qn->cn->crc = crc;
 
 		// DEBUG CODE - creates a breakpoint for the debugger
 		// based on the decl content
@@ -467,21 +469,15 @@ static void get_symbols	(struct qnode *qparent,
 			 && qn_is_dup(qn, qparent, crc))
 			continue;
 
-		// qnode crc must be inited here, or it will be found and
-		// deleted as a dup by the else if above.
-		qn->cn->crc = crc;
-
 		if (sym->ident)
 			qn->name = sym->ident->name;
 
+		update_qnode(qn);
 		printf("%s%s %s\n", pad_out(qn->cn->level, ' '), decl, qn->name);
 
 		if ((qn->flags & CTL_HASLIST) && !(qn->flags & CTL_BACKPTR))
 			proc_symlist(qn, (struct symbol_list *)qn->symlist,
 				     CTL_NESTED);
-
-		update_qnode(qn);
-
 	} END_FOR_EACH_PTR(sym);
 }
 
@@ -732,7 +728,7 @@ static void show_users(struct knodelist *klist, int level)
 	}END_FOR_EACH_PTR(kn);
 }
 
-static void write_knodes(struct knodelist *klist)
+void write_knodes(struct knodelist *klist)
 {
 	struct knode *kn;
 
@@ -763,7 +759,7 @@ nextlevel:
 	} END_FOR_EACH_PTR(kn);
 }
 
-static struct knode *get_kn_from_parent(char *typnam, struct knode *parent)
+struct knode *get_kn_from_parent(char *typnam, struct knode *parent)
 {
 	struct knode *kn;
 	FOR_EACH_PTR(parent->children, kn) {
@@ -775,7 +771,7 @@ static struct knode *get_kn_from_parent(char *typnam, struct knode *parent)
 	return NULL;
 }
 
-static void write_types(struct knodelist *klist)
+void write_types(struct knodelist *klist)
 {
 	struct knode *kn;
 
@@ -864,7 +860,7 @@ static int get_options(char **argv)
 	return index;
 }
 
-static bool open_file(FILE **f, char *filename)
+bool open_file(FILE **f, char *filename)
 {
 	if (!(*f = fopen(filename, "a+"))) {
 		printf("Cannot open file \"%s\".\n", filename);
@@ -882,7 +878,6 @@ int main(int argc, char **argv)
 	int argindex = 0;
 	char *file;
 	struct string_list *filelist = NULL;
-	struct knode *kn;
 
 	DBG(setbuf(stdout, NULL);)
 
@@ -916,14 +911,8 @@ int main(int argc, char **argv)
 		remove(typefilename);
 	}
 
-	if (!open_file(&datafile, datafilename))
-		return 1;
-
-	if (!open_file(&typefile, typefilename))
-		return 1;
-
-	fclose(datafile);
-	fclose(typefile);
+	kb_write_qlist(datafilename);
+	kb_dump_qlist(datafilename);
 
 	return 0;
 }
