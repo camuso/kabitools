@@ -24,6 +24,7 @@ struct cnode
 	template<class Archive>
         void serialize(Archive &ar, const unsigned int version)
         {
+		if (version){;}
 		ar & crc & level;
 	}
 
@@ -50,8 +51,9 @@ struct qnode
 	template<class Archive>
         void serialize(Archive &ar, const unsigned int version)
         {
-		ar & sname & stypnam & sfile
-		   & parents & children & sdecl;
+		if (version){;}
+		ar & sname & stypnam & sfile & sdecl
+		   & parents & children;
 	}
 #endif
 };
@@ -67,11 +69,13 @@ public:
 	template<class Archive>
         void serialize(Archive &ar, const unsigned int version)
         {
+		if (version){;}
 		ar & qnodelist;
 	}
 };
 
 extern std::vector<qnode> &get_qnodelist();
+extern void kb_read_qlist(char *filename, Cqnodelist &qlist);
 extern "C"
 {
 #endif
@@ -88,6 +92,8 @@ extern void qn_add_to_declist(struct qnode *qn, char *decl);
 extern const char *qn_extract_type(struct qnode *qn);
 extern bool qn_is_dup(struct qnode *qn, struct qnode* parent, unsigned long crc);
 extern const char *cstrcat(const char *d, const char *s);
+extern void kb_write_qlist(char *filename);
+extern void kb_dump_qlist(char *filename);
 #ifdef __cplusplus
 }
 #endif
