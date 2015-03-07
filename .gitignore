@@ -3,6 +3,7 @@
 *.pro*
 *.tgz
 *.tar
+*.autosave
 
 # directories
 sparse/
