@@ -3,9 +3,30 @@
  * Find all the exported symbols in .i file(s) passed as argument(s) on the
  * command line when invoking this executable.
  *
+ * Copyright (C) 2014  Red Hat Inc.
+ * Tony Camuso <tcamuso@redhat.com>
+ *
+ *******************************************************************************
+ * This program is free software. You can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc., 51
+ * Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *******************************************************************************
+ *
  * Relies heavily on the sparse project. See
  * https://www.openhub.net/p/sparse Include files for sparse in Fedora are
  * located in /usr/include/sparse when sparse is built and installed.
+ *
+ * Also relies on the boost libraries. www.boost.org
  *
  * Method for identifying exported symbols was inspired by the spartakus
  * project:
@@ -15,21 +36,7 @@
  * compound types in the arg lists to acquire all information on compound
  * types that can affect the exported symbols.
  *
- * Symbols will be recursively explored only once. To recursively explore
- * each symbol wherever it occurs would lead to an unwieldy database.
- *
- * Compound symbols and their complete descendancy are kept in a separate
- * table.
- *
- * Two tables are generated. One containing all the kabi data for each file
- * parsed, and the other containing one complete definition of each compound
- * structure and all its descendants. These two tables are stored in CSV
- * (comma separated values) files and can be imported to a database.
- *
- * The csv files are opened to be appended, not to be created from scratch,
- * unless they don't yet exist. In this way, directories and filenames with
- * wildcards, or the bash utility "find", can be used to process multiple
- * files, appending the results from each file processed to the CSV files.
+ * Symbols will be recursively explored and organized as a graph database.
  *
  * What is a symbol? From sparse/symbol.h:
  *
@@ -55,9 +62,9 @@
 
 #include <sparse/symbol.h>
 
-#include "checksum.h"
 #include "kabi.h"
 #include "kabi-node.h"
+#include "checksum.h"
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
@@ -399,9 +406,8 @@ static const char *get_modstr(unsigned long mod)
 //
 // Returns a pointer to the symbol that corresponds to the exported one.
 //
-static struct symbol *find_internal_exported
-				(struct symbol_list *symlist,
-				 char *symname)
+static struct symbol *find_internal_exported (struct symbol_list *symlist,
+					      char *symname)
 {
 	struct symbol *sym = NULL;
 
