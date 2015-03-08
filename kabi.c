@@ -55,11 +55,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
-#include <time.h>
-//#define NDEBUG	// comment out to enable asserts
-#include <assert.h>
-
 #include <sparse/symbol.h>
 
 #include "kabi.h"
@@ -100,10 +95,8 @@ Options:\n\
 \n";
 
 static const char *ksymprefix = "__ksymtab_";
-static bool kp_verbose = true;
 static bool kp_rmfiles = false;
 static bool showusers = false;
-DBG(static int hiwater = 0;)
 static struct symbol_list *symlist = NULL;
 static bool kabiflag = false;
 
@@ -445,8 +438,6 @@ static bool parse_opt(char opt, char ***argv, int *index)
 	case 'd' : datafilename = *((*argv)++);
 		   ++(*index);
 		   break;
-	case 'v' : kp_verbose = true;
-		   break;
 	case 'u' : showusers = true;
 		   break;
 	case 'x' : kp_rmfiles = true;
@@ -502,18 +493,13 @@ int main(int argc, char **argv)
 	argv += argindex;
 	argc -= argindex;
 
-	DBG(puts("got the files");)
 	symlist = sparse_initialize(argc, argv, &filelist);
-
-	DBG(puts("created the symlist");)
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		DBG(printf("sparse file: %s\n", file);)
 		symlist = sparse(file);
 		build_tree(symlist,file);
 	} END_FOR_EACH_PTR_NOTAG(file);
-
-	DBG(printf("\nhiwater: %d\n", hiwater);)
 
 	if (! kabiflag)
 		return 1;
