@@ -86,14 +86,9 @@ kabi [options] files \n\
               Must be last in the argument list. \n\
 \n\
 Options:\n\
-    -d file   optional filename for csv file containing the kabi tree. \n\
-              The default is \"../kabi-data.csv\". \n\
-    -t file   Optional filename for csv file containing all the kabi types. \n\
-              The default is \"../kabi-types.csv\". \n\
-    -v        Verbose (default): Lists all the arguments of functions and\n\
-              recursively descends into compound types to gather all the\n\
-              information about them.\n\
-    -x        Delete the data files before starting. \n\
+    -d file   optional filename for data file containing the kabi graph. \n\
+              The default is \"../kabi-data.dat\". \n\
+    -x        Delete the data file before starting. \n\
     -h        This help message.\n\
 \n";
 
@@ -105,11 +100,7 @@ DBG(static int hiwater = 0;)
 static struct symbol_list *symlist = NULL;
 static bool kabiflag = false;
 
-static char *datafilename = "../kabi-data.csv";
-static char *typefilename = "../kabi-types.csv";
-FILE *datafile;
-FILE *typefile;
-
+static char *datafilename = "../kabi-data.dat";
 
 /*****************************************************
 ** sparse wrappers
@@ -437,51 +428,6 @@ fie_foundit:
 }
 
 /*****************************************************
-** Output utilities
-******************************************************/
-
-#if !defined(NDEBUG)	// see /usr/include/assert.h
-static int count_bits(unsigned long mask)
-{
-	int count = 0;
-
-	do {
-		count += mask & 1;
-	} while (mask >>= 1);
-
-	return count;
-}
-#endif
-
-char *get_prefix(enum ctlflags flags)
-{
-	// These flags are mutually exclusive.
-	//
-	unsigned long flg = flags &
-			(CTL_FILE 	|
-			 CTL_EXPORTED 	|
-			 CTL_RETURN	|
-			 CTL_ARG 	|
-			 CTL_NESTED);
-
-	assert(count_bits(flg) <= 1);
-
-	switch (flg) {
-	case CTL_FILE:
-		return "FILE";
-	case CTL_EXPORTED:
-		return "EXPORTED";
-	case CTL_RETURN:
-		return "RETURN";
-	case CTL_ARG:
-		return "ARG";
-	case CTL_NESTED:
-		return "NESTED";
-	}
-	return "";
-}
-
-/*****************************************************
 ** Command line option parsing
 ******************************************************/
 
@@ -491,9 +437,6 @@ static bool parse_opt(char opt, char ***argv, int *index)
 
 	switch (opt) {
 	case 'd' : datafilename = *((*argv)++);
-		   ++(*index);
-		   break;
-	case 't' : typefilename = *((*argv)++);
 		   ++(*index);
 		   break;
 	case 'v' : kp_verbose = true;
@@ -530,15 +473,6 @@ static int get_options(char **argv)
 	}
 
 	return index;
-}
-
-bool open_file(FILE **f, char *filename)
-{
-	if (!(*f = fopen(filename, "a+"))) {
-		printf("Cannot open file \"%s\".\n", filename);
-		return false;
-	}
-	return true;
 }
 
 /*****************************************************
@@ -578,10 +512,8 @@ int main(int argc, char **argv)
 	if (! kabiflag)
 		return 1;
 
-	if (kp_rmfiles) {
+	if (kp_rmfiles)
 		remove(datafilename);
-		remove(typefilename);
-	}
 
 	kb_write_qlist(datafilename);
 	kb_dump_qlist(datafilename);
