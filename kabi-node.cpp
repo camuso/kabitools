@@ -1,6 +1,6 @@
 /* kabi-node.cpp
  *
- * Copyright (C) 2014  Red Hat Inc.
+ * Copyright (C) 2015  Red Hat Inc.
  * Tony Camuso <tcamuso@redhat.com>
  *
  ********************************************************************************
@@ -33,7 +33,6 @@
 using namespace std;
 
 Cqnodelist cq;
-static string initstr = "";
 
 qnode *alloc_qnode()
 {
@@ -45,19 +44,15 @@ qnode *alloc_qnode()
 
 qnode *init_qnode(qnode *parent, qnode *qn, enum ctlflags flags)
 {
-	char *pstr = strdup(initstr.c_str());
-
-	qn->name    = pstr;
-	qn->typnam  = pstr;
-	qn->file    = pstr;
+	qn->name    = NULL;
+	qn->typnam  = NULL;
+	qn->file    = NULL;
 	qn->symlist = NULL;
 	qn->flags   = flags;
 
 	qn->cn->level = parent->cn->level + 1;
 	qn->parents.push_back(*(parent->cn));
 	parent->children.push_back(*(qn->cn));
-
-	//free(pstr);
 	return qn;
 }
 
@@ -77,9 +72,9 @@ struct qnode *new_firstqnode(enum ctlflags flags)
 
 void update_qnode(struct qnode *qn)
 {
-	qn->sname   = string(qn->name);
-	qn->stypnam = string(qn->typnam);
-	qn->sfile   = string(qn->file);
+	qn->sname   = qn->name   ? string(qn->name)   : string("");
+	qn->stypnam = qn->typnam ? string(qn->typnam) : string("");
+	qn->sfile   = qn->file   ? string(qn->file)   : string("");
 	cq.qnodelist.push_back(*qn);
 }
 
