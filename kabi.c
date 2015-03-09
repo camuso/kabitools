@@ -503,7 +503,7 @@ int main(int argc, char **argv)
 	symlist = sparse_initialize(argc, argv, &filelist);
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
-		DBG(printf("sparse file: %s\n", file);)
+		prdbg("sparse file: %s\n", file);
 		symlist = sparse(file);
 		build_tree(symlist,file);
 	} END_FOR_EACH_PTR_NOTAG(file);
@@ -515,7 +515,7 @@ int main(int argc, char **argv)
 		remove(datafilename);
 
 	kb_write_qlist(datafilename);
-	kb_dump_qlist(datafilename);
+	DBG(kb_dump_qlist(datafilename);)
 
 	return 0;
 }
