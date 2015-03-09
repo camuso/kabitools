@@ -1,9 +1,9 @@
 /* kabi.c
  *
  * Find all the exported symbols in .i file(s) passed as argument(s) on the
- * command line when invoking this executable.
+ * command line.
  *
- * Copyright (C) 2014  Red Hat Inc.
+ * Copyright (C) 2015  Red Hat Inc.
  * Tony Camuso <tcamuso@redhat.com>
  *
  *******************************************************************************
@@ -64,12 +64,18 @@
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
+//#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
+#define prdbg(fmt, ...) \
+do { \
+       printf(fmt, ##__VA_ARGS__); \
+} while (0)
 #else
 #define DBG(x)
 #define RUN(x) x
+#define prdbg(fmt, ...)
 #endif
 
 /*****************************************************
@@ -124,6 +130,7 @@ static inline int string_list_size(struct string_list *list)
 ** Output formatting
 ******************************************************/
 
+#if !defined(NDEBUG)
 static char *pad_out(int padsize, char padchar)
 {
 	static char buf[STRBUFSIZ];
@@ -132,7 +139,7 @@ static char *pad_out(int padsize, char padchar)
 		buf[padsize] = padchar;
 	return buf;
 }
-
+#endif
 /*****************************************************
 ** sparse probing and mining
 ******************************************************/
@@ -217,8 +224,8 @@ static void get_symbols	(struct qnode *qparent,
 
 		// DEBUG CODE - creates a breakpoint for the debugger
 		// based on the decl content
-		if (strstr(decl, "exception_table_entry"))
-			get_declist(qn, sym);
+		DBG(if (strstr(decl, "exception_table_entry")) \
+			get_declist(qn, sym);)
 
 		if (qparent->cn->crc == crc)
 			qn->flags |= CTL_BACKPTR;
@@ -230,7 +237,7 @@ static void get_symbols	(struct qnode *qparent,
 			qn->name = sym->ident->name;
 
 		update_qnode(qn);
-		printf("%s%s %s\n", pad_out(qn->cn->level, ' '), decl, qn->name);
+		prdbg("%s%s %s\n", pad_out(qn->cn->level, ' '), decl, qn->name);
 
 		if ((qn->flags & CTL_HASLIST) && !(qn->flags & CTL_BACKPTR))
 			proc_symlist(qn, (struct symbol_list *)qn->symlist,
@@ -255,7 +262,7 @@ static void build_branch(char *symname, char *file)
 		decl = cstrcat(qn_extract_type(qn), qn->name);
 		qn->cn->crc = raw_crc32(decl);
 
-		printf("EXPORTED: %s\n", decl);
+		prdbg("EXPORTED: %s\n", decl);
 
 		if (qn->flags & CTL_HASLIST) {
 			struct qnode *bqn = new_qnode(qn, CTL_RETURN);
@@ -263,7 +270,7 @@ static void build_branch(char *symname, char *file)
 			get_declist(bqn, basetype);
 			decl = qn_extract_type(bqn);
 			bqn->cn->crc = raw_crc32(decl);
-			printf("RETURN: %s\n", decl);
+			prdbg("RETURN: %s\n", decl);
 			update_qnode(bqn);
 		}
 
