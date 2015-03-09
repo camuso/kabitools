@@ -4,6 +4,7 @@
 *.tgz
 *.tar
 *.autosave
+*.save.*
 
 # directories
 sparse/
