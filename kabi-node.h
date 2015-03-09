@@ -1,6 +1,6 @@
 /* kabi-node.h
  *
- * Copyright (C) 2014  Red Hat Inc.
+ * Copyright (C) 2015  Red Hat Inc.
  * Tony Camuso <tcamuso@redhat.com>
  *
  ********************************************************************************
