@@ -1,22 +1,16 @@
-PARSER_CFLAGS	+= -I/usr/include/sparse
+PARSER_CFLAGS	:= -I/usr/include/sparse
 PARSER_LIBS	:= -lsparse -lboost_serialization
 PARSER_OBJS	:= kabi.o checksum.o kabi-node.o
 PARSER_HDRS	:= kabi.h checksum.h kabi-node.h
 
-LOOKUP_CFLAGS	+=
-LOOKUP_LIBS	:= -lsqlite3
+LOOKUP_CFLAGS	:= -std=gnu++11
+LOOKUP_LIBS	:= -lboost_serialization
+LOOKUP_OBJS	:= kabilookup.o kabi-node.o options.o error.o
+LOOKUP_HDRS	:= kabilookup.h kabi-node.h options.h error.h
 
-CFLAGS		+= -I/usr/include/sparse
-LIBS		+= -lsparse -lsqlite3
+CXXFLAGS	+= -std=gnu++11
 
 PROGRAMS=kabi-parser kabi-lookup
-LIB_H=checksum.h
-LIB_OBJS=kabi.o kabilookup.o checksum.o
-
-CC = gcc
-LD = gcc
-
-LDFLAGS += -g
 
 all	: $(PROGRAMS)
 
@@ -24,7 +18,8 @@ clean	:
 	rm -vf *.o $(PROGRAMS)
 
 kabi-parser	: $(PARSER_OBJS) $(PARSER_HDRS)
-	 g++ -o kabi-parser $(PARSER_OBJS) $(PARSER_LIBS)
+	g++ $(CXXFLAGS) $(PARSER_CFLAGS) -o kabi-parser $(PARSER_OBJS) $(PARSER_LIBS)
 
-kabi-lookup : kabilookup.c
-	$(CC) $(LOOKUP_CFLAGS) -o kabi-lookup kabilookup.c $(LOOKUP_LIBS)
+kabi-lookup 	: $(LOOKUP_OBJS) $(LOOKUP_HDRS)
+	g++ $(CXXFLAGS) $(PARSER_CFLAGS) -o kabi-lookup $(LOOKUP_OBJS) $(LOOKUP_LIBS)
+
