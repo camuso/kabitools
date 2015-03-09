@@ -163,9 +163,14 @@ void kb_write_qlist(char *filename)
 	ofs.close();
 }
 
-void kb_read_qlist(char *filename, Cqnodelist &qlist)
+void kb_read_qlist(string filename, Cqnodelist &qlist)
 {
-	ifstream ifs(filename);
+	ifstream ifs(filename.c_str());
+	if (!ifs.is_open()) {
+		cout << "Cannot open file: " << filename << endl;
+		exit;
+	}
+
 	{
 		boost::archive::text_iarchive ia(ifs);
 		ia >> qlist;
@@ -180,7 +185,7 @@ void kb_dump_qlist(char *filename)
 {
 	Cqnodelist cqq;
 
-	kb_read_qlist(filename, cqq);
+	kb_read_qlist(string(filename), cqq);
 
 	for (unsigned j = 0; j < cqq.qnodelist.size(); ++j) {
 		qnode *qn = &cqq.qnodelist[j];

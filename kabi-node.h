@@ -98,7 +98,7 @@ public:
 };
 
 extern std::vector<qnode> &get_qnodelist();
-extern void kb_read_qlist(char *filename, Cqnodelist &qlist);
+extern void kb_read_qlist(std::string filename, Cqnodelist &qlist);
 extern "C"
 {
 #endif
