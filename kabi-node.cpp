@@ -168,7 +168,7 @@ void kb_read_qlist(string filename, Cqnodelist &qlist)
 	ifstream ifs(filename.c_str());
 	if (!ifs.is_open()) {
 		cout << "Cannot open file: " << filename << endl;
-		exit;
+		exit(1);
 	}
 
 	{
@@ -190,9 +190,10 @@ void kb_dump_qlist(char *filename)
 	for (unsigned j = 0; j < cqq.qnodelist.size(); ++j) {
 		qnode *qn = &cqq.qnodelist[j];
 		cout << "file: " << qn->sfile << endl;
-		cout << "decl: ";
-		if (qn->flags & CTL_POINTER) cout << " *";
-		cout << qn->sdecl << endl;
+		cout << format("crc: %08x flags: %08x decl: %s")
+			% qn->cn->crc % qn->flags % qn->sdecl;
+		if (qn->flags & CTL_POINTER) cout << "*";
+		cout << endl;
 
 		cout << "\tparents" << endl;
 		for (unsigned k = 0; k < qn->parents.size(); ++k) {

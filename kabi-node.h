@@ -75,7 +75,7 @@ struct qnode
         void serialize(Archive &ar, const unsigned int version)
         {
 		if (version){;}
-		ar & sname & stypnam & sfile & sdecl
+		ar & cn & flags & sname & stypnam & sfile & sdecl
 		   & parents & children;
 	}
 #endif
