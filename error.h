@@ -29,7 +29,8 @@ public:
 
 private:
 	int m_orig_argc;
-	char **m_orig_argv;	std::string errstr[EXE_COUNT];
+	char **m_orig_argv;
+	std::string errstr[EXE_COUNT];
 	int m_errmask =	((1 << EXE_ARG2BIG)  |
 			 (1 << EXE_ARG2SML)  |
 			 (1 << EXE_CONFLICT) |
