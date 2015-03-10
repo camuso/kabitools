@@ -28,6 +28,21 @@
 
 #include "kabilookup.h"
 
+//#define NDEBUG
+#if !defined(NDEBUG)
+#define DBG(x) x
+#define RUN(x)
+#define prdbg(fmt, ...) \
+do { \
+       printf(fmt, ##__VA_ARGS__); \
+} while (0)
+#else
+#define DBG(x)
+#define RUN(x) x
+#define prdbg(fmt, ...)
+#endif
+
+
 using namespace std;
 using namespace kabilookup;
 
@@ -101,6 +116,9 @@ int lookup::process_args(int argc, char **argv)
 	// skip over argv[0], which is the invocation of this app.
 	++argv; --argc;
 
+	if(!argc)
+		return EXE_ARG2SML;
+
 	m_flags = m_opts.get_options(&argindex, &argv[0], m_declstr, m_datafile);
 
 	if (!check_flags())
@@ -123,32 +141,59 @@ int lookup::execute()
 #include <boost/format.hpp>
 using boost::format;
 
-const qnode *lookup::find_decl(const vector<qnode> &qnlist, string &declstr)
+const qnode *lookup::find_decl(const vector<qnode> &qnlist,
+			       const string &declstr)
 {
 	const qnode *qn;
 	for (unsigned i = 0; i < qnlist.size(); ++i) {
-		//qn = &qnlist[i];
-		//cout << format("%08x %08x \"%s\"\n")
-		//	% qn->cn->crc % qn->flags % qn->sdecl;
+		DBG(qn = &qnlist[i]; \
+		cout << format("%08x %08x \"%s\"\n") \
+			% qn->cn->crc % qn->flags % qn->sdecl;)
 		if (!(qn = &qnlist[i])->sdecl.compare(declstr))
 			return qn;
 	}
 	return NULL;
 }
 
+int lookup::get_decl_list(const std::vector<qnode> &qnlist,
+		  const std::string &declstr,
+		  std::vector<qnode> &retlist)
+{
+	const qnode *qn;
+	for (unsigned i = 0; i < qnlist.size(); ++i) {
+		if (!(qn = &qnlist[i])->sdecl.compare(0, declstr.length(), declstr));
+		//if ((qn = &qnlist[i])->sdecl.find(declstr) != string::npos)
+			retlist.push_back(*qn);
+	}
+	DBG(cout << format("\"%s\" size: %d\n") % declstr %  declstr.size();)
+
+	return retlist.size();
+}
+
 int lookup::exe_count(string &declstr, string &datafile)
 {
 	kb_read_qlist(datafile, m_qnlist);
 
+	vector<qnode> declist;
+	int dlsize = get_decl_list(m_qnlist.qnodelist, declstr, declist);
+
+	DBG(cout << "declist size: " << dlsize << endl;)
+	DBG(cout << "qlist size: " << m_qnlist.qnodelist.size()) << endl;
+
+	return EXE_OK;
+
+
 	const qnode *qn = find_decl(m_qnlist.qnodelist, declstr);
 
-	if (qn) {
-		cout << format("%08x %08x %s\n")
-			% qn->cn->crc % qn->flags % qn->sdecl;
-		return EXE_OK;
-	}
+	if (!qn)
+		return EXE_NOTFOUND;
 
-	return EXE_NOTFOUND;
+	DBG(cout << format("%08x %08x %s\n") \
+	    % qn->cn->crc % qn->flags % qn->sdecl;)
+	cout << qn->parents.size() << endl;
+
+
+	return EXE_OK;
 }
 
 

@@ -56,7 +56,10 @@ private:
 	int execute();
 	int exe_count(std::string &declstr, std::string &datafile);
 	const qnode *find_decl(const std::vector<qnode> &qnlist,
-			       std::string &declstr);
+			       const std::string &declstr);
+	int get_decl_list(const std::vector<qnode> &qnlist,
+			  const std::string &declstr,
+			  std::vector<qnode> &retlist);
 
 	// member classes
 	Cqnodelist m_qnlist;
