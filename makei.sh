@@ -47,6 +47,8 @@ files=$(find $dirspec -type f -name \*.c -exec sh -c \
 	suffix=${file#*.}; \
 	[ "$suffix" != "c" ] && exit; \
 	stem=${file%.*}; \
+	grep -qm1 "EXPORT_SYMBOL" $1; \
+	[ $? -eq 0 ] || exit; \
 	echo -n "$path/$stem.i "' \
 	sh '{}' \;)
 
