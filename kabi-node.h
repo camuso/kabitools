@@ -116,6 +116,7 @@ extern const char *qn_extract_type(struct qnode *qn);
 extern bool qn_is_dup(struct qnode *qn, struct qnode* parent, unsigned long crc);
 extern const char *cstrcat(const char *d, const char *s);
 extern void kb_write_qlist(char *filename);
+extern void kb_restore_qlist(char *filename);
 extern void kb_dump_qlist(char *filename);
 #ifdef __cplusplus
 }

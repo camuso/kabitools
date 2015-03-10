@@ -500,6 +500,9 @@ int main(int argc, char **argv)
 	argv += argindex;
 	argc -= argindex;
 
+	if (!kp_rmfiles)
+		kb_restore_qlist(datafilename);
+
 	symlist = sparse_initialize(argc, argv, &filelist);
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {

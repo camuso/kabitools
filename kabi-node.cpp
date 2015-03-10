@@ -168,6 +168,21 @@ void kb_write_qlist(char *filename)
 	ofs.close();
 }
 
+void kb_restore_qlist(char *filename)
+{
+	ifstream ifs(filename);
+	if (!ifs.is_open()) {
+		cout << "Cannot open file: " << filename << endl;
+		return;
+	}
+
+	{
+		boost::archive::text_iarchive ia(ifs);
+		ia >> cq;
+	}
+	ifs.close();
+}
+
 void kb_read_qlist(string filename, Cqnodelist &qlist)
 {
 	ifstream ifs(filename.c_str());

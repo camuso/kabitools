@@ -94,7 +94,7 @@ done
 cd $directory
 echo "executing from $PWD"
 
-cat /dev/null > $datafile
+rm -vf $datafile
 [ -d "$subdir" ] || noexistdir $subdir
 
 START=$(date +%s)
