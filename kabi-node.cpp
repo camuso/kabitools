@@ -193,7 +193,7 @@ void kb_dump_qlist(char *filename)
 		cout << format("crc: %08x flags: %08x decl: %s")
 			% qn->cn->crc % qn->flags % qn->sdecl;
 		if (qn->flags & CTL_POINTER) cout << "*";
-		cout << endl;
+		cout << qn->sname << endl;
 
 		cout << "\tparents" << endl;
 		for (unsigned k = 0; k < qn->parents.size(); ++k) {
