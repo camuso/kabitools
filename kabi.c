@@ -64,7 +64,7 @@
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-//#define NDEBUG
+#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -224,7 +224,7 @@ static void get_symbols	(struct qnode *qparent,
 
 		// DEBUG CODE - creates a breakpoint for the debugger
 		// based on the decl content
-		DBG(if (strstr(decl, "exception_table_entry")) \
+		DBG(if (strstr(decl, "struct foo")) \
 			get_declist(qn, sym);)
 
 		if (qparent->cn->crc == crc)
