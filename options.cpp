@@ -64,21 +64,20 @@ int options::get_options(int *idx, char **argv,
 
 bool options::parse_opt(char opt, char ***argv, string &declstr, string &datafile)
 {
-	string str = **argv ? *((*argv)++) : "";
 	switch (opt) {
-	case 'b' : datafile = str;
+	case 'b' : datafile = *((*argv)++);
 		   break;
 	case 'c' : kb_flags |= KB_COUNT;
-		   declstr = str;
+		   declstr = *((*argv)++);
 		   break;
 	case 'd' : kb_flags |= KB_DECL;
-		   declstr = str;
+		   declstr = *((*argv)++);
 		   break;
 	case 'e' : kb_flags |= KB_EXPORTS;
-		   declstr = str;
+		   declstr = *((*argv)++);
 		   break;
 	case 's' : kb_flags |= KB_STRUCT;
-		   declstr = str;
+		   declstr = *((*argv)++);
 		   break;
 	case 'v' : kb_flags |= KB_VERBOSE;
 		   break;
