@@ -52,7 +52,7 @@ kabi-lookup -[vw] -c|d|e|s symbol [-b datafile]\n\
     -v          - verbose lists all descendants of a symbol. \n\
     -w          - whole words only, default is \"match any and all\" \n\
     -b datafile - Optional sqlite database file. The default is \n\
-                  \"../kabi-data.sql\" relative to top of kernel tree. \n\
+                  \"../kabi-data.dat\" relative to top of kernel tree. \n\
     --no-dups   - A structure can appear more than once in the nest of an \n\
                   exported function, for example a pointer back to itself as\n\
                   parent to one of its descendants. This switch limits the \n\
@@ -68,7 +68,10 @@ lookup::lookup(int argc, char **argv)
 		exit(m_errindex);
 	}
 
-	execute();
+	if ((m_errindex = execute())) {
+		m_err.print_cmd_errmsg(m_errindex, m_declstr, m_datafile);
+		exit(m_errindex);
+	}
 }
 
 int lookup::count_bits(unsigned mask)
@@ -106,7 +109,6 @@ int lookup::process_args(int argc, char **argv)
 	return EXE_OK;
 }
 
-
 int lookup::execute()
 {
 	switch (m_flags & m_exemask) {
@@ -118,10 +120,35 @@ int lookup::execute()
 	return 0;
 }
 
-int lookup::exe_count(string declstr, string datafile)
+#include <boost/format.hpp>
+using boost::format;
+
+const qnode *lookup::find_decl(const vector<qnode> &qnlist, string &declstr)
+{
+	const qnode *qn;
+	for (unsigned i = 0; i < qnlist.size(); ++i) {
+		//qn = &qnlist[i];
+		//cout << format("%08x %08x \"%s\"\n")
+		//	% qn->cn->crc % qn->flags % qn->sdecl;
+		if (!(qn = &qnlist[i])->sdecl.compare(declstr))
+			return qn;
+	}
+	return NULL;
+}
+
+int lookup::exe_count(string &declstr, string &datafile)
 {
 	kb_read_qlist(datafile, m_qnlist);
-	return EXE_OK;
+
+	const qnode *qn = find_decl(m_qnlist.qnodelist, declstr);
+
+	if (qn) {
+		cout << format("%08x %08x %s\n")
+			% qn->cn->crc % qn->flags % qn->sdecl;
+		return EXE_OK;
+	}
+
+	return EXE_NOTFOUND;
 }
 
 

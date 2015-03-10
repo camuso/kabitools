@@ -54,7 +54,10 @@ private:
 	bool check_flags();
 	int count_bits(unsigned mask);
 	int execute();
-	int exe_count(std::string declstr, std::string datafile);
+	int exe_count(std::string &declstr, std::string &datafile);
+	const qnode *find_decl(const std::vector<qnode> &qnlist,
+			       std::string &declstr);
+
 	// member classes
 	Cqnodelist m_qnlist;
 	options m_opts;
