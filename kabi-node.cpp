@@ -155,7 +155,12 @@ const char *cstrcat(const char *d, const char *s)
 
 void kb_write_qlist(char *filename)
 {
-	ofstream ofs(filename);
+	ofstream ofs(filename, ofstream::out | ofstream::app);
+	if (!ofs.is_open()) {
+		cout << "Cannot open file: " << filename << endl;
+		exit(1);
+	}
+
 	{
 		boost::archive::text_oarchive oa(ofs);
 		oa << cq;
