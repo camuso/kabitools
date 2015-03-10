@@ -20,20 +20,10 @@ $0 -d <directory> -o <textfile> [-s subdir -b datafile -e errfile -v -h]
                  to the top of the tree defined by the required "directory"
                  argument above.
                  Default is from the top of the kernel tree.
-  -b datalog  -  Optional. Default is ../kabi-data.csv relative to
+  -b database  - Optional. Default is ../kabi-data.dat relative to
                  the top of the kernel tree. This file will contain the
-                 parser output of the hierarchical kabi data.
-                 If it already exists, this csv file will be destroyed and
-                 rebuilt.
-  -B datafile  - Optional database file. The default is ../kabi-data.sql
-                 relative to the top of the kernel tree.
-                 If it already exists, the database file will be destroyed
-                 and rebuilt.
-  -t typelog   - Optional. Default is  ../kabi-type.csv relative to the
-                 top of the kernel tree. This file will contian the parser
-                 output of the compound data type definitions and all their
-                 descendants.
-                 If it already exists, this csv file will be destroyed and
+                 parser output of the hierarchical kabi data graph.
+                 If it already exists, this file will be destroyed and
                  rebuilt.
   -e errfile   - Optional error file. By default, errors are sent
                  to /dev/null
@@ -48,9 +38,7 @@ currentdir=$PWD
 verbose=false
 directory=""
 subdir="./"
-datalog="../kabi-data.csv"
-typelog="../kabi-types.csv"
-datafile="../kabi-data.sql"
+datafile="../kabi-data.dat"
 errfile="/dev/null"
 
 
@@ -83,11 +71,7 @@ while getopts "vhd:s:B:b:t:e:" OPTION; do
 		;;
 	s )	subdir="$OPTARG"
 		;;
-	b )	datalog="$OPTARG"
-		;;
-	B )	datafile="$OPTARG"
-		;;
-	t )	typelog="$OPTARG"
+	b )	datafile="$OPTARG"
 		;;
 	e )	errfile="$OPTARG"
 		;;
@@ -110,43 +94,19 @@ done
 cd $directory
 echo "executing from $PWD"
 
-cat /dev/null > $datalog
-cat /dev/null > $typelog
+cat /dev/null > $datafile
 [ -d "$subdir" ] || noexistdir $subdir
-[ -e "$datafile" ] && rm -vf $datafile
 
 START=$(date +%s)
 
 find $subdir -name \*.i -exec sh -c \
-	'grep -qm1 "__ksymtab_" $3; \
+	'grep -qm1 "__ksymtab_" $2; \
 	if [ $? -eq 0 ]; then \
-		echo $3; \
-		redhat/kabi/kabi-parser -d $1 -t $2 $3 2>$4; \
+		echo $2; \
+		redhat/kabi/kabi-parser -d $1 $2 2>$3; \
 	fi' \
-	sh $datalog $typelog '{}' $errfile \;
-
+	sh $datafile '{}' $errfile \;
 echo
-echo "Importing csv files:"
-echo -e "\t$datalog"
-echo -e "\t$typelog"
-echo "to database: $datafile"
-echo
-echo "This can take a couple minutes."
-echo
-sqlite3 $datafile <<EOF
-create table ktree (level integer, left integer64, right integer64, flags integer, prefix text, decl text, parentdecl text);
-create table kabitree (rowid integer primary key, level integer, left integer64, right integer64, flags integer, prefix text, decl text, parentdecl text);
-create table ktype (level integer, left integer64, right integer64, flags integer, decl text);
-create table kabitype (rowid integer primary key, level integer, left integer64, right integer64, flags integer, decl text);
-.separator ','
-.import $datalog ktree
-.import $typelog ktype
-insert into kabitree (level, left, right, flags, prefix, decl, parentdecl) select * from ktree;
-insert into kabitype (level, left, right, flags, decl) select * from ktype;
-drop table ktree;
-drop table ktype;
-EOF
-
 cd -
 echo "returned to $PWD"
 END=$(date +%s)
@@ -158,4 +118,3 @@ echo
 echo "Elapsed time: $minutes minutes and $seconds seconds"
 echo
 exit 0
-
