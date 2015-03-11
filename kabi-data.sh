@@ -63,7 +63,7 @@ noexistdir() {
 	nodir
 }
 
-while getopts "vhd:s:B:b:t:e:" OPTION; do
+while getopts "vhd:s:f:e:" OPTION; do
     case "$OPTION" in
 
 	d )	directory="$OPTARG"
@@ -71,7 +71,7 @@ while getopts "vhd:s:B:b:t:e:" OPTION; do
 		;;
 	s )	subdir="$OPTARG"
 		;;
-	b )	datafile="$OPTARG"
+	f )	datafile="$OPTARG"
 		;;
 	e )	errfile="$OPTARG"
 		;;
@@ -103,7 +103,7 @@ find $subdir -name \*.i -exec sh -c \
 	'grep -qm1 "__ksymtab_" $2; \
 	if [ $? -eq 0 ]; then \
 		echo $2; \
-		redhat/kabi/kabi-parser -d $1 $2 2>$3; \
+		redhat/kabi/kabi-parser -cf $1 $2 2>$3; \
 	fi' \
 	sh $datafile '{}' $errfile \;
 echo

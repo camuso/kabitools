@@ -94,15 +94,18 @@ kabi [options] files \n\
               Must be last in the argument list. \n\
 \n\
 Options:\n\
-    -d file   optional filename for data file containing the kabi graph. \n\
+    -b file   optional filename for data file containing the kabi graph. \n\
               The default is \"../kabi-data.dat\". \n\
+    -c        Cumulative. This switch destroys and rebuilds the database \n\
+              each time the program is called, creating a single database \n\
+              from more than one file. \n\
     -x        Delete the data file before starting. \n\
     -h        This help message.\n\
 \n";
 
 static const char *ksymprefix = "__ksymtab_";
 static bool kp_rmfiles = false;
-static bool showusers = false;
+static bool cumulative = false;
 static struct symbol_list *symlist = NULL;
 static bool kabiflag = false;
 
@@ -442,10 +445,10 @@ static bool parse_opt(char opt, char ***argv, int *index)
 	int optstatus = 1;
 
 	switch (opt) {
-	case 'd' : datafilename = *((*argv)++);
+	case 'f' : datafilename = *((*argv)++);
 		   ++(*index);
 		   break;
-	case 'u' : showusers = true;
+	case 'c' : cumulative = true;
 		   break;
 	case 'x' : kp_rmfiles = true;
 		   break;
@@ -500,8 +503,10 @@ int main(int argc, char **argv)
 	argv += argindex;
 	argc -= argindex;
 
-	if (!kp_rmfiles)
+	if (cumulative) {
 		kb_restore_qlist(datafilename);
+		remove(datafilename);
+	}
 
 	symlist = sparse_initialize(argc, argv, &filelist);
 
