@@ -172,7 +172,8 @@ void kb_restore_qlist(char *filename)
 {
 	ifstream ifs(filename);
 	if (!ifs.is_open()) {
-		cout << "Cannot open file: " << filename << endl;
+		fprintf(stderr, "File %s does not exist. A new file"
+				" will be created\n.", filename);
 		return;
 	}
 
