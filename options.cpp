@@ -65,7 +65,7 @@ int options::get_options(int *idx, char **argv,
 bool options::parse_opt(char opt, char ***argv, string &declstr, string &datafile)
 {
 	switch (opt) {
-	case 'b' : datafile = *((*argv)++);
+	case 'f' : datafile = *((*argv)++);
 		   break;
 	case 'c' : kb_flags |= KB_COUNT;
 		   declstr = *((*argv)++);
