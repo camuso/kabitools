@@ -42,6 +42,13 @@ enum levels {
 	LVL_COUNT
 };
 
+struct row {
+	int level;
+	int flags;
+	std::string file;
+	std::string decl;
+	std::string name;
+};
 
 class lookup
 {
@@ -49,17 +56,22 @@ public:
 	lookup(){}
 	lookup(int argc, char **argv);
 	static std::string get_helptext();
+	qnode *m_qn;
 private:
 	int process_args(int argc, char **argv);
 	bool check_flags();
 	int count_bits(unsigned mask);
+	std::string &pad_out(int padsize);
+	void put_row(row &r);
+	void put_rows();
+	void fill_row(const qnode *qn, int level);
+	qnode *find_decl();
+	int get_decl_list(std::vector<qnode> &retlist);
+	int get_parents_deep(qnode *qn, int level);
+	int get_parents_wide(qnode *qn);
 	int execute();
-	int exe_count(std::string &declstr, std::string &datafile);
-	const qnode *find_decl(const std::vector<qnode> &qnlist,
-			       const std::string &declstr);
-	int get_decl_list(const std::vector<qnode> &qnlist,
-			  const std::string &declstr,
-			  std::vector<qnode> &retlist);
+	int exe_count();
+	int exe_struct();
 
 	// member classes
 	Cqnodelist m_qnlist;
@@ -67,6 +79,9 @@ private:
 	error m_err;
 
 	// member basetypes
+	std::vector<cnode> *m_cnlist;
+	std::vector<qnode> &m_qnodes = m_qnlist.qnodelist;
+	std::vector<row> m_rows;
 	std::string m_datafile = "../kabi-data.dat";
 	std::string m_declstr;
 	int m_flags;

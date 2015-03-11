@@ -66,8 +66,9 @@ kabi-lookup -[vw] -c|d|e|s symbol [-b datafile]\n\
                   The -v switch prints descendants of nonscalar members. \n\
     -v          - verbose lists all descendants of a symbol. \n\
     -w          - whole words only, default is \"match any and all\" \n\
-    -b datafile - Optional sqlite database file. The default is \n\
-                  \"../kabi-data.dat\" relative to top of kernel tree. \n\
+    -f datafile - Optional data file. Must be generated using kabi-parser. \n\
+                  The default is \"../kabi-data.dat\" relative to top of \n\
+                  kernel tree. \n\
     --no-dups   - A structure can appear more than once in the nest of an \n\
                   exported function, for example a pointer back to itself as\n\
                   parent to one of its descendants. This switch limits the \n\
@@ -78,6 +79,7 @@ kabi-lookup -[vw] -c|d|e|s symbol [-b datafile]\n\
 lookup::lookup(int argc, char **argv)
 {
 	m_err.init(argc, argv);
+
 	if ((m_errindex = process_args(argc, argv))) {
 		m_err.print_cmd_errmsg(m_errindex, m_declstr, m_datafile);
 		exit(m_errindex);
@@ -129,11 +131,14 @@ int lookup::process_args(int argc, char **argv)
 
 int lookup::execute()
 {
+	kb_read_qlist(m_datafile, m_qnlist);
+	find_decl();
+
 	switch (m_flags & m_exemask) {
-	case KB_COUNT   : return exe_count(m_declstr, m_datafile);
-//	case KB_DECL    : return exe_decl(m_declstr, m_datafile);
-//	case KB_EXPORTS : return exe_exports(m_declstr, m_datafile);
-//	case KB_STRUCT  : return exe_struct(m_declstr, m_datafile);
+	case KB_COUNT   : return exe_count();
+//	case KB_DECL    : return exe_decl();
+//	case KB_EXPORTS : return exe_exports();
+	case KB_STRUCT  : return exe_struct();
 	}
 	return 0;
 }
@@ -141,61 +146,125 @@ int lookup::execute()
 #include <boost/format.hpp>
 using boost::format;
 
-const qnode *lookup::find_decl(const vector<qnode> &qnlist,
-			       const string &declstr)
+qnode *lookup::find_decl()
 {
-	const qnode *qn;
-	for (unsigned i = 0; i < qnlist.size(); ++i) {
-		DBG(qn = &qnlist[i]; \
-		cout << format("%08x %08x \"%s\"\n") \
-			% qn->cn->crc % qn->flags % qn->sdecl;)
-		if (!(qn = &qnlist[i])->sdecl.compare(declstr))
-			return qn;
+	for (unsigned i = 0; i < m_qnodes.size(); ++i) {
+		if (!(m_qn = &m_qnodes[i])->sdecl.find(m_declstr))
+			return &m_qnodes[i];
 	}
 	return NULL;
 }
 
-int lookup::get_decl_list(const std::vector<qnode> &qnlist,
-		  const std::string &declstr,
-		  std::vector<qnode> &retlist)
+int lookup::get_decl_list(std::vector<qnode> &retlist)
 {
-	const qnode *qn;
-	for (unsigned i = 0; i < qnlist.size(); ++i) {
-		if (!(qn = &qnlist[i])->sdecl.compare(0, declstr.length(), declstr));
-		//if ((qn = &qnlist[i])->sdecl.find(declstr) != string::npos)
-			retlist.push_back(*qn);
+	for (unsigned i = 0; i < m_qnodes.size(); ++i) {
+		if (!(m_qn = &m_qnodes[i])->sdecl.compare
+				(0, m_declstr.length(), m_declstr))
+			retlist.push_back(*m_qn);
 	}
-	DBG(cout << format("\"%s\" size: %d\n") % declstr %  declstr.size();)
+	DBG(cout << format("\"%s\" size: %d\n") % m_declstr %  m_declstr.size();)
 
 	return retlist.size();
 }
 
-int lookup::exe_count(string &declstr, string &datafile)
+int lookup::exe_count()
 {
-	kb_read_qlist(datafile, m_qnlist);
-
-	vector<qnode> declist;
-	int dlsize = get_decl_list(m_qnlist.qnodelist, declstr, declist);
-
-	DBG(cout << "declist size: " << dlsize << endl;)
-	DBG(cout << "qlist size: " << m_qnlist.qnodelist.size()) << endl;
-
-	return EXE_OK;
-
-
-	const qnode *qn = find_decl(m_qnlist.qnodelist, declstr);
-
-	if (!qn)
-		return EXE_NOTFOUND;
-
 	DBG(cout << format("%08x %08x %s\n") \
-	    % qn->cn->crc % qn->flags % qn->sdecl;)
-	cout << qn->parents.size() << endl;
-
+	    % m_qn->cn->crc % m_qn->flags % m_qn->sdecl;)
+	cout << m_qn->parents.size() << endl;
 
 	return EXE_OK;
 }
 
+void lookup::fill_row(const qnode *qn, int level)
+{
+	row r;
+	r.level = level;
+	r.flags = qn->flags;
+	r.file = qn->sfile;
+	r.decl = qn->sdecl;
+	r.name = qn->sname;
+	m_rows.push_back(r);
+}
+
+
+string &lookup::pad_out(int padsize)
+{
+	static string out;
+	out.clear();
+	while(padsize--) out += " ";
+	return out;
+}
+
+void lookup::put_row(row &r)
+{
+	switch (r.level) {
+	case LVL_EXPORTED:
+		cout << "FILE: " << r.file << endl
+		     << " EXPORTED: " << r.decl << r.name << endl;
+		break;
+	case LVL_ARG:
+		cout << ((r.flags & CTL_RETURN) ? "  RETURN: " : "  ARG: ");
+		cout << r.decl << r.name << endl;
+	default:
+		cout << pad_out(r.level) << r.decl << r.name;
+	}
+}
+
+void lookup::put_rows()
+{
+	for (unsigned i = 0; i < m_rows.size(); ++i) {
+		row r = m_rows.back();
+		put_row(r);
+		m_rows.pop_back();
+	}
+}
+
+int lookup::get_parents_deep(qnode *qn, int level)
+{
+	vector<cnode> cnlist = qn->parents;
+	fill_row(qn, level);
+
+	for (unsigned k = 0; k < cnlist.size(); ++k) {
+		qn = qn_lookup_crc(cnlist[k].crc);
+		if (qn->parents[k].level == level - 1) {
+			get_parents_deep(qn, level - 1);
+		}
+	}
+	return EXE_OK;
+}
+
+int lookup::get_parents_wide(qnode *qn)
+{
+	vector<cnode> cnlist = qn->parents;
+	m_rows.clear();
+
+	for (unsigned j = 0; j < cnlist.size(); ++j) {
+		int level = cnlist[j].level;
+		int crc = cnlist[j].crc;
+
+		m_rows.reserve(level);
+		fill_row(qn, level);
+		qn = qn_lookup_crc(crc);
+
+
+	}
+	return EXE_OK;
+}
+
+int lookup::exe_struct()
+{
+	if (m_qn->parents.size() == 0) {
+		m_rows.clear();
+		fill_row(m_qn, 0);
+		put_rows();
+		return EXE_OK;
+	}
+
+	get_parents_wide(m_qn);
+	put_rows();
+	return EXE_OK;
+}
 
 /************************************************
 ** main()
