@@ -88,6 +88,8 @@ class Cqnodelist
 public:
 	Cqnodelist(){}
 	std::vector<qnode> qnodelist;
+	std::vector<qnode> sublist;
+	std::vector<qnode> *duplist;
 
 	template<class Archive>
         void serialize(Archive &ar, const unsigned int version)
@@ -97,7 +99,7 @@ public:
 	}
 };
 
-extern std::vector<qnode> &get_qnodelist();
+extern Cqnodelist &get_qnodelist();
 extern void kb_read_qlist(std::string filename, Cqnodelist &qlist);
 extern "C"
 {
@@ -108,6 +110,7 @@ extern void update_qnode(struct qnode *qn);
 extern void delete_qnode(struct qnode *qn);
 extern void qn_add_parent(struct qnode *qn, struct qnode *parent);
 extern void qn_add_child(struct qnode *qn, struct qnode *child);
+extern void qn_make_slist();
 extern struct qnode *qn_lookup_crc(unsigned long crc);
 extern bool qn_lookup_parent(struct qnode *qn, unsigned long crc);
 extern bool qn_lookup_child(struct qnode *qn, unsigned long crc);

@@ -67,6 +67,7 @@ struct qnode *new_firstqnode(enum ctlflags flags)
 {
 	struct qnode *qn = alloc_qnode();
 	init_qnode(qn, qn, flags);
+	qn->parents[0].level = 0;
 	return qn;
 }
 
@@ -78,9 +79,9 @@ void update_qnode(struct qnode *qn)
 	cq.qnodelist.push_back(*qn);
 }
 
-vector<qnode> &get_qnodelist()
+Cqnodelist &get_qnodelist()
 {
-	return cq.qnodelist;
+	return cq;
 }
 void delete_qnode(struct qnode *qn)
 {
@@ -98,12 +99,37 @@ void qn_add_child(struct qnode *qn, struct qnode *child)
 	qn->children.push_back(*(child->cn));
 }
 
+void qn_make_slist()
+{
+	int mask = (CTL_STRUCT | CTL_HASLIST);
+	vector<qnode>& qlist = cq.qnodelist;
+	vector<qnode>& slist = cq.sublist;
+	vector<qnode>::iterator it;
+
+	for (it = qlist.begin(); it < qlist.end(); ++it) {
+		if ((it->flags & mask) || (it->sfile.size() > 0))
+			slist.push_back(*it);
+	}
+
+	cq.duplist =  (slist.size()) ? &cq.sublist : &cq.qnodelist;
+}
+
 struct qnode *qn_lookup_crc(unsigned long crc)
 {
-	for (unsigned i = 0; i < cq.qnodelist.size(); ++i)
-		if (cq.qnodelist[i].cn->crc == crc)
-			return &(cq.qnodelist[i]);
+	vector<qnode>& slist = *cq.duplist;
+	vector<qnode>::iterator it;
+	for (it = slist.begin(); it < slist.end(); ++it)
+		if (it->cn->crc == crc)
+			return &(*it);
 	return NULL;
+#if 0
+	vector<qnode>& qlist = cq.qnodelist;
+	vector<qnode>::iterator it;
+	for (it = qlist.begin(); it < qlist.end(); ++it)
+		if (it->cn->crc == crc)
+			return &(*it);
+	return NULL;
+#endif
 }
 
 bool qn_lookup_parent(struct qnode *qn, unsigned long crc)
