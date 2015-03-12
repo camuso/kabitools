@@ -56,7 +56,6 @@ public:
 	lookup(){}
 	lookup(int argc, char **argv);
 	static std::string get_helptext();
-	qnode *m_qn;
 private:
 	int process_args(int argc, char **argv);
 	bool check_flags();
@@ -68,15 +67,16 @@ private:
 	qnode *find_decl();
 	int get_decl_list(std::vector<qnode> &retlist);
 	int get_parents_deep(qnode *qn, int level);
-	int get_parents_wide(qnode *qn);
+	int get_parents_wide();
 	int execute();
 	int exe_count();
 	int exe_struct();
 
 	// member classes
-	Cqnodelist m_qnlist;
+	Cqnodelist &m_qnlist = get_qnodelist();
 	options m_opts;
 	error m_err;
+	qnode *m_qn;
 
 	// member basetypes
 	std::vector<cnode> *m_cnlist;

@@ -132,6 +132,7 @@ int lookup::process_args(int argc, char **argv)
 int lookup::execute()
 {
 	kb_read_qlist(m_datafile, m_qnlist);
+	qn_make_slist();
 	find_decl();
 
 	switch (m_flags & m_exemask) {
@@ -206,14 +207,17 @@ void lookup::put_row(row &r)
 	case LVL_ARG:
 		cout << ((r.flags & CTL_RETURN) ? "  RETURN: " : "  ARG: ");
 		cout << r.decl << r.name << endl;
+		break;
 	default:
-		cout << pad_out(r.level) << r.decl << r.name;
+		cout << pad_out(r.level) << r.decl << r.name << endl;
+		break;
 	}
 }
 
 void lookup::put_rows()
 {
-	for (unsigned i = 0; i < m_rows.size(); ++i) {
+	unsigned size = m_rows.size();
+	for (unsigned i = 0; i < size; ++i) {
 		row r = m_rows.back();
 		put_row(r);
 		m_rows.pop_back();
@@ -223,31 +227,44 @@ void lookup::put_rows()
 int lookup::get_parents_deep(qnode *qn, int level)
 {
 	vector<cnode> cnlist = qn->parents;
-	fill_row(qn, level);
+
+	// The level passed as a parameter is the level at which the parent
+	// of this symbol appears in the hierarchy. The correct level for
+	// this symbol is one higher than that.
+	fill_row(qn, level + 1);
 
 	for (unsigned k = 0; k < cnlist.size(); ++k) {
 		qn = qn_lookup_crc(cnlist[k].crc);
+
+		// The next parent will have a level one less than that of
+		// the symbol we just looked up (qn).
 		if (qn->parents[k].level == level - 1) {
 			get_parents_deep(qn, level - 1);
+			return EXE_OK;
 		}
 	}
 	return EXE_OK;
 }
 
-int lookup::get_parents_wide(qnode *qn)
+int lookup::get_parents_wide()
 {
-	vector<cnode> cnlist = qn->parents;
-	m_rows.clear();
+	vector<cnode> cnlist = m_qn->parents;
 
 	for (unsigned j = 0; j < cnlist.size(); ++j) {
+		// This is the level at which the parent appears in the
+		// hierarchy.
 		int level = cnlist[j].level;
-		int crc = cnlist[j].crc;
+		unsigned long crc = cnlist[j].crc;
 
-		m_rows.reserve(level);
-		fill_row(qn, level);
-		qn = qn_lookup_crc(crc);
+		// The level of the base symbol is one higher than that
+		// of its parent.
+		m_rows.clear();
+		m_rows.reserve(level + 1);
+		fill_row(m_qn, level + 1);
 
-
+		qnode *qn = qn_lookup_crc(crc);
+		get_parents_deep(qn, level - 1);
+		put_rows();
 	}
 	return EXE_OK;
 }
@@ -261,8 +278,7 @@ int lookup::exe_struct()
 		return EXE_OK;
 	}
 
-	get_parents_wide(m_qn);
-	put_rows();
+	get_parents_wide();
 	return EXE_OK;
 }
 
