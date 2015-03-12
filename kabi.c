@@ -227,9 +227,10 @@ static void get_symbols	(struct qnode *qparent,
 
 		// DEBUG CODE - creates a breakpoint for the debugger
 		// based on the decl content
-		DBG(if (strstr(decl, "struct foo")) \
-			get_declist(qn, sym);)
-
+#ifndef NDEBUG
+		if (strstr(decl, "struct device"))
+			get_declist(qn, sym);
+#endif
 		if (qparent->cn->crc == crc)
 			qn->flags |= CTL_BACKPTR;
 		else if ((qn->flags & CTL_HASLIST)
@@ -509,6 +510,7 @@ int main(int argc, char **argv)
 	}
 
 	symlist = sparse_initialize(argc, argv, &filelist);
+	qn_make_slist();
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		prdbg("sparse file: %s\n", file);
