@@ -105,10 +105,7 @@ int lookup::count_bits(unsigned mask)
 // Check for mutually exclusive flags.
 bool lookup::check_flags()
 {
-	if (count_bits(m_flags & m_exemask) > 1)
-		return false;
-
-	return true;
+	return !(count_bits(m_flags & m_exemask) > 1);
 }
 
 int lookup::process_args(int argc, char **argv)
