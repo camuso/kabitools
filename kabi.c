@@ -225,11 +225,9 @@ static void get_symbols	(struct qnode *qparent,
 		crc = raw_crc32(decl);
 		qn->cn->crc = crc;
 
-		// DEBUG CODE - creates a breakpoint for the debugger
-		// based on the decl content
 #ifndef NDEBUG
-		if (strstr(decl, "struct device"))
-			get_declist(qn, sym);
+		if (strstr(decl, "inode_operations"))
+			puts(decl);
 #endif
 		if (qparent->cn->crc == crc)
 			qn->flags |= CTL_BACKPTR;
