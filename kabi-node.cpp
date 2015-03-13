@@ -77,6 +77,7 @@ void update_qnode(struct qnode *qn)
 	qn->stypnam = qn->typnam ? string(qn->typnam) : string("");
 	qn->sfile   = qn->file   ? string(qn->file)   : string("");
 	cq.qnodelist.push_back(*qn);
+	cq.sublist.push_back(*qn);
 }
 
 Cqnodelist &get_qnodelist()
