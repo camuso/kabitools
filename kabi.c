@@ -508,7 +508,7 @@ int main(int argc, char **argv)
 	}
 
 	symlist = sparse_initialize(argc, argv, &filelist);
-	qn_make_slist();
+//	qn_make_slist();
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		prdbg("sparse file: %s\n", file);

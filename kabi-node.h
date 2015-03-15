@@ -1,9 +1,8 @@
-/* kabi-node.h
+/* kabi-node.h - node class for kabi-parser and kabi-lookup utilities
  *
  * Copyright (C) 2015  Red Hat Inc.
  * Tony Camuso <tcamuso@redhat.com>
  *
- ********************************************************************************
  * This is free software. You can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
  * Software Foundation; either version 2 of the License, or (at your option) any
@@ -17,7 +16,6 @@
  * You should have received a copy of the GNU General Public License along with
  * this program; if not, write to the Free Software Foundation, Inc., 51
  * Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- *******************************************************************************
  *
  */
 
@@ -88,8 +86,8 @@ class Cqnodelist
 public:
 	Cqnodelist(){}
 	std::vector<qnode> qnodelist;
-	std::vector<qnode> sublist;
-	std::vector<qnode> *duplist;
+	//std::vector<qnode> sublist;
+	//std::vector<qnode> *duplist;
 
 	template<class Archive>
         void serialize(Archive &ar, const unsigned int version)
@@ -100,6 +98,7 @@ public:
 };
 
 extern Cqnodelist &get_qnodelist();
+bool qn_is_duplist(qnode *qn);
 extern void kb_read_qlist(std::string filename, Cqnodelist &qlist);
 extern "C"
 {

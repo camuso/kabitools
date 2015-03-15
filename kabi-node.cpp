@@ -1,9 +1,8 @@
-/* kabi-node.cpp
+/* kabi-node.cpp - node class for kabi-parser and kabi-lookup utilities
  *
  * Copyright (C) 2015  Red Hat Inc.
  * Tony Camuso <tcamuso@redhat.com>
  *
- ********************************************************************************
  * This is free software. You can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
  * Software Foundation; either version 2 of the License, or (at your option) any
@@ -17,7 +16,6 @@
  * You should have received a copy of the GNU General Public License along with
  * this program; if not, write to the Free Software Foundation, Inc., 51
  * Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- *******************************************************************************
  *
  */
 
@@ -77,7 +75,7 @@ void update_qnode(struct qnode *qn)
 	qn->stypnam = qn->typnam ? string(qn->typnam) : string("");
 	qn->sfile   = qn->file   ? string(qn->file)   : string("");
 	cq.qnodelist.push_back(*qn);
-	cq.sublist.push_back(*qn);
+//	cq.sublist.push_back(*qn);
 }
 
 Cqnodelist &get_qnodelist()
@@ -99,7 +97,7 @@ void qn_add_child(struct qnode *qn, struct qnode *child)
 {
 	qn->children.push_back(*(child->cn));
 }
-
+#if 0
 void qn_make_slist()
 {
 	int mask = (CTL_STRUCT | CTL_HASLIST);
@@ -114,23 +112,23 @@ void qn_make_slist()
 
 	cq.duplist =  (slist.size()) ? &cq.sublist : &cq.qnodelist;
 }
-
+#endif
 struct qnode *qn_lookup_crc(unsigned long crc)
 {
+#if 0
 	vector<qnode>& slist = *cq.duplist;
 	vector<qnode>::iterator it;
 	for (it = slist.begin(); it < slist.end(); ++it)
 		if (it->cn->crc == crc)
 			return &(*it);
 	return NULL;
-#if 0
+#endif
 	vector<qnode>& qlist = cq.qnodelist;
 	vector<qnode>::iterator it;
 	for (it = qlist.begin(); it < qlist.end(); ++it)
 		if (it->cn->crc == crc)
 			return &(*it);
 	return NULL;
-#endif
 }
 
 bool qn_lookup_parent(struct qnode *qn, unsigned long crc)
@@ -168,6 +166,32 @@ bool qn_is_dup(struct qnode *qn, struct qnode* parent, unsigned long crc)
 	if (top) {
 		qn_add_parent(top, parent);
 		parent->children.pop_back();
+		delete_qnode(qn);
+		return true;
+	}
+	return false;
+}
+
+// qn_is_duplist - find duplicate and move parent list
+//
+// If we find a duplicate, walk the parent list of the duplicate qnode
+// and move its parents to the original qnode and add the original qnode
+// to the children list of each parent.
+//
+bool qn_is_duplist(qnode *qn)
+{
+	qnode *parent;
+	qnode *top = qn_lookup_crc(qn->cn->crc);
+
+	if (top) {
+		vector<cnode>::iterator it;
+		for (it = qn->parents.begin(); it < qn->parents.end(); ++it) {
+			if ((parent = qn_lookup_crc(it->crc))) {
+				qn_add_parent(top, parent);
+				parent->children.pop_back();
+				qn_add_child(parent, top);
+			}
+		}
 		delete_qnode(qn);
 		return true;
 	}

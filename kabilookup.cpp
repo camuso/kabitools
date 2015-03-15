@@ -129,7 +129,7 @@ int lookup::process_args(int argc, char **argv)
 int lookup::execute()
 {
 	kb_read_qlist(m_datafile, m_qnlist);
-	qn_make_slist();
+//	qn_make_slist();
 	find_decl();
 
 	switch (m_flags & m_exemask) {
