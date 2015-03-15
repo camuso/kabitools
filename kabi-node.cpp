@@ -110,11 +110,6 @@ static inline qnode *lookup_crc(unsigned long crc, vector<qnode>& qlist)
 	return NULL;
 }
 
-struct qnode *qn_lookup_crc_slist(unsigned long crc)
-{
-	return lookup_crc(crc, *cq.duplist);
-}
-
 struct qnode *qn_lookup_crc_other(unsigned long crc, Cqnodelist& qnlist)
 {
 	return lookup_crc(crc, qnlist.qnodelist);
