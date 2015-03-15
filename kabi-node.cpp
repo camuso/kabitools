@@ -82,6 +82,7 @@ Cqnodelist &get_qnodelist()
 {
 	return cq;
 }
+
 void delete_qnode(struct qnode *qn)
 {
 	delete qn->cn;
@@ -97,38 +98,31 @@ void qn_add_child(struct qnode *qn, struct qnode *child)
 {
 	qn->children.push_back(*(child->cn));
 }
-#if 0
-void qn_make_slist()
+
+static inline qnode *lookup_crc(unsigned long crc, vector<qnode>& qlist)
 {
-	int mask = (CTL_STRUCT | CTL_HASLIST);
-	vector<qnode>& qlist = cq.qnodelist;
-	vector<qnode>& slist = cq.sublist;
 	vector<qnode>::iterator it;
-
 	for (it = qlist.begin(); it < qlist.end(); ++it) {
-		if ((it->flags & mask) || (it->sfile.size() > 0))
-			slist.push_back(*it);
+		qnode *qn = &(*it);
+		if (qn->cn->crc == crc)
+			return qn;
 	}
-
-	cq.duplist =  (slist.size()) ? &cq.sublist : &cq.qnodelist;
+	return NULL;
 }
-#endif
+
+struct qnode *qn_lookup_crc_slist(unsigned long crc)
+{
+	return lookup_crc(crc, *cq.duplist);
+}
+
+struct qnode *qn_lookup_crc_other(unsigned long crc, Cqnodelist& qnlist)
+{
+	return lookup_crc(crc, qnlist.qnodelist);
+}
+
 struct qnode *qn_lookup_crc(unsigned long crc)
 {
-#if 0
-	vector<qnode>& slist = *cq.duplist;
-	vector<qnode>::iterator it;
-	for (it = slist.begin(); it < slist.end(); ++it)
-		if (it->cn->crc == crc)
-			return &(*it);
-	return NULL;
-#endif
-	vector<qnode>& qlist = cq.qnodelist;
-	vector<qnode>::iterator it;
-	for (it = qlist.begin(); it < qlist.end(); ++it)
-		if (it->cn->crc == crc)
-			return &(*it);
-	return NULL;
+	return lookup_crc(crc, cq.qnodelist);
 }
 
 bool qn_lookup_parent(struct qnode *qn, unsigned long crc)
@@ -159,13 +153,32 @@ const char *qn_extract_type(struct qnode *qn)
 	return qn->sdecl.c_str();
 }
 
+static inline bool is_inlist(cnode *cn, vector<cnode>& cnlist)
+{
+	vector<cnode>::iterator it;
+	for (it = cnlist.begin(); it < cnlist.end(); ++it) {
+		cnode *pcn = &(*it);
+		if ((pcn->crc == cn->crc) && (pcn->level == cn->level))
+			return true;
+	}
+	return false;
+}
+
+static inline void update_duplicate(qnode *top, qnode *parent)
+{
+	if (!is_inlist(parent->cn, top->parents))
+		qn_add_parent(top, parent);
+
+	if (!is_inlist(top->cn, parent->children))
+		qn_add_child(parent, top);
+}
+
 bool qn_is_dup(struct qnode *qn, struct qnode* parent, unsigned long crc)
 {
 	struct qnode *top = qn_lookup_crc(crc);
 
 	if (top) {
-		qn_add_parent(top, parent);
-		parent->children.pop_back();
+		update_duplicate(top, parent);
 		delete_qnode(qn);
 		return true;
 	}
@@ -174,25 +187,23 @@ bool qn_is_dup(struct qnode *qn, struct qnode* parent, unsigned long crc)
 
 // qn_is_duplist - find duplicate and move parent list
 //
-// If we find a duplicate, walk the parent list of the duplicate qnode
-// and move its parents to the original qnode and add the original qnode
-// to the children list of each parent.
+// If we find that the qnode argument is a duplicate:
+// . walk the parent list of the duplicate qnode
+// . move its parents to the parents list of the original qnode,
+// . add the original qnode to the children list of each parent.
 //
-bool qn_is_duplist(qnode *qn)
+bool qn_is_duplist(qnode *qn, vector<qnode>& qlist)
 {
 	qnode *parent;
-	qnode *top = qn_lookup_crc(qn->cn->crc);
+	qnode *top = lookup_crc(qn->cn->crc, qlist);
 
 	if (top) {
 		vector<cnode>::iterator it;
 		for (it = qn->parents.begin(); it < qn->parents.end(); ++it) {
-			if ((parent = qn_lookup_crc(it->crc))) {
-				qn_add_parent(top, parent);
-				parent->children.pop_back();
-				qn_add_child(parent, top);
-			}
+			cnode *pcn = &(*it);
+			if ((parent = lookup_crc(pcn->crc, qlist)))
+				update_duplicate(top, parent);
 		}
-		delete_qnode(qn);
 		return true;
 	}
 	return false;
@@ -204,7 +215,7 @@ const char *cstrcat(const char *d, const char *s)
 	return dd.c_str();
 }
 
-void kb_write_qlist(char *filename)
+static inline void write_qlist(const char *filename, Cqnodelist& qnlist)
 {
 	ofstream ofs(filename, ofstream::out | ofstream::app);
 	if (!ofs.is_open()) {
@@ -214,9 +225,20 @@ void kb_write_qlist(char *filename)
 
 	{
 		boost::archive::text_oarchive oa(ofs);
-		oa << cq;
+		oa << qnlist;
 	}
 	ofs.close();
+}
+
+void kb_write_qlist_other(string& filename, Cqnodelist& qnlist)
+{
+	write_qlist(filename.c_str(), qnlist);
+}
+
+void kb_write_qlist(const char *filename)
+{
+	using namespace boost;
+	write_qlist(filename, cq);
 }
 
 void kb_restore_qlist(char *filename)

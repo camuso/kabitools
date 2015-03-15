@@ -86,8 +86,8 @@ class Cqnodelist
 public:
 	Cqnodelist(){}
 	std::vector<qnode> qnodelist;
-	//std::vector<qnode> sublist;
-	//std::vector<qnode> *duplist;
+	std::vector<qnode> sublist;
+	std::vector<qnode> *duplist;
 
 	template<class Archive>
         void serialize(Archive &ar, const unsigned int version)
@@ -98,8 +98,10 @@ public:
 };
 
 extern Cqnodelist &get_qnodelist();
-bool qn_is_duplist(qnode *qn);
+extern qnode *qn_lookup_crc_other(unsigned long crc, Cqnodelist& qnlist);
+extern bool qn_is_duplist(qnode *qn, std::vector<qnode> &qlist);
 extern void kb_read_qlist(std::string filename, Cqnodelist &qlist);
+extern void kb_write_qlist_other(std::string& filename, Cqnodelist& qnlist);
 extern "C"
 {
 #endif
@@ -109,15 +111,15 @@ extern void update_qnode(struct qnode *qn);
 extern void delete_qnode(struct qnode *qn);
 extern void qn_add_parent(struct qnode *qn, struct qnode *parent);
 extern void qn_add_child(struct qnode *qn, struct qnode *child);
-extern void qn_make_slist();
 extern struct qnode *qn_lookup_crc(unsigned long crc);
+extern struct qnode *qn_lookup_crc_slist(unsigned long crc);
 extern bool qn_lookup_parent(struct qnode *qn, unsigned long crc);
 extern bool qn_lookup_child(struct qnode *qn, unsigned long crc);
 extern void qn_add_to_declist(struct qnode *qn, char *decl);
 extern const char *qn_extract_type(struct qnode *qn);
 extern bool qn_is_dup(struct qnode *qn, struct qnode* parent, unsigned long crc);
 extern const char *cstrcat(const char *d, const char *s);
-extern void kb_write_qlist(char *filename);
+extern void kb_write_qlist(const char *filename);
 extern void kb_restore_qlist(char *filename);
 extern void kb_dump_qlist(char *filename);
 #ifdef __cplusplus
