@@ -91,6 +91,7 @@ void kabicompdb::load_database()
 			ofs.open(m_tempfile, ofstream::out | ofstream::trunc);
 			getline(ifs, in);
 			ofs << in << endl;
+			cout << '.';
 		}
 		pos = ifs.tellg();
 	}
@@ -100,6 +101,7 @@ void kabicompdb::load_database()
 	kb_read_qlist(m_tempfile, m_qnlist);
 	m_qstore.insert(m_qstore.end(), m_qlist.begin(), m_qlist.end());
 	remove(m_tempfile.c_str());
+	cout << endl;
 }
 
 kabicompdb::kabicompdb(string& filename)
