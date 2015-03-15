@@ -5,11 +5,13 @@
 *.tar
 *.autosave
 *.save.*
+*.tmp
 
 # directories
 sparse/
 sparksyms/
 sparse-debug/
+kabicompdb/
 
 # Object files
 *.o
@@ -46,3 +48,5 @@ cscope.out
 kabi
 kabi-lookup
 kabi-parser
+kabi-compdb
+prep
