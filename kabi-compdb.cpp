@@ -19,6 +19,7 @@
  *
  */
 
+#define __cplusplus 201103L
 #include <vector>
 #include <cstring>
 #include <fstream>
@@ -36,13 +37,23 @@ void kabicompdb::compress()
 {
 	m_qlist.clear();
 
+	// Only interested in duplicate compound types
+	//
+	unsigned mask = CTL_STRUCT | CTL_HASLIST;
 	vector<qnode>::iterator it;
 	for (it = m_qstore.begin(); it < m_qstore.end(); ++it) {
 		qnode *qn = &(*it);
-		if (qn_is_duplist(qn)) {
+		bool backptr = qn->flags & CTL_BACKPTR;
+		bool isstruct = qn->flags & mask;
 
-		}
+		if (isstruct && !backptr && (qn_is_duplist(qn, m_qlist)))
+			continue;
+
+		m_qlist.push_back(*qn);
 	}
+	remove(m_tempfile.c_str());
+	remove(m_filename.c_str());
+	kb_write_qlist(m_filename.c_str());
 }
 
 int kabicompdb::extract_recordcount(string &str)
@@ -102,7 +113,7 @@ int main(int argc, char** argv)
 	if (argc <=1) {
 		cout << "\nPlease provide the name of the boost::serialize"
 			" data file to compress.\n\n";
-		exit(1);
+		return 1;
 	}
 	string filename = string(argv[1]);
 	kabicompdb kbc(filename);

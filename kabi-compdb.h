@@ -75,8 +75,6 @@ private:
 	std::vector<qnode> m_complist;
 
 	std::string m_filename;
-	std::string m_boostarchpfx = "22 serialization::archive 10 0 0 0 0 ";
-	std::string m_boostarchsfx = " 0 0 0 3 1 0";
 	std::string m_tempfile = "../__temp.tmp";
 	int m_recordcount = 0;
 
