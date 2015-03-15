@@ -6,7 +6,6 @@
  * Copyright (C) 2015  Red Hat Inc.
  * Tony Camuso <tcamuso@redhat.com>
  *
- *******************************************************************************
  * This program is free software. You can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
  * Software Foundation; either version 2 of the License, or (at your option) any
@@ -96,9 +95,6 @@ kabi [options] files \n\
 Options:\n\
     -b file   optional filename for data file containing the kabi graph. \n\
               The default is \"../kabi-data.dat\". \n\
-    -c        Cumulative. This switch destroys and rebuilds the database \n\
-              each time the program is called, creating a single database \n\
-              from more than one file. \n\
     -x        Delete the data file before starting. \n\
     -h        This help message.\n\
 \n";
@@ -447,8 +443,6 @@ static bool parse_opt(char opt, char ***argv, int *index)
 	case 'f' : datafilename = *((*argv)++);
 		   ++(*index);
 		   break;
-	case 'c' : cumulative = true;
-		   break;
 	case 'x' : kp_rmfiles = true;
 		   break;
 	case 'h' : puts(helptext);
@@ -502,13 +496,7 @@ int main(int argc, char **argv)
 	argv += argindex;
 	argc -= argindex;
 
-	if (cumulative) {
-		kb_restore_qlist(datafilename);
-		remove(datafilename);
-	}
-
 	symlist = sparse_initialize(argc, argv, &filelist);
-//	qn_make_slist();
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		prdbg("sparse file: %s\n", file);
