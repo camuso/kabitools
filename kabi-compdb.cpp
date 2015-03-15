@@ -36,12 +36,22 @@ using namespace std;
 void kabicompdb::compress()
 {
 	m_qlist.clear();
+	int count;
 
 	// Only interested in duplicate compound types
 	//
 	unsigned mask = CTL_STRUCT | CTL_HASLIST;
 	vector<qnode>::iterator it;
-	for (it = m_qstore.begin(); it < m_qstore.end(); ++it) {
+	for (it = m_qstore.begin(); it < m_qstore.end(); ++it, ++count) {
+		if (count % 0x1000)
+			cout << "|\r";
+		if (count % 0x1400)
+			cout << "/\r";
+		if (count % 0x1800)
+			cout << "-\r";
+		if (count % 0x1c00)
+			cout << "\\\r";
+
 		qnode *qn = &(*it);
 		bool backptr = qn->flags & CTL_BACKPTR;
 		bool isstruct = qn->flags & mask;
@@ -53,6 +63,7 @@ void kabicompdb::compress()
 	}
 	remove(m_tempfile.c_str());
 	remove(m_filename.c_str());
+	cout << "Writing compressed data file: " << m_filename <<endl;
 	kb_write_qlist(m_filename.c_str());
 }
 
@@ -77,6 +88,7 @@ void kabicompdb::load_database()
 	ifstream ifs(m_filename);
 	ofstream ofs(m_tempfile, ofstream::out | ofstream::trunc);
 
+	cout.setf(std::ios::unitbuf);
 	getline(ifs, in);
 	ofs << in << endl;
 
