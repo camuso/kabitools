@@ -57,7 +57,7 @@
 #include <sparse/symbol.h>
 
 #include "kabi.h"
-#include "kabi-node.h"
+#include "kabi-map.h"
 #include "checksum.h"
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
@@ -101,7 +101,7 @@ Options:\n\
 
 static const char *ksymprefix = "__ksymtab_";
 static bool kp_rmfiles = false;
-static bool cumulative = false;
+//static bool cumulative = false;
 static struct symbol_list *symlist = NULL;
 static bool kabiflag = false;
 
@@ -146,7 +146,7 @@ static char *pad_out(int padsize, char padchar)
 static struct symbol *find_internal_exported(struct symbol_list *, char *);
 static const char *get_modstr(unsigned long mod);
 static void get_declist(struct qnode *qn, struct symbol *sym);
-static void get_symbols(struct qnode *qn,
+static void get_symbols(struct qnode *parent,
 			struct symbol_list *list,
 			enum ctlflags flags);
 
@@ -205,7 +205,7 @@ static void get_declist(struct qnode *qn, struct symbol *sym)
 	get_declist(qn, basetype);
 }
 
-static void get_symbols	(struct qnode *qparent,
+static void get_symbols	(struct qnode *parent,
 			 struct symbol_list *list,
 			 enum ctlflags flags)
 {
@@ -214,28 +214,30 @@ static void get_symbols	(struct qnode *qparent,
 	FOR_EACH_PTR(list, sym) {
 		const char *decl;
 		unsigned long crc;
-		struct qnode *qn = new_qnode(qparent, flags);
+		struct qnode *qn = new_qnode(parent, flags);
 
 		get_declist(qn, sym);
 		decl = qn_extract_type(qn);
 		crc = raw_crc32(decl);
-		qn->cn->crc = crc;
+		qn->crc = crc;
 
 #ifndef NDEBUG
 		if (strstr(decl, "inode_operations"))
 			puts(decl);
 #endif
-		if (qparent->cn->crc == crc)
+		if (parent->crc == crc)
 			qn->flags |= CTL_BACKPTR;
 		else if ((qn->flags & CTL_HASLIST)
-			 && qn_is_dup(qn, qparent, crc))
+			 && qn_is_dup(qn, parent)) {
+			qn->flags &= ~CTL_HASLIST;
 			continue;
+		}
 
 		if (sym->ident)
 			qn->name = sym->ident->name;
 
-		update_qnode(qn);
-		prdbg("%s%s %s\n", pad_out(qn->cn->level, ' '), decl, qn->name);
+		update_qnode(qn, parent);
+		prdbg("%s%s %s\n", pad_out(qn->level, ' '), decl, qn->name);
 
 		if ((qn->flags & CTL_HASLIST) && !(qn->flags & CTL_BACKPTR))
 			proc_symlist(qn, (struct symbol_list *)qn->symlist,
@@ -250,15 +252,16 @@ static void build_branch(char *symname, char *file)
 	if ((sym = find_internal_exported(symlist, symname))) {
 		const char *decl;
 		struct symbol *basetype = sym->ctype.base_type;
-		struct qnode *qn = new_firstqnode(CTL_EXPORTED);
+		struct qnode *qn;
+		struct qnode *parent = NULL;
 
-		qn->file = file;
+		qn = new_firstqnode(file, CTL_EXPORTED, parent);
 		qn->name = symname;
-		qn->cn->level = 1;
 		kabiflag = true;
 		get_declist(qn, sym);
 		decl = cstrcat(qn_extract_type(qn), qn->name);
-		qn->cn->crc = raw_crc32(decl);
+		qn->crc = raw_crc32(decl);
+		update_qnode(qn, parent);
 
 		prdbg("EXPORTED: %s\n", decl);
 
@@ -267,15 +270,13 @@ static void build_branch(char *symname, char *file)
 
 			get_declist(bqn, basetype);
 			decl = qn_extract_type(bqn);
-			bqn->cn->crc = raw_crc32(decl);
+			bqn->crc = raw_crc32(decl);
 			prdbg("RETURN: %s\n", decl);
-			update_qnode(bqn);
+			update_qnode(bqn, qn);
 		}
 
 		if (basetype->arguments)
 			get_symbols(qn, basetype->arguments, CTL_ARG);
-
-		update_qnode(qn);
 	}
 }
 
@@ -510,8 +511,8 @@ int main(int argc, char **argv)
 	if (kp_rmfiles)
 		remove(datafilename);
 
-	kb_write_qlist(datafilename);
-	DBG(kb_dump_qlist(datafilename);)
+	kb_write_cqnmap(datafilename);
+	//DBG(kb_dump_qlist(datafilename);)
 
 	return 0;
 }
