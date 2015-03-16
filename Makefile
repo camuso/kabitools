@@ -1,7 +1,7 @@
-PARSER_CFLAGS	:= -I/usr/include/sparse
+PARSER_CFLAGS	:= -I/usr/include/sparse -I/usr/include/c++/4.9.2
 PARSER_LIBS	:= -lsparse -lboost_serialization
-PARSER_OBJS	:= kabi.o checksum.o kabi-node.o
-PARSER_HDRS	:= kabi.h checksum.h kabi-node.h
+PARSER_OBJS	:= kabi.o checksum.o kabi-map.o
+PARSER_HDRS	:= kabi.h checksum.h kabi-map.h
 
 LOOKUP_CFLAGS	:= -std=gnu++11
 LOOKUP_LIBS	:= -lboost_serialization
