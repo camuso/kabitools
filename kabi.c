@@ -255,7 +255,7 @@ static void build_branch(char *symname, char *file)
 		struct qnode *qn;
 		struct qnode *parent = NULL;
 
-		qn = new_firstqnode(file, CTL_EXPORTED, parent);
+		qn = new_firstqnode(file, CTL_EXPORTED, &parent);
 		qn->name = symname;
 		kabiflag = true;
 		get_declist(qn, sym);

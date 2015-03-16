@@ -58,9 +58,13 @@ inline struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags)
 	return qn;
 }
 
-struct qnode *new_firstqnode(char *file, enum ctlflags flags, qnode *parent)
+struct qnode *new_firstqnode(char *file,
+			     enum ctlflags flags,
+			     struct qnode **pparent)
 {
-	parent = alloc_qnode();
+
+	*pparent = alloc_qnode();
+	struct qnode *parent = *pparent;
 	parent->sdecl = string(file);
 	parent->level = 0;
 	parent->flags = CTL_FILE;

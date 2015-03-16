@@ -120,7 +120,7 @@ struct qnode *foo;
 extern struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags);
 extern struct qnode *new_firstqnode(char *file,
 				    enum ctlflags flags,
-				    struct qnode *parent);
+				    struct qnode **pparent);
 extern void update_qnode(struct qnode *qn, struct qnode *parent);
 extern void delete_qnode(struct qnode *qn);
 extern void qn_add_parent(struct qnode *qn, struct qnode *parent);
