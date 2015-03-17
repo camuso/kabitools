@@ -4,7 +4,6 @@
 #include "options.h"
 
 using namespace std;
-using namespace kabilookup;
 
 options::options()
 {

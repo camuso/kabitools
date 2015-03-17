@@ -3,7 +3,6 @@
 #include "kabilookup.h"
 
 using namespace std;
-using namespace kabilookup;
 
 void error::init(int argc, char **argv)
 {
