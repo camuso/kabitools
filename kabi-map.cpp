@@ -151,7 +151,7 @@ static inline void update_duplicate(qnode *qn, qnode *parent)
 bool qn_is_dup(struct qnode *qn, struct qnode* parent)
 {
 	bool retval = false;
-	qnodemap_t qnmap = public_cqnmap.qnmap;
+	qnodemap_t& qnmap = public_cqnmap.qnmap;
 	pair<qniterator_t, qniterator_t> range;
 	range = qnmap.equal_range(qn->crc);
 
@@ -159,10 +159,11 @@ bool qn_is_dup(struct qnode *qn, struct qnode* parent)
 		return false;
 
 	for_each (range.first, range.second,
-		 [&qn, &parent, &retval](qnpair_t lqn) {
+		 [&qn, &parent, &retval](qnpair_t& lqn) {
 			if (lqn.first == qn->crc) {
-				update_duplicate(&lqn.second, parent);
-				delete_qnode(qn);
+				qnode* mapparent = qn_lookup_crc(parent->crc);
+				update_duplicate(&lqn.second, mapparent);
+				//delete_qnode(qn);
 				retval = true;
 			}
 		  });
@@ -238,15 +239,17 @@ using boost::format;
 void kb_dump_cqnmap(char *filename)
 {
 	Cqnodemap cqq;
-	qnodemap_t qnmap = cqq.qnmap;
+	qnodemap_t& qnmap = cqq.qnmap;
 
 	kb_read_cqnmap(string(filename), cqq);
 
-	for (qniterator_t it = qnmap.begin(); it != qnmap.end(); ++it) {
-		qnpair_t qnp = *it;
+	cout << "map size: " << qnmap.size() << endl;
+
+	for (auto it : qnmap) {
+		qnpair_t qnp = it;
 		qnode qn = qnp.second;
 		cout << format("crc: %08x flags: %08x decl: %s")
-			% qn.crc % qn.flags % qn.sdecl;
+			% qnp.first % qn.flags % qn.sdecl;
 		if (qn.flags & CTL_POINTER) cout << "*";
 		cout << qn.sname << endl;
 
@@ -258,12 +261,16 @@ void kb_dump_cqnmap(char *filename)
 					% lcn.first % lcn.second;
 			  });
 
+		if (!qn.children.size())
+			goto bottom;
+
 		cout << "\tchildren" << endl;
 		for_each (qn.children.begin(), qn.children.end(),
 			 [](pair<const unsigned, int>& lcn) {
 				cout << format ("\tcrc: %08x level: %d\n")
 					% lcn.first % lcn.second;
 			  });
+bottom:
 		cout << endl;
 	}
 }

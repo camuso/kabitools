@@ -101,7 +101,7 @@ Options:\n\
 
 static const char *ksymprefix = "__ksymtab_";
 static bool kp_rmfiles = false;
-//static bool cumulative = false;
+static bool cumulative = false;
 static struct symbol_list *symlist = NULL;
 static bool kabiflag = false;
 
@@ -222,7 +222,7 @@ static void get_symbols	(struct qnode *parent,
 		qn->crc = crc;
 
 #ifndef NDEBUG
-		if (strstr(decl, "inode_operations"))
+		if (strstr(decl, "struct dev_pm_ops"))
 			puts(decl);
 #endif
 		if (parent->crc == crc)
@@ -444,6 +444,8 @@ static bool parse_opt(char opt, char ***argv, int *index)
 	case 'f' : datafilename = *((*argv)++);
 		   ++(*index);
 		   break;
+	case 'c' : cumulative = true;
+		   break;
 	case 'x' : kp_rmfiles = true;
 		   break;
 	case 'h' : puts(helptext);
@@ -497,6 +499,11 @@ int main(int argc, char **argv)
 	argv += argindex;
 	argc -= argindex;
 
+	if (cumulative) {
+		kb_restore_cqnmap(datafilename);
+		remove(datafilename);
+	}
+
 	symlist = sparse_initialize(argc, argv, &filelist);
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
@@ -512,7 +519,7 @@ int main(int argc, char **argv)
 		remove(datafilename);
 
 	kb_write_cqnmap(datafilename);
-	//DBG(kb_dump_qlist(datafilename);)
+	DBG(kb_dump_cqnmap(datafilename);)
 
 	return 0;
 }

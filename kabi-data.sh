@@ -103,7 +103,7 @@ find $subdir -name \*.i -exec sh -c \
 	'grep -qm1 "__ksymtab_" $2; \
 	if [ $? -eq 0 ]; then \
 		echo $2; \
-		redhat/kabi/kabi-parser -f $1 $2 2>$3; \
+		redhat/kabi/kabi-parser -cf $1 $2 2>$3; \
 	fi' \
 	sh $datafile '{}' $errfile \;
 echo
@@ -114,6 +114,11 @@ DIFF=$(( $END - $START ))
 
 minutes=$(( $DIFF / 60 ))
 seconds=$(( $DIFF % 60 ))
+
+echo
+echo "Elapsed time: $minutes minutes and $seconds seconds"
+echo
+exit 0
 
 echo
 echo "File processing time: $minutes minutes and $seconds seconds"
@@ -136,7 +141,4 @@ seconds=$(( $DIFF % 60 ))
 
 echo
 echo "Compression time: $compmin minutes and $compsec seconds"
-echo
-echo "Elapsed time: $minutes minutes and $seconds seconds"
-echo
-exit 0
+
