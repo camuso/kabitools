@@ -5,8 +5,8 @@ PARSER_HDRS	:= kabi.h checksum.h kabi-map.h
 
 LOOKUP_CFLAGS	:= -std=gnu++11
 LOOKUP_LIBS	:= -lboost_serialization
-LOOKUP_OBJS	:= kabilookup.o kabi-node.o options.o error.o
-LOOKUP_HDRS	:= kabilookup.h kabi-node.h options.h error.h
+LOOKUP_OBJS	:= kabilookup.o kabi-map.o options.o error.o checksum.o
+LOOKUP_HDRS	:= kabilookup.h kabi-map.h options.h error.h checksum.h
 
 COMPDB_CFLAGS	:= -std=gnu++11
 COMPDB_LIBS	:= -lboost_serialization

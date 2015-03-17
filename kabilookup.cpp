@@ -4,7 +4,6 @@
  * Copyright (C) 2015  Red Hat Inc.
  * Tony Camuso <tcamuso@redhat.com>
  *
- ********************************************************************************
  * This is free software. You can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
  * Software Foundation; either version 2 of the License, or (at your option) any
@@ -18,15 +17,16 @@
  * You should have received a copy of the GNU General Public License along with
  * this program; if not, write to the Free Software Foundation, Inc., 51
  * Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- *******************************************************************************
  *
  */
 
-#include <vector>
 #include <cstring>
 #include <fstream>
 
+#include "checksum.h"
 #include "kabilookup.h"
+
+using namespace std;
 
 //#define NDEBUG
 #if !defined(NDEBUG)
@@ -44,7 +44,6 @@ do { \
 
 
 using namespace std;
-using namespace kabilookup;
 
 string lookup::get_helptext()
 {
@@ -128,7 +127,7 @@ int lookup::process_args(int argc, char **argv)
 
 int lookup::execute()
 {
-	kb_read_qlist(m_datafile, m_qnlist);
+	::kb_read_cqnmap(m_datafile, m_cqnmap);
 //	qn_make_slist();
 	find_decl();
 
@@ -146,19 +145,20 @@ using boost::format;
 
 qnode *lookup::find_decl()
 {
-	for (unsigned i = 0; i < m_qnodes.size(); ++i) {
-		if (!(m_qn = &m_qnodes[i])->sdecl.find(m_declstr))
-			return &m_qnodes[i];
+	qnode *qn;
+
+	for (auto it : m_qnodes) {
+		if (it.first == m_crc)
+			return (qn = &it.second);
 	}
 	return NULL;
 }
 
 int lookup::get_decl_list(std::vector<qnode> &retlist)
 {
-	for (unsigned i = 0; i < m_qnodes.size(); ++i) {
-		if (!(m_qn = &m_qnodes[i])->sdecl.compare
-				(0, m_declstr.length(), m_declstr))
-			retlist.push_back(*m_qn);
+	for (auto it : m_qnodes) {
+		if (it.first == m_crc)
+			retlist.push_back(it.second);
 	}
 	DBG(cout << format("\"%s\" size: %d\n") % m_declstr %  m_declstr.size();)
 
@@ -167,8 +167,10 @@ int lookup::get_decl_list(std::vector<qnode> &retlist)
 
 int lookup::exe_count()
 {
+	m_crc = ::raw_crc32(m_declstr.c_str());
+
 	DBG(cout << format("%08x %08x %s\n") \
-	    % m_qn->cn->crc % m_qn->flags % m_qn->sdecl;)
+	    % m_crc % m_qn->flags % m_qn->sdecl;)
 	cout << m_qn->parents.size() << endl;
 
 	return EXE_OK;
@@ -179,7 +181,6 @@ void lookup::fill_row(const qnode *qn, int level)
 	row r;
 	r.level = level;
 	r.flags = qn->flags;
-	r.file = qn->sfile;
 	r.decl = qn->sdecl;
 	r.name = qn->sname;
 	m_rows.push_back(r);
@@ -223,19 +224,18 @@ void lookup::put_rows()
 
 int lookup::get_parents_deep(qnode *qn, int level)
 {
-	vector<cnode> cnlist = qn->parents;
+	cnodemap_t& cnmap = qn->parents;
 
-	// The level passed as a parameter is the level at which the parent
-	// of this symbol appears in the hierarchy. The correct level for
-	// this symbol is one higher than that.
-	fill_row(qn, level + 1);
+	// The level passed as a parameter is the level at which the symbol
+	// appears in its parent's hierarchy.
+	fill_row(qn, level);
 
-	for (unsigned k = 0; k < cnlist.size(); ++k) {
-		qn = qn_lookup_crc(cnlist[k].crc);
+	for (auto it : cnmap) {
+		qn = qn_lookup_crc(it.first);
 
 		// The next parent will have a level one less than that of
 		// the symbol we just looked up (qn).
-		if (qn->parents[k].level == level - 1) {
+		if (it.second == level) {
 			get_parents_deep(qn, level - 1);
 			return EXE_OK;
 		}
@@ -245,19 +245,15 @@ int lookup::get_parents_deep(qnode *qn, int level)
 
 int lookup::get_parents_wide()
 {
-	vector<cnode> cnlist = m_qn->parents;
+	cnodemap_t& cnmap = m_qn->parents;
 
-	for (unsigned j = 0; j < cnlist.size(); ++j) {
-		// This is the level at which the parent appears in the
-		// hierarchy.
-		int level = cnlist[j].level;
-		unsigned long crc = cnlist[j].crc;
+	for (auto it : cnmap) {
+		unsigned crc = it.first;
+		int level = it.second;
 
-		// The level of the base symbol is one higher than that
-		// of its parent.
 		m_rows.clear();
-		m_rows.reserve(level + 1);
-		fill_row(m_qn, level + 1);
+		m_rows.reserve(level);
+		fill_row(m_qn, level);
 
 		qnode *qn = qn_lookup_crc(crc);
 		get_parents_deep(qn, level - 1);
@@ -268,6 +264,8 @@ int lookup::get_parents_wide()
 
 int lookup::exe_struct()
 {
+	m_crc = ::raw_crc32(m_declstr.c_str());
+
 	if (m_qn->parents.size() == 0) {
 		m_rows.clear();
 		fill_row(m_qn, 0);
