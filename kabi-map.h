@@ -110,6 +110,7 @@ public:
 extern Cqnodemap& get_public_cqnmap();
 extern qnode* qn_lookup_crc_other(unsigned long crc, Cqnodemap& cqnmap);
 extern bool qn_is_duplist(qnode* qn, qnodemap_t& qnmap);
+extern void kb_read_cqnmap(std::string filename, Cqnodemap &cqnmap);
 extern void kb_write_cqnmap_other(std::string& filename, Cqnodemap& cqnmap);
 extern "C"
 {
