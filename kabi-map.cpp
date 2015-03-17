@@ -255,7 +255,7 @@ void kb_dump_cqnmap(char *filename)
 		cout << "\tparents" << endl;
 
 		for_each (qn.parents.begin(), qn.parents.end(),
-			 [](pair<const unsigned, int>& lcn) {
+			 [](pair<const unsigned long, int>& lcn) {
 				cout << format ("\tcrc: %08x level: %d\n")
 					% lcn.first % lcn.second;
 			  });
@@ -265,7 +265,7 @@ void kb_dump_cqnmap(char *filename)
 
 		cout << "\tchildren" << endl;
 		for_each (qn.children.begin(), qn.children.end(),
-			 [](pair<const unsigned, int>& lcn) {
+			 [](pair<const unsigned long, int>& lcn) {
 				cout << format ("\tcrc: %08x level: %d\n")
 					% lcn.first % lcn.second;
 			  });

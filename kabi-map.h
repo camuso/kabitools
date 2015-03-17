@@ -39,7 +39,7 @@ enum ctlflags {
 
 #ifdef __cplusplus
 
-typedef std::multimap<unsigned, int> cnodemap_t;
+typedef std::multimap<unsigned long, int> cnodemap_t;
 typedef cnodemap_t::value_type cnpair_t;
 typedef cnodemap_t::iterator cniterator_t;
 #endif
