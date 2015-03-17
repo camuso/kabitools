@@ -78,6 +78,10 @@ static const unsigned int crctab32[] = {
     0x2d02ef8dU
 };
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 unsigned long partial_crc32_one(unsigned char c, unsigned long crc);
 
 unsigned long partial_crc32(const char *s, unsigned long crc);
@@ -85,4 +89,8 @@ unsigned long partial_crc32(const char *s, unsigned long crc);
 unsigned long crc32(const char *s, unsigned long int crc);
 
 unsigned long raw_crc32(const char *s);
+#ifdef __cplusplus
+}
+#endif
+
 /*----------------------------------------------------------------------------*/
