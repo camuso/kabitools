@@ -28,10 +28,10 @@ public:
 	bool parse_opt(char opt, char ***argv,
 		       std::string &declstr, std::string &datafile);
 	bool parse_long_opt(char *argstr);
+	int kb_flags;
 
 private:
 	std::string longopts[OPT_COUNT];
-	int kb_flags;
 };
 
 #endif // OPTIONS_H

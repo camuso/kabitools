@@ -35,7 +35,6 @@ bool options::parse_long_opt(char *argstr)
 
 int options::get_options(int *idx, char **argv,
 			 string &declstr, string &datafile)
-
 {
 	int index = 0;
 	char *argstr;
@@ -52,7 +51,7 @@ int options::get_options(int *idx, char **argv,
 
 		for (i = 0; argstr[i]; ++i)
 			if (!parse_opt(argstr[i], &argv, declstr, datafile))
-				return 0;
+				return -1;
 		if (!*argv)
 			break;
 	}
