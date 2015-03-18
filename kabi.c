@@ -218,13 +218,14 @@ static void get_symbols	(struct qnode *parent,
 
 		get_declist(qn, sym);
 		decl = qn_extract_type(qn);
+
+#ifndef NDEBUG
+		if (strstr(decl, "struct device "))
+			puts(decl);
+#endif
 		crc = raw_crc32(decl);
 		qn->crc = crc;
 
-#ifndef NDEBUG
-		if (strstr(decl, "struct dev_pm_ops"))
-			puts(decl);
-#endif
 		if (parent->crc == crc)
 			qn->flags |= CTL_BACKPTR;
 		else if ((qn->flags & CTL_HASLIST)
