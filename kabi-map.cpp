@@ -234,6 +234,30 @@ void kb_read_cqnmap(string filename, Cqnodemap &cqnmap)
 	ifs.close();
 }
 
+bool kb_merge_cqnmap(char *filename)
+{
+	Cqnodemap cqm;
+
+	ifstream ifs(filename);
+	if (!ifs.is_open()) {
+		return false;
+	}
+
+	{
+		boost::archive::text_iarchive ia(ifs);
+		ia >> cqm;
+	}
+	ifs.close();
+
+	for (auto it : public_cqnmap.qnmap)
+		cqm.qnmap.insert(it);
+
+	remove(filename);
+	string datafilename(filename);
+	kb_write_cqnmap_other(datafilename, cqm);
+	return true;
+}
+
 #include <boost/format.hpp>
 using boost::format;
 
@@ -249,7 +273,7 @@ void kb_dump_cqnmap(char *filename)
 	for (auto it : qnmap) {
 		qnpair_t qnp = it;
 		qnode qn = qnp.second;
-		cout << format("crc: %08x flags: %08x decl: %s")
+		cout << format("%08x %08x %s ")
 			% qnp.first % qn.flags % qn.sdecl;
 		if (qn.flags & CTL_POINTER) cout << "*";
 		cout << qn.sname << endl;

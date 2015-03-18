@@ -133,6 +133,7 @@ extern bool qn_is_dup(struct qnode *qn, struct qnode* parent);
 extern const char *cstrcat(const char *d, const char *s);
 extern void kb_write_cqnmap(const char *filename);
 extern void kb_restore_cqnmap(char *filename);
+extern bool kb_merge_cqnmap(char *filename);
 extern void kb_dump_cqnmap(char *filename);
 #ifdef __cplusplus
 }
