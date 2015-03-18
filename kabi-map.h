@@ -62,7 +62,6 @@ struct qnode
 	// are not serialized. They are provided in the C namespace for
 	// the C-based parser to access.
 	char *name;
-	char *typnam;
 	void *symlist;
 	enum ctlflags flags;
 #ifdef __cplusplus
@@ -71,7 +70,6 @@ struct qnode
 	// at the end of the discovery process for this qnode.
 	qnode(){}
 	std::string sname;
-	std::string stypnam;
 	std::string sdecl;
 	cnodemap_t parents;
 	cnodemap_t children;
@@ -128,8 +126,9 @@ extern struct qnode *qn_lookup_crc(unsigned long crc);
 extern struct qnode *qn_lookup_crc_slist(unsigned long crc);
 extern bool qn_lookup_parent(struct qnode *qn, unsigned long crc);
 extern bool qn_lookup_child(struct qnode *qn, unsigned long crc);
-extern void qn_add_to_declist(struct qnode *qn, char *decl);
-extern const char *qn_extract_type(struct qnode *qn);
+extern void qn_add_to_decl(struct qnode *qn, char *decl);
+extern void qn_trim_decl(struct qnode *qn);
+extern const char *qn_get_decl(struct qnode *qn);
 extern bool qn_is_dup(struct qnode *qn, struct qnode* parent);
 extern const char *cstrcat(const char *d, const char *s);
 extern void kb_write_cqnmap(const char *filename);

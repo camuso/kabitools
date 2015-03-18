@@ -54,6 +54,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <sparse/symbol.h>
 
 #include "kabi.h"
@@ -139,6 +140,7 @@ static char *pad_out(int padsize, char padchar)
 	return buf;
 }
 #endif
+
 /*****************************************************
 ** sparse probing and mining
 ******************************************************/
@@ -183,7 +185,7 @@ static void get_declist(struct qnode *qn, struct symbol *sym)
 		if (basetype->type == SYM_PTR)
 			qn->flags |= CTL_POINTER;
 		else
-			qn_add_to_declist(qn, (char *)typnam);
+			qn_add_to_decl(qn, (char *)typnam);
 
 		if ((tm & (SM_STRUCT | SM_UNION))
 		   && (basetype->symbol_list)) {
@@ -196,11 +198,8 @@ static void get_declist(struct qnode *qn, struct symbol *sym)
 			qn->flags |= CTL_FUNCTION;
 	}
 
-	if (basetype->ident) {
-		qn->typnam = basetype->ident->name;
-		qn_add_to_declist(qn, basetype->ident->name);
-	} else
-		qn->typnam = (char *)typnam;
+	if (basetype->ident)
+		qn_add_to_decl(qn, basetype->ident->name);
 
 	get_declist(qn, basetype);
 }
@@ -212,20 +211,19 @@ static void get_symbols	(struct qnode *parent,
 	struct symbol *sym;
 
 	FOR_EACH_PTR(list, sym) {
-		const char *decl;
+		const char *decl = "";
 		unsigned long crc;
 		struct qnode *qn = new_qnode(parent, flags);
 
 		get_declist(qn, sym);
-		decl = qn_extract_type(qn);
-
+		qn_trim_decl(qn);
+		decl = qn_get_decl(qn);
+		crc = raw_crc32(decl);
+		qn->crc = crc;
 #ifndef NDEBUG
 		if (strstr(decl, "struct device "))
 			puts(decl);
 #endif
-		crc = raw_crc32(decl);
-		qn->crc = crc;
-
 		if (parent->crc == crc)
 			qn->flags |= CTL_BACKPTR;
 		else if ((qn->flags & CTL_HASLIST)
@@ -260,8 +258,9 @@ static void build_branch(char *symname, char *file)
 		qn->name = symname;
 		kabiflag = true;
 		get_declist(qn, sym);
-		decl = cstrcat(qn_extract_type(qn), qn->name);
+		decl = (char *)cstrcat(qn_get_decl(qn), qn->name);
 		qn->crc = raw_crc32(decl);
+		qn_trim_decl(qn);
 		update_qnode(qn, parent);
 
 		prdbg("EXPORTED: %s\n", decl);
@@ -270,7 +269,8 @@ static void build_branch(char *symname, char *file)
 			struct qnode *bqn = new_qnode(qn, CTL_RETURN);
 
 			get_declist(bqn, basetype);
-			decl = qn_extract_type(bqn);
+			qn_trim_decl(qn);
+			decl = qn_get_decl(bqn);
 			bqn->crc = raw_crc32(decl);
 			prdbg("RETURN: %s\n", decl);
 			update_qnode(bqn, qn);

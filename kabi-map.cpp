@@ -42,7 +42,6 @@ static inline qnode* alloc_qnode()
 static inline qnode* init_qnode(qnode *parent, qnode *qn, enum ctlflags flags)
 {
 	qn->name    = NULL;
-	qn->typnam  = NULL;
 	qn->symlist = NULL;
 	qn->flags   = flags;
 
@@ -77,7 +76,6 @@ void update_qnode(struct qnode *qn, struct qnode *parent)
 	qn->parents.insert(make_pair(parent->crc, parent->level+1));
 	parent->children.insert(make_pair(qn->crc, qn->level));
 	qn->sname   = qn->name   ? string(qn->name)   : string("");
-	qn->stypnam = qn->typnam ? string(qn->typnam) : string("");
 	public_cqnmap.qnmap.insert(qnpair_t(qn->crc, *qn));
 }
 
@@ -107,12 +105,17 @@ struct qnode* qn_lookup_crc(unsigned long crc)
 	return lookup_crc(crc, public_cqnmap.qnmap);
 }
 
-void qn_add_to_declist(struct qnode *qn, char *decl)
+void qn_add_to_decl(struct qnode *qn, char *decl)
 {
 	qn->sdecl += string(decl) + string(" ");
 }
 
-const char *qn_extract_type(struct qnode *qn)
+void qn_trim_decl(struct qnode *qn)
+{
+	qn->sdecl.erase(qn->sdecl.find_last_not_of(' ') + 1);
+}
+
+const char *qn_get_decl(struct qnode *qn)
 {
 	return qn->sdecl.c_str();
 }
@@ -162,7 +165,6 @@ bool qn_is_dup(struct qnode *qn, struct qnode* parent)
 			if (lqn.first == qn->crc) {
 				qnode* mapparent = qn_lookup_crc(parent->crc);
 				update_duplicate(&lqn.second, mapparent);
-				//delete_qnode(qn);
 				retval = true;
 			}
 		  });
