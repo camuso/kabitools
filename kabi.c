@@ -64,7 +64,7 @@
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-#define NDEBUG
+//#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -518,6 +518,13 @@ int main(int argc, char **argv)
 
 	if (kp_rmfiles)
 		remove(datafilename);
+
+	//if (cumulative && !kb_merge_cqnmap(datafilename)) {
+	//	kb_write_cqnmap(datafilename);
+		//kb_restore_cqnmap(datafilename);
+		//remove(datafilename);
+	//} else
+		kb_write_cqnmap(datafilename);
 
 	kb_write_cqnmap(datafilename);
 	DBG(kb_dump_cqnmap(datafilename);)
