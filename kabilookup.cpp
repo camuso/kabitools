@@ -119,7 +119,7 @@ int lookup::process_args(int argc, char **argv)
 
 	m_flags = m_opts.get_options(&argindex, &argv[0], m_declstr, m_datafile);
 
-	if (!check_flags())
+	if (m_flags < 0 || !check_flags())
 		return EXE_BADFORM;
 
 	return EXE_OK;
@@ -128,6 +128,9 @@ int lookup::process_args(int argc, char **argv)
 int lookup::execute()
 {
 	::kb_read_cqnmap(m_datafile, m_cqnmap);
+
+	if (!find_decl(m_qnr, m_declstr))
+		return EXE_NOTFOUND;
 
 	switch (m_flags & m_exemask) {
 	case KB_COUNT   : return exe_count();
@@ -141,12 +144,36 @@ int lookup::execute()
 #include <boost/format.hpp>
 using boost::format;
 
-void lookup::find_decl()
+int lookup::exe_count()
 {
+	int count = 0;
 	for (auto it : m_qnodes) {
-		if (it.first == m_crc)
-			m_qn = it.second;
+		qnode& qn = it.second;
+		if (m_opts.kb_flags & KB_WHOLE_WORD) {
+			if (qn.sdecl.compare(m_declstr) == 0)
+				count += qn.parents.size();
+		} else {
+			if (qn.sdecl.find(m_declstr) != string::npos)
+				count += qn.parents.size();
+		}
+
 	}
+
+	cout << count << endl;
+	return count !=0 ? EXE_OK : EXE_NOTFOUND;
+}
+
+bool lookup::find_decl(qnode& qnr, string decl)
+{
+	m_crc = ::raw_crc32(decl.c_str());
+
+	for (auto it : m_qnodes) {
+		if (it.first == m_crc) {
+			qnr = it.second;
+			return true;
+		}
+	}
+	return false;
 }
 
 int lookup::get_decl_list(std::vector<qnode> &retlist)
@@ -160,28 +187,15 @@ int lookup::get_decl_list(std::vector<qnode> &retlist)
 	return retlist.size();
 }
 
-int lookup::exe_count()
-{
-	m_crc = ::raw_crc32(m_declstr.c_str());
-	find_decl();
-
-	DBG(cout << format("%08x %08x %s\n") \
-	    % m_crc % m_qn.flags % m_qn.sdecl;)
-	cout << m_qn.parents.size() << endl;
-
-	return EXE_OK;
-}
-
-void lookup::fill_row(const qnode& qn, int level)
+void lookup::fill_row(const qnode *qn, int level)
 {
 	row r;
 	r.level = level;
-	r.flags = qn.flags;
-	r.decl = qn.sdecl;
-	r.name = qn.name;
+	r.flags = qn->flags;
+	r.decl = qn->sdecl;
+	r.name = qn->sname;
 	m_rows.push_back(r);
 }
-
 
 string &lookup::pad_out(int padsize)
 {
@@ -218,16 +232,16 @@ void lookup::put_rows()
 	}
 }
 
-int lookup::get_parents_deep(qnode& qn, int level)
+int lookup::get_parents_deep(qnode *qn, int level)
 {
-	cnodemap_t& cnmap = qn.parents;
+	cnodemap_t& cnmap = qn->parents;
 
 	// The level passed as a parameter is the level at which the symbol
 	// appears in its parent's hierarchy.
 	fill_row(qn, level);
 
 	for (auto it : cnmap) {
-		qn = *(qn_lookup_crc(it.first));
+		qn = qn_lookup_crc(it.first);
 
 		// The next parent will have a level one less than that of
 		// the symbol we just looked up (qn).
@@ -241,7 +255,7 @@ int lookup::get_parents_deep(qnode& qn, int level)
 
 int lookup::get_parents_wide()
 {
-	cnodemap_t& cnmap = m_qn.parents;
+	cnodemap_t& cnmap = m_qnp->parents;
 
 	for (auto it : cnmap) {
 		unsigned crc = it.first;
@@ -249,9 +263,9 @@ int lookup::get_parents_wide()
 
 		m_rows.clear();
 		m_rows.reserve(level);
-		fill_row(m_qn, level);
+		fill_row(m_qnp, level);
 
-		qnode& qn = *(qn_lookup_crc(crc));
+		qnode *qn = qn_lookup_crc(crc);
 		get_parents_deep(qn, level - 1);
 		put_rows();
 	}
@@ -261,11 +275,10 @@ int lookup::get_parents_wide()
 int lookup::exe_struct()
 {
 	m_crc = ::raw_crc32(m_declstr.c_str());
-	find_decl();
 
-	if (m_qn.parents.size() == 0) {
+	if (m_qnp->parents.size() == 0) {
 		m_rows.clear();
-		fill_row(m_qn, 0);
+		fill_row(m_qnp, 0);
 		put_rows();
 		return EXE_OK;
 	}
