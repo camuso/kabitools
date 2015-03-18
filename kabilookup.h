@@ -58,10 +58,10 @@ private:
 	std::string &pad_out(int padsize);
 	void put_row(row &r);
 	void put_rows();
-	void fill_row(const qnode *qn, int level);
-	qnode *find_decl();
+	void fill_row(const qnode &qn, int level);
+	void find_decl();
 	int get_decl_list(std::vector<qnode> &retlist);
-	int get_parents_deep(qnode *qn, int level);
+	int get_parents_deep(qnode &qn, int level);
 	int get_parents_wide();
 	int execute();
 	int exe_count();
@@ -71,15 +71,15 @@ private:
 	Cqnodemap &m_cqnmap = get_public_cqnmap();
 	options m_opts;
 	error m_err;
-	qnode *m_qn;
+	qnode m_qn;
 
 	// member basetypes
-	cnodemap_t *m_cnmap;
+	cnodemap_t m_cnmap;
 	qnodemap_t &m_qnodes = m_cqnmap.qnmap;
 	std::vector<row> m_rows;
 	std::string m_datafile = "../kabi-data.dat";
 	std::string m_declstr;
-	unsigned m_crc;
+	unsigned long m_crc;
 	int m_flags;
 	int m_errindex = 0;
 	int m_exemask  = KB_COUNT | KB_DECL | KB_EXPORTS | KB_STRUCT;
