@@ -60,13 +60,13 @@ struct qnode *new_firstqnode(char *file,
 			     enum ctlflags flags,
 			     struct qnode **pparent)
 {
-
 	*pparent = alloc_qnode();
 	struct qnode *parent = *pparent;
 	parent->sdecl = string(file);
 	parent->level = 0;
 	parent->flags = CTL_FILE;
 	parent->crc = 0;
+	public_cqnmap.qnmap.insert(qnpair_t(parent->crc, *parent));
 	parent->parents.insert(make_pair(parent->crc, parent->level));
 	return new_qnode(parent, flags);
 }
@@ -273,6 +273,10 @@ void kb_dump_cqnmap(char *filename)
 	for (auto it : qnmap) {
 		qnpair_t qnp = it;
 		qnode qn = qnp.second;
+
+		if (qn.flags & CTL_FILE)
+			cout << "FILE: ";
+
 		cout << format("%08x %08x %s ")
 			% qnp.first % qn.flags % qn.sdecl;
 		if (qn.flags & CTL_POINTER) cout << "*";
