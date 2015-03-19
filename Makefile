@@ -1,21 +1,24 @@
-PARSER_CFLAGS	:= -I/usr/include/sparse -I/usr/include/c++/4.9.2
-PARSER_LIBS	:= -lsparse -lboost_serialization
-PARSER_OBJS	:= kabi.o checksum.o kabi-map.o
-PARSER_HDRS	:= kabi.h checksum.h kabi-map.h
+CFLAGS 		+= -I/usr/include/sparse -I/usr/include/c++/4.9.2
+CXXFLAGS	+= -std=gnu++11
 
-LOOKUP_CFLAGS	:= -std=gnu++11
-LOOKUP_LIBS	:= -lboost_serialization
-LOOKUP_OBJS	:= kabilookup.o kabi-map.o options.o error.o checksum.o
-LOOKUP_HDRS	:= kabilookup.h kabi-map.h options.h error.h checksum.h
+LIBS		+= -lsparse -lboost_serialization
 
-COMPDB_CFLAGS	:= -std=gnu++11
-COMPDB_LIBS	:= -lboost_serialization
+COMMON_OBJS	:= checksum.o kabi-map.o
+COMMON_HDRS	:= checksum.h kabi-map.h
+
+PARSER_OBJS	:= $(COMMON_OBJS) kabi.o
+PARSER_HDRS	:= $(COMMON_HDRS) kabi.h $
+
+LOOKUP_OBJS	:= $(COMMON_OBJS) kabilookup.o options.o error.o
+LOOKUP_HDRS	:= $(COMMON_HDRS) kabilookup.h options.h error.h
+
 COMPDB_OBJS	:= kabi-compdb.o kabi-node.o
 COMPDB_HDRS	:= kabi-compdb.h kabi-node.h
 
-CXXFLAGS	+= -std=gnu++11
+DUMP_OBJS	:= $(COMMON_OBJS) kabidump.o
+DUMP_HDRS	:= $(COMMON_HDRS) kabidump.h
 
-PROGRAMS=kabi-parser kabi-lookup kabi-compdb
+PROGRAMS = kabi-parser kabi-lookup kabi-compdb kabi-dump
 
 all	: $(PROGRAMS)
 
@@ -23,10 +26,13 @@ clean	:
 	rm -vf *.o $(PROGRAMS)
 
 kabi-parser	: $(PARSER_OBJS) $(PARSER_HDRS)
-	g++ $(CXXFLAGS) $(PARSER_CFLAGS) -o kabi-parser $(PARSER_OBJS) $(PARSER_LIBS)
+	g++ $(CXXFLAGS) $(CFLAGS) -o kabi-parser $(PARSER_OBJS) $(LIBS)
 
 kabi-lookup 	: $(LOOKUP_OBJS) $(LOOKUP_HDRS)
-	g++ $(CXXFLAGS) $(LOOKUP_CFLAGS) -o kabi-lookup $(LOOKUP_OBJS) $(LOOKUP_LIBS)
+	g++ $(CXXFLAGS) -o kabi-lookup $(LOOKUP_OBJS) $(LIBS)
+
+kabi-dump	: $(DUMP_OBJS) $(DUMP_HDRS)
+	g++ $(CXXFLAGS) -o kabi-dump $(DUMP_OBJS) $(LIBS)
 
 kabi-compdb	: $(COMPDB_OBJS) $(COMPDB_HDRS)
-	g++ $(CXXFLAGS) $(COMPDB_CFLAGS) -o kabi-compdb $(COMPDB_OBJS) $(COMPDB_LIBS)
+	g++ $(CXXFLAGS) -o kabi-compdb $(COMPDB_OBJS) $(LIBS)
