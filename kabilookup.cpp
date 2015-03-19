@@ -42,9 +42,6 @@ do { \
 #define prdbg(fmt, ...)
 #endif
 
-
-using namespace std;
-
 string lookup::get_helptext()
 {
 	return "\
@@ -147,16 +144,19 @@ using boost::format;
 int lookup::exe_count()
 {
 	int count = 0;
-	for (auto it : m_qnodes) {
-		qnode& qn = it.second;
-		if (m_opts.kb_flags & KB_WHOLE_WORD) {
+
+	if (m_opts.kb_flags & KB_WHOLE_WORD) {
+		for (auto it : m_qnodes) {
+			qnode& qn = it.second;
 			if (qn.sdecl.compare(m_declstr) == 0)
 				count += qn.parents.size();
-		} else {
+		}
+	} else {
+		for (auto it : m_qnodes) {
+			qnode& qn = it.second;
 			if (qn.sdecl.find(m_declstr) != string::npos)
 				count += qn.parents.size();
 		}
-
 	}
 
 	cout << count << endl;
