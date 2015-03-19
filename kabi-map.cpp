@@ -37,7 +37,7 @@ dupmap_t dupmap;
 
 static inline qnode* lookup_crc(unsigned long crc, qnodemap_t& qnmap)
 {
-	qniterator_t it = qnmap.find(crc);
+	qniterator_t it = qnmap.lower_bound(crc);
 	return it != qnmap.end() ? &(*it).second : NULL;
 }
 
@@ -94,7 +94,7 @@ void update_qnode(struct qnode *qn, struct qnode *parent)
 {
 	qn->parents.insert(make_pair(parent->crc, parent->level+1));
 	parent->children.insert(make_pair(qn->crc, qn->level));
-	qn->sname   = qn->name   ? string(qn->name)   : string("");
+	qn->sname = qn->name ? string(qn->name) : string("");
 	public_cqnmap.qnmap.insert(qnpair_t(qn->crc, *qn));
 }
 
@@ -179,9 +179,9 @@ bool qn_is_dup(struct qnode *qn, struct qnode* parent)
 	if ((dupmap.find(qn->crc) == dupmap.end()) || !parent)
 		return false;
 
-	//update_duplicate(qn, parent);
-	qn->parents.insert(cnpair_t(parent->crc, qn->level));
-	parent->children.insert(cnpair_t(qn->crc, qn->level));
+	update_duplicate(qn, parent);
+	//qn->parents.insert(cnpair_t(parent->crc, qn->level));
+	//parent->children.insert(cnpair_t(qn->crc, qn->level));
 	return true;
 }
 

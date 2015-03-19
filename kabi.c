@@ -64,7 +64,7 @@
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-#define NDEBUG
+//#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -107,6 +107,7 @@ static struct symbol_list *symlist = NULL;
 static bool kabiflag = false;
 
 static char *datafilename = "../kabi-data.dat";
+static char *dupfilename = "../dupfile.dat";
 
 /*****************************************************
 ** sparse wrappers
@@ -221,7 +222,7 @@ static void get_symbols	(struct qnode *parent,
 		crc = raw_crc32(decl);
 		qn->crc = crc;
 #ifndef NDEBUG
-		if (strstr(decl, "struct device "))
+		if (!strcmp(decl, "struct device"))
 			puts(decl);
 #endif
 		if (parent->crc == crc)
@@ -503,10 +504,17 @@ int main(int argc, char **argv)
 	argv += argindex;
 	argc -= argindex;
 
-	//if (cumulative) {
-	//	kb_restore_cqnmap(datafilename);
-	//	remove(datafilename);
-	//}
+	if (kp_rmfiles) {
+		remove(datafilename);
+		remove(dupfilename);
+	}
+
+	if (cumulative) {
+		kb_restore_cqnmap(datafilename);
+		kb_restore_dupmap(dupfilename);
+		remove(datafilename);
+		remove(dupfilename);
+	}
 
 	symlist = sparse_initialize(argc, argv, &filelist);
 
@@ -520,14 +528,12 @@ int main(int argc, char **argv)
 	if (! kabiflag)
 		return 1;
 
-	if (kp_rmfiles)
-		remove(datafilename);
-
-	if (cumulative) {
-		if (!kb_merge_cqnmap(datafilename))
-			kb_write_cqnmap(datafilename);
-	} else
+	//if (cumulative) {
+	//	if (!kb_merge_cqnmap(datafilename))
+	//		kb_write_cqnmap(datafilename);
+	//} else
 		kb_write_cqnmap(datafilename);
+		kb_write_dupmap(dupfilename);
 
 	DBG(kb_dump_cqnmap(datafilename);)
 
