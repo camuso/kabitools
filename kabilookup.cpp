@@ -146,11 +146,12 @@ int lookup::exe_count()
 	int count = 0;
 
 	if (m_opts.kb_flags & KB_WHOLE_WORD) {
-		for (auto it : m_qnodes) {
-			qnode& qn = it.second;
-			if (qn.sdecl.compare(m_declstr) == 0)
-				count += qn.parents.size();
-		}
+		m_crc = raw_crc32(m_declstr.c_str());
+		pair<qniterator_t, qniterator_t> range;
+		range = m_qnodes.equal_range(m_crc);
+		for_each (range.first, range.second,
+			  [&count](qnpair_t& lqn)
+			  { count += lqn.second.parents.size(); });
 	} else {
 		for (auto it : m_qnodes) {
 			qnode& qn = it.second;

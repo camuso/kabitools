@@ -27,11 +27,19 @@
 #include <boost/archive/text_iarchive.hpp>
 #include <boost/serialization/map.hpp>
 
+#include "checksum.h"
 #include "kabi-map.h"
 
 using namespace std;
 
 Cqnodemap public_cqnmap;
+dupmap_t dupmap;
+
+static inline qnode* lookup_crc(unsigned long crc, qnodemap_t& qnmap)
+{
+	qniterator_t it = qnmap.find(crc);
+	return it != qnmap.end() ? &(*it).second : NULL;
+}
 
 static inline qnode* alloc_qnode()
 {
@@ -56,19 +64,30 @@ inline struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags)
 	return qn;
 }
 
-struct qnode *new_firstqnode(char *file,
-			     enum ctlflags flags,
-			     struct qnode **pparent)
+// The File is parent of all symbols found within it. The parent field
+// will point to itself, but it will not be in the children map.
+// All the exported functions in the file will be in the file node's
+// children map.
+struct qnode *new_firstqnode(char *file)
 {
-	*pparent = alloc_qnode();
-	struct qnode *parent = *pparent;
+	// The "parent" of the File node is itself, so all the fields should
+	// be identical, except that the parent of the File node has no
+	// parents and only one child.
+	struct qnode *parent = alloc_qnode();
+	parent->name = NULL;
 	parent->sdecl = string(file);
 	parent->level = 0;
 	parent->flags = CTL_FILE;
-	parent->crc = 0;
-	public_cqnmap.qnmap.insert(qnpair_t(parent->crc, *parent));
+	parent->crc = raw_crc32(file);
 	parent->parents.insert(make_pair(parent->crc, parent->level));
-	return new_qnode(parent, flags);
+
+	struct qnode *qn = new_qnode(parent, parent->flags);
+	qn->name  = parent->name;
+	qn->sdecl = parent->sdecl;
+	qn->level = parent->level;
+	qn->crc   = parent->crc;
+	update_qnode(qn, parent);
+	return qn;
 }
 
 void update_qnode(struct qnode *qn, struct qnode *parent)
@@ -76,6 +95,17 @@ void update_qnode(struct qnode *qn, struct qnode *parent)
 	qn->parents.insert(make_pair(parent->crc, parent->level+1));
 	parent->children.insert(make_pair(qn->crc, qn->level));
 	qn->sname   = qn->name   ? string(qn->name)   : string("");
+	public_cqnmap.qnmap.insert(qnpair_t(qn->crc, *qn));
+}
+
+void update_dupmap(qnode *qn)
+{
+	if (dupmap.find(qn->crc) == dupmap.end())
+		dupmap.insert(dupair_t(qn->crc, *qn));
+}
+
+void insert_qnode(struct qnode *qn)
+{
 	public_cqnmap.qnmap.insert(qnpair_t(qn->crc, *qn));
 }
 
@@ -87,12 +117,6 @@ Cqnodemap& get_public_cqnmap()
 void delete_qnode(struct qnode *qn)
 {
 	delete qn;
-}
-
-static inline qnode* lookup_crc(unsigned long crc, qnodemap_t& qnmap)
-{
-	qniterator_t it = qnmap.find(crc);
-	return it != qnmap.end() ? &(*it).second : NULL;
 }
 
 struct qnode* qn_lookup_crc_other(unsigned long crc, Cqnodemap& Cqnmap)
@@ -134,8 +158,8 @@ static inline bool is_inlist(pair<unsigned, int> cn, cnodemap_t& cnmap)
 		return false;
 
 	cniterator_t it = find_if (range.first, range.second,
-		  [&cn](pair<unsigned, int> lcn)
-			{ return lcn.second == cn.second; });
+				[&cn](pair<unsigned, int> lcn)
+				{ return lcn.second == cn.second; });
 	return it != range.second;
 }
 
@@ -152,30 +176,51 @@ static inline void update_duplicate(qnode *qn, qnode *parent)
 
 bool qn_is_dup(struct qnode *qn, struct qnode* parent)
 {
-	bool retval = false;
-	qnodemap_t& qnmap = public_cqnmap.qnmap;
-	pair<qniterator_t, qniterator_t> range;
-	range = qnmap.equal_range(qn->crc);
-
-	if (range.first == qnmap.end())
+	if ((dupmap.find(qn->crc) == dupmap.end()) || !parent)
 		return false;
 
-	for_each (range.first, range.second,
-		 [&qn, &parent, &retval](qnpair_t& lqn) {
-			if (lqn.first == qn->crc) {
-				qnode* mapparent = qn_lookup_crc(parent->crc);
-				update_duplicate(&lqn.second, mapparent);
-				retval = true;
-			}
-		  });
-
-	return retval;
+	//update_duplicate(qn, parent);
+	qn->parents.insert(cnpair_t(parent->crc, qn->level));
+	parent->children.insert(cnpair_t(qn->crc, qn->level));
+	return true;
 }
 
 const char *cstrcat(const char *d, const char *s)
 {
 	string dd = string(d) + string(s);
 	return dd.c_str();
+}
+
+void kb_write_dupmap(char *filename)
+{
+	ofstream ofs(filename, ofstream::out | ofstream::app);
+	if (!ofs.is_open()) {
+		cout << "Cannot open file: " << filename << endl;
+		exit(1);
+	}
+
+	{
+		boost::archive::text_oarchive oa(ofs);
+		oa << dupmap;
+	}
+	ofs.close();
+
+}
+
+void kb_restore_dupmap(char *filename)
+{
+	ifstream ifs(filename);
+	if (!ifs.is_open()) {
+		fprintf(stderr, "File %s does not exist. A new file"
+				" will be created\n.", filename);
+		return;
+	}
+
+	{
+		boost::archive::text_iarchive ia(ifs);
+		ia >> dupmap;
+	}
+	ifs.close();
 }
 
 static inline void write_cqnmap(const char *filename, Cqnodemap& cqnmap)
@@ -237,6 +282,8 @@ void kb_read_cqnmap(string filename, Cqnodemap &cqnmap)
 bool kb_merge_cqnmap(char *filename)
 {
 	Cqnodemap cqm;
+	qnodemap_t& cqm_nodes = cqm.qnmap;
+	qnodemap_t& public_nodes = public_cqnmap.qnmap;
 
 	ifstream ifs(filename);
 	if (!ifs.is_open()) {
@@ -249,8 +296,7 @@ bool kb_merge_cqnmap(char *filename)
 	}
 	ifs.close();
 
-	for (auto it : public_cqnmap.qnmap)
-		cqm.qnmap.insert(it);
+	cqm_nodes.insert(public_nodes.begin(), public_nodes.end());
 
 	remove(filename);
 	string datafilename(filename);
@@ -277,12 +323,15 @@ void kb_dump_cqnmap(char *filename)
 		if (qn.flags & CTL_FILE)
 			cout << "FILE: ";
 
+		if (qn.sdecl.find("ipmi_shadow_smi_handlers") != string::npos)
+			cout << "BREAK" << endl;
+
 		cout << format("%08x %08x %s ")
 			% qnp.first % qn.flags % qn.sdecl;
 		if (qn.flags & CTL_POINTER) cout << "*";
 		cout << qn.sname << endl;
 
-		cout << "\tparents" << endl;
+		cout << "\tparents: " << qn.parents.size() << endl;
 
 		for_each (qn.parents.begin(), qn.parents.end(),
 			 [](pair<const unsigned long, int>& lcn) {
@@ -293,7 +342,8 @@ void kb_dump_cqnmap(char *filename)
 		if (!qn.children.size())
 			goto bottom;
 
-		cout << "\tchildren" << endl;
+		cout << "\tchildren: " << qn.children.size() << endl;
+
 		for_each (qn.children.begin(), qn.children.end(),
 			 [](pair<const unsigned long, int>& lcn) {
 				cout << format ("\tcrc: %08x level: %d\n")

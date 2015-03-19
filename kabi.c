@@ -64,7 +64,7 @@
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-//#define NDEBUG
+#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -235,33 +235,33 @@ static void get_symbols	(struct qnode *parent,
 		if (sym->ident)
 			qn->name = sym->ident->name;
 
-		update_qnode(qn, parent);
+		update_dupmap(qn);
 		prdbg("%s%s %s\n", pad_out(qn->level, ' '), decl, qn->name);
 
 		if ((qn->flags & CTL_HASLIST) && !(qn->flags & CTL_BACKPTR))
 			proc_symlist(qn, (struct symbol_list *)qn->symlist,
 				     CTL_NESTED);
+
+		update_qnode(qn, parent);
+
 	} END_FOR_EACH_PTR(sym);
 }
 
-static void build_branch(char *symname, char *file)
+static void build_branch(char *symname, struct qnode *parent)
 {
 	struct symbol *sym;
 
 	if ((sym = find_internal_exported(symlist, symname))) {
 		const char *decl;
 		struct symbol *basetype = sym->ctype.base_type;
-		struct qnode *qn;
-		struct qnode *parent = NULL;
+		struct qnode *qn = new_qnode(parent, CTL_EXPORTED);
 
-		qn = new_firstqnode(file, CTL_EXPORTED, &parent);
 		qn->name = symname;
 		kabiflag = true;
 		get_declist(qn, sym);
 		decl = (char *)cstrcat(qn_get_decl(qn), qn->name);
-		qn->crc = raw_crc32(decl);
 		qn_trim_decl(qn);
-		update_qnode(qn, parent);
+		qn->crc = raw_crc32(decl);
 
 		prdbg("EXPORTED: %s\n", decl);
 
@@ -269,15 +269,18 @@ static void build_branch(char *symname, char *file)
 			struct qnode *bqn = new_qnode(qn, CTL_RETURN);
 
 			get_declist(bqn, basetype);
-			qn_trim_decl(qn);
+			qn_trim_decl(bqn);
 			decl = qn_get_decl(bqn);
 			bqn->crc = raw_crc32(decl);
 			prdbg("RETURN: %s\n", decl);
+			update_dupmap(bqn);
 			update_qnode(bqn, qn);
 		}
 
 		if (basetype->arguments)
 			get_symbols(qn, basetype->arguments, CTL_ARG);
+
+		update_qnode(qn, parent);
 	}
 }
 
@@ -286,7 +289,7 @@ static inline bool begins_with(const char *a, const char *b)
 	return (strncmp(a, b, strlen(b)) == 0);
 }
 
-static void build_tree(struct symbol_list *symlist, char *file)
+static void build_tree(struct symbol_list *symlist, struct qnode *parent)
 {
 	struct symbol *sym;
 
@@ -296,7 +299,7 @@ static void build_tree(struct symbol_list *symlist, char *file)
 		    begins_with(sym->ident->name, ksymprefix)) {
 			int offset = strlen(ksymprefix);
 			char *symname = &sym->ident->name[offset];
-			build_branch(symname, file);
+			build_branch(symname, parent);
 		}
 
 	} END_FOR_EACH_PTR(sym);
@@ -500,17 +503,18 @@ int main(int argc, char **argv)
 	argv += argindex;
 	argc -= argindex;
 
-	if (cumulative) {
-		kb_restore_cqnmap(datafilename);
-		remove(datafilename);
-	}
+	//if (cumulative) {
+	//	kb_restore_cqnmap(datafilename);
+	//	remove(datafilename);
+	//}
 
 	symlist = sparse_initialize(argc, argv, &filelist);
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
+		struct qnode *qn = new_firstqnode(file);
 		prdbg("sparse file: %s\n", file);
 		symlist = sparse(file);
-		build_tree(symlist,file);
+		build_tree(symlist, qn);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
 	if (! kabiflag)
@@ -519,14 +523,12 @@ int main(int argc, char **argv)
 	if (kp_rmfiles)
 		remove(datafilename);
 
-	//if (cumulative && !kb_merge_cqnmap(datafilename)) {
-	//	kb_write_cqnmap(datafilename);
-		//kb_restore_cqnmap(datafilename);
-		//remove(datafilename);
-	//} else
+	if (cumulative) {
+		if (!kb_merge_cqnmap(datafilename))
+			kb_write_cqnmap(datafilename);
+	} else
 		kb_write_cqnmap(datafilename);
 
-	kb_write_cqnmap(datafilename);
 	DBG(kb_dump_cqnmap(datafilename);)
 
 	return 0;

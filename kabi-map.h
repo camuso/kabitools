@@ -39,14 +39,28 @@ enum ctlflags {
 
 #ifdef __cplusplus
 
+// This is a hash map used for parents and children of qnodes.
+// The hash map is composed of a std::pair typed as cnpair_t
+// cnpair_t.first  - crc
+// cnpair_t.second - level
+//
+// In the parent list, the level field contains the level at which the qnode
+// appears in the parent's hierarchy.
+// In the child list, it's the level at which the child appears in this
+// qnode's hierarchy.
+// For example, if a qnode appears at level n in the hierarchy, the parent
+// in the qnode's parents map will have n in its level field and the child
+// in the qnode's children map will have n+1 in its level map.
+//
 typedef std::multimap<unsigned long, int> cnodemap_t;
 typedef cnodemap_t::value_type cnpair_t;
 typedef cnodemap_t::iterator cniterator_t;
+
 #endif
 
 struct qnode
 {
-	unsigned crc;	// Key
+	unsigned long crc;	// Key
 
 	// level is volatile and subject to change with each instance,
 	// even of qnodes having the same crc. It is used only during
@@ -86,10 +100,20 @@ struct qnode
 
 #ifdef __cplusplus
 
-typedef std::multimap<unsigned, qnode> qnodemap_t;
+// This is the hash map for the qnodes.
+//
+typedef std::multimap<unsigned long, qnode> qnodemap_t;
 typedef qnodemap_t::value_type qnpair_t;
 typedef qnodemap_t::iterator qniterator_t;
 typedef qnodemap_t::reverse_iterator qnriterator_t;
+
+// This hash map keeps track of duplicates on a file-by-file basis.
+// The dup list can be cumulatively built as each file is processed
+// depending on the "cumulative" flag state.
+//
+typedef std::map<unsigned long, qnode> dupmap_t;
+typedef dupmap_t::value_type dupair_t;
+typedef dupmap_t::iterator dupiterator_t;
 
 class Cqnodemap
 {
@@ -115,10 +139,10 @@ extern "C"
 #endif
 
 extern struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags);
-extern struct qnode *new_firstqnode(char *file,
-				    enum ctlflags flags,
-				    struct qnode **pparent);
+extern struct qnode *new_firstqnode(char *file);
 extern void update_qnode(struct qnode *qn, struct qnode *parent);
+extern void update_dupmap(struct qnode *qn);
+extern void insert_qnode(struct qnode *qn);
 extern void delete_qnode(struct qnode *qn);
 extern void qn_add_parent(struct qnode *qn, struct qnode *parent);
 extern void qn_add_child(struct qnode *qn, struct qnode *child);
@@ -131,6 +155,8 @@ extern void qn_trim_decl(struct qnode *qn);
 extern const char *qn_get_decl(struct qnode *qn);
 extern bool qn_is_dup(struct qnode *qn, struct qnode* parent);
 extern const char *cstrcat(const char *d, const char *s);
+extern void kb_write_dupmap(char *filename);
+extern void kb_restore_dupmap(char *filename);
 extern void kb_write_cqnmap(const char *filename);
 extern void kb_restore_cqnmap(char *filename);
 extern bool kb_merge_cqnmap(char *filename);
