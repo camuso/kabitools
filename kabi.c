@@ -219,9 +219,18 @@ static void get_symbols	(struct qnode *parent,
 		get_declist(qn, sym);
 		qn_trim_decl(qn);
 		decl = qn_get_decl(qn);
+
+		if (sym->ident) {
+			qn->name = sym->ident->name;
+			if (!(qn->flags & CTL_STRUCT))
+				decl = cstrcat(decl, qn->name);
+		}
+
 		crc = raw_crc32(decl);
 		qn->crc = crc;
 #ifndef NDEBUG
+		if (qn->crc == 0)
+			puts(decl);
 		if (!strcmp(decl, "struct device"))
 			puts(decl);
 #endif
@@ -232,9 +241,6 @@ static void get_symbols	(struct qnode *parent,
 			qn->flags &= ~CTL_HASLIST;
 			continue;
 		}
-
-		if (sym->ident)
-			qn->name = sym->ident->name;
 
 		update_dupmap(qn);
 		prdbg("%s%s %s\n", pad_out(qn->level, ' '), decl, qn->name);
