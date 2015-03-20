@@ -64,7 +64,7 @@
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-#define NDEBUG
+//#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -263,7 +263,12 @@ static void build_branch(char *symname, struct qnode *parent)
 		const char *decl;
 		struct symbol *basetype = sym->ctype.base_type;
 		struct qnode *qn = new_qnode(parent, CTL_EXPORTED);
+		struct qnode *bqn;
 
+#ifndef NDEBUG
+		if (!strcmp(symname, "sparse_keymap_entry_from_keycode"))
+			puts(symname);
+#endif
 		qn->name = symname;
 		kabiflag = true;
 		get_declist(qn, sym);
@@ -275,8 +280,7 @@ static void build_branch(char *symname, struct qnode *parent)
 		prdbg("EXPORTED: %s\n", decl);
 
 		if (qn->flags & CTL_HASLIST) {
-			struct qnode *bqn = new_qnode(qn, CTL_RETURN);
-
+			bqn = new_qnode(qn, CTL_RETURN);
 			get_declist(bqn, basetype);
 			qn_trim_decl(bqn);
 			decl = qn_get_decl(bqn);
