@@ -134,6 +134,11 @@ void qn_add_to_decl(struct qnode *qn, char *decl)
 	qn->sdecl += string(decl) + string(" ");
 }
 
+const char *cstrcat(const char *d, const char *s)
+{
+	string dd = string(d) + " " + string(s);
+	return dd.c_str();
+}
 void qn_trim_decl(struct qnode *qn)
 {
 	qn->sdecl.erase(qn->sdecl.find_last_not_of(' ') + 1);
@@ -183,12 +188,6 @@ bool qn_is_dup(struct qnode *qn, struct qnode* parent)
 	//qn->parents.insert(cnpair_t(parent->crc, qn->level));
 	//parent->children.insert(cnpair_t(qn->crc, qn->level));
 	return true;
-}
-
-const char *cstrcat(const char *d, const char *s)
-{
-	string dd = string(d) + string(s);
-	return dd.c_str();
 }
 
 void kb_write_dupmap(char *filename)
