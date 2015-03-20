@@ -106,6 +106,7 @@ typedef std::multimap<unsigned long, qnode> qnodemap_t;
 typedef qnodemap_t::value_type qnpair_t;
 typedef qnodemap_t::iterator qniterator_t;
 typedef qnodemap_t::reverse_iterator qnriterator_t;
+typedef std::pair<qniterator_t, qniterator_t> qnitpair_t;
 
 // This hash map keeps track of duplicates on a file-by-file basis.
 // The dup list can be cumulatively built as each file is processed
