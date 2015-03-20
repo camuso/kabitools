@@ -220,6 +220,12 @@ static void get_symbols	(struct qnode *parent,
 		qn_trim_decl(qn);
 		decl = qn_get_decl(qn);
 
+		// We are only interested in grouping identical compound
+		// data types, so we will only create a crc for their type,
+		// e.g. "struct foo". For base types and functions, we must
+		// include the name (identifier) in the crc as well, or
+		// there will be no distinction among them.
+		//
 		if (sym->ident) {
 			qn->name = sym->ident->name;
 			if (!(qn->flags & CTL_STRUCT))
@@ -229,8 +235,6 @@ static void get_symbols	(struct qnode *parent,
 		crc = raw_crc32(decl);
 		qn->crc = crc;
 #ifndef NDEBUG
-		if (qn->crc == 0)
-			puts(decl);
 		if (!strcmp(decl, "struct device"))
 			puts(decl);
 #endif
@@ -242,15 +246,12 @@ static void get_symbols	(struct qnode *parent,
 			continue;
 		}
 
-		update_dupmap(qn);
+		update_qnode(qn, parent);
 		prdbg("%s%s %s\n", pad_out(qn->level, ' '), decl, qn->name);
 
 		if ((qn->flags & CTL_HASLIST) && !(qn->flags & CTL_BACKPTR))
 			proc_symlist(qn, (struct symbol_list *)qn->symlist,
 				     CTL_NESTED);
-
-		update_qnode(qn, parent);
-
 	} END_FOR_EACH_PTR(sym);
 }
 
@@ -269,6 +270,7 @@ static void build_branch(char *symname, struct qnode *parent)
 		decl = (char *)cstrcat(qn_get_decl(qn), qn->name);
 		qn_trim_decl(qn);
 		qn->crc = raw_crc32(decl);
+		update_qnode(qn, parent);
 
 		prdbg("EXPORTED: %s\n", decl);
 
@@ -280,14 +282,12 @@ static void build_branch(char *symname, struct qnode *parent)
 			decl = qn_get_decl(bqn);
 			bqn->crc = raw_crc32(decl);
 			prdbg("RETURN: %s\n", decl);
-			update_dupmap(bqn);
 			update_qnode(bqn, qn);
 		}
 
 		if (basetype->arguments)
 			get_symbols(qn, basetype->arguments, CTL_ARG);
 
-		update_qnode(qn, parent);
 	}
 }
 
@@ -510,16 +510,9 @@ int main(int argc, char **argv)
 	argv += argindex;
 	argc -= argindex;
 
-	if (kp_rmfiles) {
-		remove(datafilename);
-		remove(dupfilename);
-	}
-
 	if (cumulative) {
 		kb_restore_cqnmap(datafilename);
-		kb_restore_dupmap(dupfilename);
 		remove(datafilename);
-		remove(dupfilename);
 	}
 
 	symlist = sparse_initialize(argc, argv, &filelist);
@@ -534,13 +527,10 @@ int main(int argc, char **argv)
 	if (! kabiflag)
 		return 1;
 
-	//if (cumulative) {
-	//	if (!kb_merge_cqnmap(datafilename))
-	//		kb_write_cqnmap(datafilename);
-	//} else
-		kb_write_cqnmap(datafilename);
-		kb_write_dupmap(dupfilename);
+	if (kp_rmfiles)
+		remove(datafilename);
 
+	kb_write_cqnmap(datafilename);
 	DBG(kb_dump_cqnmap(datafilename);)
 
 	return 0;

@@ -181,13 +181,24 @@ static inline void update_duplicate(qnode *qn, qnode *parent)
 
 bool qn_is_dup(struct qnode *qn, struct qnode* parent)
 {
-	if ((dupmap.find(qn->crc) == dupmap.end()) || !parent)
+	bool retval = false;
+	qnodemap_t& qnmap = public_cqnmap.qnmap;
+	pair<qniterator_t, qniterator_t> range;
+	range = qnmap.equal_range(qn->crc);
+
+	if (range.first == qnmap.end())
 		return false;
 
-	update_duplicate(qn, parent);
-	//qn->parents.insert(cnpair_t(parent->crc, qn->level));
-	//parent->children.insert(cnpair_t(qn->crc, qn->level));
-	return true;
+	for_each (range.first, range.second,
+		 [&qn, &parent, &retval](qnpair_t& lqn) {
+			if (lqn.first == qn->crc) {
+				qnode* mapparent = qn_lookup_crc(parent->crc);
+				update_duplicate(&lqn.second, mapparent);
+				retval = true;
+			}
+		  });
+
+	return retval;
 }
 
 void kb_write_dupmap(char *filename)
