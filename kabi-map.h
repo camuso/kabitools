@@ -59,8 +59,13 @@ typedef cnodemap_t::iterator cniterator_t;
 #endif
 
 struct qnode
-{
-	unsigned long crc;	// Key
+{	
+	// The crc is the key to the map pair. It is only valid until
+	// the parser exits. Thereafter, it is not valid as a qnode
+	// field, but rather as the the "first" field of an std::pair
+	// comprised of the crc and the qnode itself, which is serialized
+	// as the "second" field of the std::pair.
+	unsigned long crc;
 
 	// level is volatile and subject to change with each instance,
 	// even of qnodes having the same crc. It is used only during
@@ -72,16 +77,23 @@ struct qnode
 	// in their respective hierarchies.
 	int level;
 
-	// The char* go out of scope at the end of the parser's life and
-	// are not serialized. They are provided in the C namespace for
-	// the C-based parser to access.
+	// These pointers go out of scope at the end of the parser's life
+	// and are not valid when the qnode is deserialized. They are
+	// provided in the C namespace for the C-based parser to access.
+	// They are meaningless when this structure rematerializes after
+	// deserialization.
 	char *name;
 	void *symlist;
+
+	// This is the only field on this side of the c/c++ devide that
+	// is valid after the parser exits.
 	enum ctlflags flags;
+
 #ifdef __cplusplus
 
 	// This is the c++ side of the qnode. These fields will be updated
-	// at the end of the discovery process for this qnode.
+	// at the end of the discovery process for this qnode and are
+	// valid when the qnode rematerializes after deserialization.
 	qnode(){}
 	std::string sname;
 	std::string sdecl;
@@ -162,6 +174,7 @@ extern void kb_write_cqnmap(const char *filename);
 extern void kb_restore_cqnmap(char *filename);
 extern bool kb_merge_cqnmap(char *filename);
 extern void kb_dump_cqnmap(char *filename);
+extern void kb_dump_qnode(struct qnode *qn);
 #ifdef __cplusplus
 }
 #endif

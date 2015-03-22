@@ -333,9 +333,6 @@ void kb_dump_cqnmap(char *filename)
 		if (qn.flags & CTL_FILE)
 			cout << "FILE: ";
 
-		if (qn.sdecl.find("ipmi_shadow_smi_handlers") != string::npos)
-			cout << "BREAK" << endl;
-
 		cout << format("%08x %08x %s ")
 			% qnp.first % qn.flags % qn.sdecl;
 		if (qn.flags & CTL_POINTER) cout << "*";
@@ -345,7 +342,7 @@ void kb_dump_cqnmap(char *filename)
 
 		for_each (qn.parents.begin(), qn.parents.end(),
 			 [](pair<const unsigned long, int>& lcn) {
-				cout << format ("\tcrc: %08x level: %d\n")
+				cout << format ("\t\t%08x %3d\n")
 					% lcn.first % lcn.second;
 			  });
 
@@ -356,10 +353,19 @@ void kb_dump_cqnmap(char *filename)
 
 		for_each (qn.children.begin(), qn.children.end(),
 			 [](pair<const unsigned long, int>& lcn) {
-				cout << format ("\tcrc: %08x level: %d\n")
+				cout << format ("\t\t%08x %3d\n")
 					% lcn.first % lcn.second;
 			  });
 bottom:
 		cout << endl;
 	}
+}
+
+void kb_dump_qnode(struct qnode *qn)
+{
+	cout.setf(std::ios::unitbuf);
+	cout << format("%08x %08x %03d %s %s\n")
+		% qn->crc % qn->flags % qn->level % qn->sdecl % qn->sname;
+	cout << format("\tparents: %3d   children: %3d\n")
+		% qn->parents.size() % qn->children.size();
 }
