@@ -1,5 +1,5 @@
-CFLAGS 		+= -I/usr/include/sparse -I/usr/include/c++/4.9.2
-CXXFLAGS	+= -std=gnu++11
+CFLAGS 		+= -I/usr/include/sparse -I/usr/include/c++/4.9.2 -DNDEBUG
+CXXFLAGS	+= -std=gnu++11 -DNDEBUG
 
 LIBS		+= -lsparse -lboost_serialization
 
