@@ -60,9 +60,11 @@ private:
 	void put_rows();
 	void fill_row(const qnode *qn, int level);
 	bool find_decl(qnode &qnr, std::string decl);
+	bool get_qnrange(unsigned long crc, qnpair_t& range);
+	qnode* find_qnode_nextlevel(qnode* qn, long unsigned crc, int level);
 	int get_decl_list(std::vector<qnode> &retlist);
 	int get_parents_deep(qnode *qn, int level);
-	int get_parents_wide();
+	int get_parents_wide(qnode &qn);
 	int execute();
 	int exe_count();
 	int exe_struct();
@@ -81,7 +83,7 @@ private:
 	std::vector<row> m_rows;
 	std::string m_datafile = "../kabi-data.dat";
 	std::string m_declstr;
-	unsigned m_crc;
+	unsigned long m_crc;
 	int m_flags;
 	int m_errindex = 0;
 	int m_exemask  = KB_COUNT | KB_DECL | KB_EXPORTS | KB_STRUCT;

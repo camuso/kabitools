@@ -22,13 +22,15 @@
 
 #include <cstring>
 #include <fstream>
+#include <boost/format.hpp>
 
 #include "checksum.h"
 #include "kabilookup.h"
 
 using namespace std;
+using boost::format;
 
-//#define NDEBUG
+#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -138,9 +140,6 @@ int lookup::execute()
 	return 0;
 }
 
-#include <boost/format.hpp>
-using boost::format;
-
 int lookup::exe_count()
 {
 	int count = 0;
@@ -209,16 +208,18 @@ string &lookup::pad_out(int padsize)
 void lookup::put_row(row &r)
 {
 	switch (r.level) {
+	case LVL_FILE:
+		cout << "FILE: " << r.decl << endl;
+		break;
 	case LVL_EXPORTED:
-		cout << "FILE: " << r.file << endl
-		     << " EXPORTED: " << r.decl << r.name << endl;
+		cout << " EXPORTED: " << r.decl << " " << r.name << endl;
 		break;
 	case LVL_ARG:
 		cout << ((r.flags & CTL_RETURN) ? "  RETURN: " : "  ARG: ");
-		cout << r.decl << r.name << endl;
+		cout << r.decl << " " << r.name << endl;
 		break;
 	default:
-		cout << pad_out(r.level) << r.decl << r.name << endl;
+		cout << pad_out(r.level) << r.decl << " " << r.name << endl;
 		break;
 	}
 }
@@ -233,50 +234,113 @@ void lookup::put_rows()
 	}
 }
 
+qnode* lookup::find_qnode_nextlevel(qnode* qn, long unsigned crc, int level)
+{
+	qnitpair_t range = m_qnodes.equal_range(crc);
+	for (auto it = range.first; it != range.second; ++it) {
+		qn = &(*it).second;
+		cnodemap_t& cnmap = qn->parents;
+
+		qn->level = level;
+
+		// Look ahead to see if a parent in the parents map of
+		// this qnode is at the next level. If so, this is the
+		// qnode we want.
+		for (auto it : cnmap) {
+			if (it.second == level - 1)
+				return qn;
+		}
+	}
+	return NULL;
+}
+
 int lookup::get_parents_deep(qnode *qn, int level)
 {
 	cnodemap_t& cnmap = qn->parents;
 
-	// The level passed as a parameter is the level at which the symbol
-	// appears in its parent's hierarchy.
 	fill_row(qn, level);
 
-	for (auto it : cnmap) {
-		qn = qn_lookup_crc(it.first);
+	if (level == 0)
+		return EXE_OK;
 
-		// The next parent will have a level one less than that of
-		// the symbol we just looked up (qn).
-		if (it.second == level) {
-			get_parents_deep(qn, level - 1);
-			return EXE_OK;
-		}
+	for (auto it : cnmap) {
+		qnode* pqn;
+
+		if ((pqn = find_qnode_nextlevel(pqn, it.first, level - 1)))
+			break;
 	}
-	return EXE_OK;
+
+	if (get_parents_deep(qn, level - 1) == EXE_OK)
+		return EXE_OK;
+
+	return EXE_NOTFOUND;
 }
 
-int lookup::get_parents_wide()
+int lookup::get_parents_wide(qnode& qn)
 {
-	cnodemap_t& cnmap = m_qnp->parents;
+	cnodemap_t& cnmap = qn.parents;
+	int retval = EXE_OK;
+	bool is_there = false;
 
+	// For each parent in the parents map of this qnode ...
 	for (auto it : cnmap) {
-		unsigned crc = it.first;
-		int level = it.second;
+		unsigned crc = it.first;   // Parent crc
+		int level = it.second;     // Parent level
+		qn.level = level + 1;      // qnode's level relative to parent
 
-		m_rows.clear();
-		m_rows.reserve(level);
-		fill_row(m_qnp, level);
+		m_rows.clear();		   // record this qnode
+		m_rows.reserve(qn.level);
+		fill_row(&qn, qn.level);
 
-		qnode *qn = qn_lookup_crc(crc);
-		get_parents_deep(qn, level - 1);
-		put_rows();
+		// Find the parent's qnode (pqn), given its crc and
+		// hierarchical level.
+		qnode* pqn = find_qnode_nextlevel(pqn, crc, level);
+		if (pqn) {
+			is_there = true;
+			retval = get_parents_deep(pqn, level);
+		}
+
+		if (retval != EXE_OK)
+			put_rows();
 	}
-	return EXE_OK;
+	return is_there ? EXE_OK : EXE_NOTFOUND;
 }
 
 int lookup::exe_struct()
 {
-	m_crc = ::raw_crc32(m_declstr.c_str());
+	if (m_opts.kb_flags & KB_WHOLE_WORD) {
+		unsigned long crc = raw_crc32(m_declstr.c_str());
+		qnitpair_t range;
+		range = m_qnodes.equal_range(crc);
 
+		for_each (range.first, range.second,
+			  [this](qnpair_t& lqp)
+			  {
+				qnode& qn = lqp.second;
+#ifndef NDEBUG
+				qn.crc = lqp.first;
+				qn.level = 0;
+#endif
+				//kb_dump_qnode(m_qnp);
+				if (qn.flags & CTL_BACKPTR)
+					return;
+				this->get_parents_wide(qn);
+			  });
+	} else {
+		for (auto it : m_qnodes) {
+			qnode& qn = it.second;
+#ifndef NDEBUG
+			qn.crc = it.first;
+			qn.level = 0;
+#endif
+			if (qn.sdecl.find(m_declstr) != string::npos) {
+				//kb_dump_qnode(&qn);
+				this->get_parents_wide(qn);
+			}
+		}
+	}
+
+#if 0
 	if (m_qnp->parents.size() == 0) {
 		m_rows.clear();
 		fill_row(m_qnp, 0);
@@ -284,7 +348,8 @@ int lookup::exe_struct()
 		return EXE_OK;
 	}
 
-	get_parents_wide();
+	get_parents_wide(m_qn);
+#endif
 	return EXE_OK;
 }
 
