@@ -92,7 +92,7 @@ struct qnode *new_firstqnode(char *file)
 
 void update_qnode(struct qnode *qn, struct qnode *parent)
 {
-	qn->parents.insert(make_pair(parent->crc, parent->level+1));
+	qn->parents.insert(make_pair(parent->crc, parent->level));
 	parent->children.insert(make_pair(qn->crc, qn->level));
 	qn->sname = qn->name ? string(qn->name) : string("");
 	public_cqnmap.qnmap.insert(qnpair_t(qn->crc, *qn));
@@ -191,7 +191,7 @@ bool qn_is_dup(struct qnode *qn, struct qnode* parent)
 
 	for_each (range.first, range.second,
 		 [&qn, &parent, &retval](qnpair_t& lqn) {
-			if (lqn.first == qn->crc) {
+			if (lqn.first == qn->crc)
 				qnode* mapparent = qn_lookup_crc(parent->crc);
 				update_duplicate(&lqn.second, mapparent);
 				retval = true;
@@ -333,7 +333,7 @@ void kb_dump_cqnmap(char *filename)
 		if (qn.flags & CTL_FILE)
 			cout << "FILE: ";
 
-		cout << format("%08x %08x %s ")
+		cout << format("%10lu %08x %s ")
 			% qnp.first % qn.flags % qn.sdecl;
 		if (qn.flags & CTL_POINTER) cout << "*";
 		cout << qn.sname << endl;
@@ -342,7 +342,7 @@ void kb_dump_cqnmap(char *filename)
 
 		for_each (qn.parents.begin(), qn.parents.end(),
 			 [](pair<const unsigned long, int>& lcn) {
-				cout << format ("\t\t%08x %3d\n")
+				cout << format ("\t\t%10lu %3d\n")
 					% lcn.first % lcn.second;
 			  });
 
@@ -353,7 +353,7 @@ void kb_dump_cqnmap(char *filename)
 
 		for_each (qn.children.begin(), qn.children.end(),
 			 [](pair<const unsigned long, int>& lcn) {
-				cout << format ("\t\t%08x %3d\n")
+				cout << format ("\t\t%10lu %3d\n")
 					% lcn.first % lcn.second;
 			  });
 bottom:
