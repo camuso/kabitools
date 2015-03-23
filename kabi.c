@@ -55,6 +55,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
 #include <sparse/symbol.h>
 
 #include "kabi.h"
@@ -188,11 +189,13 @@ static void get_declist(struct qnode *qn, struct symbol *sym)
 		else
 			qn_add_to_decl(qn, (char *)typnam);
 
-		if ((tm & (SM_STRUCT | SM_UNION))
-		   && (basetype->symbol_list)) {
+		if (tm & (SM_STRUCT | SM_UNION))
+			qn->flags |= CTL_STRUCT;
+
+		if (basetype->symbol_list) {
 			add_symbol((struct symbol_list **)&qn->symlist,
 				    basetype);
-			qn->flags |= CTL_STRUCT | CTL_HASLIST;
+			qn->flags |= CTL_HASLIST;
 		}
 
 		if (tm & SM_FN)
@@ -235,7 +238,8 @@ static void get_symbols	(struct qnode *parent,
 		crc = raw_crc32(decl);
 		qn->crc = crc;
 #ifndef NDEBUG
-		if (!strcmp(decl, "struct device"))
+		if (!(strcmp(decl, "struct device")) ||
+				(parent->crc == 0xa38c4517))
 			puts(decl);
 #endif
 		if (parent->crc == crc)
