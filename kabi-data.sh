@@ -38,9 +38,8 @@ currentdir=$PWD
 verbose=false
 directory=""
 subdir="./"
-datafile="../kabi-data.dat"
+datafile="kabi-data.dat"
 errfile="/dev/null"
-
 
 usage() {
 	echo -e "$usagestr"
@@ -94,18 +93,25 @@ done
 cd $directory
 echo "executing from $PWD"
 
+outdir=$PWD/"redhat/kabi/parser"
+tarfil=$outdir/"kabi-data.tar"
+[ -d "$outdir" ] || mkdir -p $outdir
+
 rm -vf $datafile
 [ -d "$subdir" ] || noexistdir $subdir
+
+echo "tar file: $tarfil"
 
 START=$(date +%s)
 
 find $subdir -name \*.i -exec sh -c \
-	'grep -qm1 "__ksymtab_" $2; \
+	'grep -qm1 "__ksymtab_" $1; \
 	if [ $? -eq 0 ]; then \
-		echo $2; \
-		redhat/kabi/kabi-parser -cf $1 $2 2>$3; \
+		echo $1; \
+		redhat/kabi/kabi-parser -f ${1%.*}.dat $1 2>$2; \
+		tar --remove-files -uf $3 ${1%.*}.dat; \
 	fi' \
-	sh $datafile '{}' $errfile \;
+	sh '{}' $errfile $tarfil \;
 echo
 cd -
 echo "returned to $PWD"
