@@ -95,7 +95,7 @@ kabi [options] files \n\
               Must be last in the argument list. \n\
 \n\
 Options:\n\
-    -b file   optional filename for data file containing the kabi graph. \n\
+    -f file   optional filename for data file containing the kabi graph. \n\
               The default is \"../kabi-data.dat\". \n\
     -x        Delete the data file before starting. \n\
     -h        This help message.\n\
@@ -276,9 +276,7 @@ static void build_branch(char *symname, struct qnode *parent)
 		decl = (char *)cstrcat(qn_get_decl(qn), qn->name);
 		qn_trim_decl(qn);
 		qn->crc = raw_crc32(decl);
-
 		prdbg("EXPORTED: %s\n", decl);
-
 		update_qnode(qn, parent);
 
 		if (qn->flags & CTL_HASLIST) {
@@ -293,7 +291,6 @@ static void build_branch(char *symname, struct qnode *parent)
 
 		if (basetype->arguments)
 			get_symbols(qn, basetype->arguments, CTL_ARG);
-
 	}
 }
 
