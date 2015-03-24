@@ -65,7 +65,7 @@
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-#define NDEBUG
+//#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -238,14 +238,16 @@ static void get_symbols	(struct qnode *parent,
 		crc = raw_crc32(decl);
 		qn->crc = crc;
 #ifndef NDEBUG
-		if ((qn->crc == 0xa38c4517) || (parent->crc == 0xa38c4517))
+		if ((qn->crc == 1622272652) || (parent->crc == 1622272652))
 			puts(decl);
 #endif
 		if (parent->crc == crc)
 			qn->flags |= CTL_BACKPTR;
 
-		else if ((qn->flags & CTL_HASLIST) && qn_is_dup(qn))
+		else if ((qn->flags & CTL_HASLIST) && qn_is_dup(qn)) {
 			qn->flags &= ~CTL_HASLIST;
+			return;
+		}
 
 		prdbg("%s%s %s\n", pad_out(qn->level, ' '), decl, qn->name);
 		update_qnode(qn, parent);
