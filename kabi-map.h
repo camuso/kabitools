@@ -166,7 +166,7 @@ extern bool qn_lookup_child(struct qnode *qn, unsigned long crc);
 extern void qn_add_to_decl(struct qnode *qn, char *decl);
 extern void qn_trim_decl(struct qnode *qn);
 extern const char *qn_get_decl(struct qnode *qn);
-extern bool qn_is_dup(struct qnode *qn, struct qnode* parent);
+extern bool qn_is_dup(struct qnode *qn);
 extern const char *cstrcat(const char *d, const char *s);
 extern void kb_write_dupmap(char *filename);
 extern void kb_restore_dupmap(char *filename);

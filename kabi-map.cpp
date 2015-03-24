@@ -215,7 +215,7 @@ static inline void update_duplicate(qnode *qn, qnode *parent)
 		insert_cnode(parent->children, childcn);
 }
 
-bool qn_is_dup(struct qnode *qn, struct qnode *parent)
+bool qn_is_dup(struct qnode *qn)
 {
 	bool retval = false;
 	qnode* mapparent;

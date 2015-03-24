@@ -108,7 +108,7 @@ static struct symbol_list *symlist = NULL;
 static bool kabiflag = false;
 
 static char *datafilename = "../kabi-data.dat";
-static char *dupfilename = "../dupfile.dat";
+//static char *dupfilename = "../dupfile.dat";
 
 /*****************************************************
 ** sparse wrappers
@@ -244,7 +244,7 @@ static void get_symbols	(struct qnode *parent,
 		if (parent->crc == crc)
 			qn->flags |= CTL_BACKPTR;
 
-		else if ((qn->flags & CTL_HASLIST) && qn_is_dup(qn, parent))
+		else if ((qn->flags & CTL_HASLIST) && qn_is_dup(qn))
 			qn->flags &= ~CTL_HASLIST;
 
 		prdbg("%s%s %s\n", pad_out(qn->level, ' '), decl, qn->name);
