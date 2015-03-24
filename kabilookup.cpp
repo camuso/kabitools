@@ -150,7 +150,10 @@ int lookup::exe_count()
 		range = m_qnodes.equal_range(m_crc);
 		for_each (range.first, range.second,
 			  [&count](qnpair_t& lqn)
-			  { count += lqn.second.parents.size(); });
+			  {
+				if (lqn.second.children.size())
+					count += lqn.second.parents.size();
+			  });
 	} else {
 		for (auto it : m_qnodes) {
 			qnode& qn = it.second;
@@ -239,13 +242,21 @@ qnode* lookup::find_qnode_nextlevel(qnode* qn, long unsigned crc, int level)
 	qnitpair_t range = m_qnodes.equal_range(crc);
 	for (auto it = range.first; it != range.second; ++it) {
 		qn = &(*it).second;
+		qn->crc = (*it).first;
+		qn->level = level;
 		cnodemap_t& cnmap = qn->parents;
 
-		qn->level = level;
+		// If we're at the top, no need to look ahead at any
+		// parents.
+		if (level == 0)
+			return qn;
 
 		// Look ahead to see if a parent in the parents map of
 		// this qnode is at the next level. If so, this is the
-		// qnode we want.
+		// qnode we want. This qnode's level will be the level
+		// number in the parent's cnode entry, because it's the
+		// level in the parent's hierarchy at which this qnode
+		// appears.
 		for (auto it : cnmap) {
 			if (it.second == level - 1)
 				return qn;
@@ -257,6 +268,7 @@ qnode* lookup::find_qnode_nextlevel(qnode* qn, long unsigned crc, int level)
 int lookup::get_parents_deep(qnode *qn, int level)
 {
 	cnodemap_t& cnmap = qn->parents;
+	qnode* pqn;
 
 	fill_row(qn, level);
 
@@ -264,13 +276,12 @@ int lookup::get_parents_deep(qnode *qn, int level)
 		return EXE_OK;
 
 	for (auto it : cnmap) {
-		qnode* pqn;
 
 		if ((pqn = find_qnode_nextlevel(pqn, it.first, level - 1)))
 			break;
 	}
 
-	if (get_parents_deep(qn, level - 1) == EXE_OK)
+	if (get_parents_deep(pqn, level - 1) == EXE_OK)
 		return EXE_OK;
 
 	return EXE_NOTFOUND;
@@ -300,7 +311,7 @@ int lookup::get_parents_wide(qnode& qn)
 			retval = get_parents_deep(pqn, level);
 		}
 
-		if (retval != EXE_OK)
+		if (retval == EXE_OK)
 			put_rows();
 	}
 	return is_there ? EXE_OK : EXE_NOTFOUND;
@@ -317,26 +328,21 @@ int lookup::exe_struct()
 			  [this](qnpair_t& lqp)
 			  {
 				qnode& qn = lqp.second;
-#ifndef NDEBUG
 				qn.crc = lqp.first;
-				qn.level = 0;
-#endif
-				//kb_dump_qnode(m_qnp);
-				if (qn.flags & CTL_BACKPTR)
+
+				if ((qn.flags & CTL_BACKPTR)
+				|| !(qn.flags & CTL_HASLIST))
 					return;
+
 				this->get_parents_wide(qn);
 			  });
 	} else {
 		for (auto it : m_qnodes) {
 			qnode& qn = it.second;
-#ifndef NDEBUG
 			qn.crc = it.first;
-			qn.level = 0;
-#endif
-			if (qn.sdecl.find(m_declstr) != string::npos) {
-				//kb_dump_qnode(&qn);
+
+			if (qn.sdecl.find(m_declstr) != string::npos)
 				this->get_parents_wide(qn);
-			}
 		}
 	}
 
