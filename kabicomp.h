@@ -45,40 +45,27 @@
 #ifndef KABICOMP_H
 #define KABICOMP_H
 
-// boost archive string
-// This may be subject to change with newer versions of boost.
-// TODO:
-//      Find a better way to identify a boost record.
-//
-enum boostarchstring {
-	BA_VER,			// "22"
-	BA_ID,			// "serialization::archive"
-	BA_RECDCOUNT = 7	// number of records in the archive
-};
+#include <sstream>
+#include <iostream>
+#include <iomanip>
+#include "kabi-map.h"
 
-class kabicompdb
+class kabicomp
 {
 public:
-	kabicompdb(){}
-	kabicompdb(std::string& filename);
-	void load_database();
-	void write_database();
-	void compress();
+	kabicomp(){}
+	kabicomp(std::string& tarfile);
 
 private:
+	int shell(std::stringstream& ss_command, std::stringstream& ss_outstr);
 	int extract_recordcount(std::string& str);
 
-	Cqnodelist& m_qnlist = get_qnodelist();
-	Cqnodelist m_qnstore;
-	std::vector<qnode>& m_qlist = m_qnlist.qnodelist;
-	std::vector<qnode>& m_qstore = m_qnstore.qnodelist;
-	std::vector<qnode> m_complist;
+	Cqnodemap& m_qnmap = get_public_cqnmap();
+	qnodemap_t& m_qnodes = m_qnmap.qnmap;
 
-	std::string m_filename;
-	std::string m_tempfile = "../__temp.tmp";
+	std::string m_tarfile;
+	std::stringstream m_ss_outstr;
 	int m_recordcount = 0;
-
-
 };
 
 #endif // KABICOMP_H
