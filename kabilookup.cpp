@@ -83,9 +83,17 @@ lookup::lookup(int argc, char **argv)
 		exit(m_errindex);
 	}
 
-	if ((m_errindex = execute())) {
-		m_err.print_cmd_errmsg(m_errindex, m_declstr, m_datafile);
-		exit(m_errindex);
+	ifstream ifs(m_filelist.c_str());
+	if(!ifs.is_open()) {
+		cout << "Cannot open file: " << m_datafile << endl;
+		exit(1);
+	}
+
+	while (getline(ifs, m_datafile)) {
+		if ((m_errindex = execute(m_datafile))) {
+			m_err.print_cmd_errmsg(m_errindex, m_declstr, m_datafile);
+			exit(m_errindex);
+		}
 	}
 }
 
@@ -116,7 +124,7 @@ int lookup::process_args(int argc, char **argv)
 	if(!argc)
 		return EXE_ARG2SML;
 
-	m_flags = m_opts.get_options(&argindex, &argv[0], m_declstr, m_datafile);
+	m_flags = m_opts.get_options(&argindex, &argv[0], m_declstr, m_filelist);
 
 	if (m_flags < 0 || !check_flags())
 		return EXE_BADFORM;
@@ -124,9 +132,9 @@ int lookup::process_args(int argc, char **argv)
 	return EXE_OK;
 }
 
-int lookup::execute()
+int lookup::execute(string datafile)
 {
-	::kb_read_cqnmap(m_datafile, m_cqnmap);
+	::kb_read_cqnmap(datafile, m_cqnmap);
 
 	if (!find_decl(m_qnr, m_declstr))
 		return EXE_NOTFOUND;

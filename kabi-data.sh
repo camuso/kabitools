@@ -70,7 +70,7 @@ while getopts "vhd:s:f:e:" OPTION; do
 		;;
 	s )	subdir="$OPTARG"
 		;;
-	f )	datafile="$OPTARG"
+	f )	filelist="$OPTARG"
 		;;
 	e )	errfile="$OPTARG"
 		;;
@@ -94,13 +94,13 @@ cd $directory
 echo "executing from $PWD"
 
 outdir=$PWD/"redhat/kabi/parser"
-tarfil=$outdir/"kabi-data.tar"
+filelist=$outdir/"kabi-files.list"
 [ -d "$outdir" ] || mkdir -p $outdir
 
-rm -vf $datafile
+rm -vf $filelist
 [ -d "$subdir" ] || noexistdir $subdir
 
-echo "tar file: $tarfil"
+echo "kabi file list: $filelist"
 
 START=$(date +%s)
 
@@ -108,10 +108,10 @@ find $subdir -name \*.i -exec sh -c \
 	'grep -qm1 "__ksymtab_" $1; \
 	if [ $? -eq 0 ]; then \
 		echo $1; \
-		redhat/kabi/kabi-parser -f ${1%.*}.dat $1 2>$2; \
-		tar --remove-files -uf $3 ${1%.*}.dat; \
+		redhat/kabi/kabi-parser -f ${1%.*}.kb_dat $1 2>$2; \
+		echo "${1%.*}.kb_dat" >> $3; \
 	fi' \
-	sh '{}' $errfile $tarfil \;
+	sh '{}' $errfile $filelist \;
 echo
 cd -
 echo "returned to $PWD"
@@ -126,6 +126,9 @@ echo "Elapsed time: $minutes minutes and $seconds seconds"
 echo
 exit 0
 
+# Legacy code, kept for now for interest. Script exits before executing
+# the following.
+#
 echo
 echo "File processing time: $minutes minutes and $seconds seconds"
 echo
@@ -148,3 +151,5 @@ seconds=$(( $DIFF % 60 ))
 echo
 echo "Compression time: $compmin minutes and $compsec seconds"
 
+#
+# tar --remove-files -uf $3 ${1%.*}.kb_dat;

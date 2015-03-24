@@ -65,7 +65,7 @@ private:
 	int get_decl_list(std::vector<qnode> &retlist);
 	int get_parents_deep(qnode *qn, int level);
 	int get_parents_wide(qnode &qn);
-	int execute();
+	int execute(std::string datafile);
 	int exe_count();
 	int exe_struct();
 
@@ -82,6 +82,7 @@ private:
 	qnodemap_t &m_qnodes = m_cqnmap.qnmap;
 	std::vector<row> m_rows;
 	std::string m_datafile = "../kabi-data.dat";
+	std::string m_filelist;
 	std::string m_declstr;
 	unsigned long m_crc;
 	int m_flags;
