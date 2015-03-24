@@ -53,7 +53,7 @@ enum ctlflags {
 // in the qnode's children map will have n+1 in its level map.
 //
 typedef std::multimap<unsigned long, int> cnodemap_t;
-typedef cnodemap_t::value_type cnpair_t;
+typedef cnodemap_t::value_type cnpair_t;	// pair<unsigned long&&, int&&>
 typedef cnodemap_t::iterator cniterator_t;
 
 #endif

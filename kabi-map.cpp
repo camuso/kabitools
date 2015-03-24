@@ -189,7 +189,8 @@ const char *qn_get_decl(struct qnode *qn)
 	return qn->sdecl.c_str();
 }
 
-static inline bool is_inlist(pair<unsigned long, int> cn, cnodemap_t& cnmap)
+//static inline bool is_inlist(pair<unsigned long, int> cn, cnodemap_t& cnmap)
+static inline bool is_inlist(cnpair_t& cn, cnodemap_t& cnmap)
 {
 	pair<cniterator_t, cniterator_t> range;
 	range = cnmap.equal_range(cn.first);
@@ -205,11 +206,11 @@ static inline bool is_inlist(pair<unsigned long, int> cn, cnodemap_t& cnmap)
 
 static inline void update_duplicate(qnode *qn, qnode *parent)
 {
-	pair<unsigned, int> parentcn = make_pair(parent->crc, parent->level);
+	cnpair_t parentcn = make_pair(parent->crc, parent->level);
 	if (!is_inlist(parentcn, qn->parents))
 		insert_cnode(qn->parents, parentcn);
 
-	pair<unsigned, int> childcn = make_pair(qn->crc, qn->level);
+	cnpair_t childcn = make_pair(qn->crc, qn->level);
 	if (!is_inlist(childcn, parent->children))
 		insert_cnode(parent->children, childcn);
 }
@@ -235,7 +236,7 @@ bool qn_is_dup(struct qnode *qn, struct qnode *parent)
 	}
 
 	for_each (range.first, range.second,
-		 [&qn, &parent, &retval](qnpair_t& lqn) {
+		 [&qn, &retval](qnpair_t& lqn) {
 			if (lqn.second.children.size() > 0) {
 				update_duplicate(qn, &lqn.second);
 				retval = true;
