@@ -30,6 +30,8 @@
 #include "checksum.h"
 #include "kabi-map.h"
 
+#define NDEBUG
+
 using namespace std;
 
 Cqnodemap public_cqnmap;
@@ -95,7 +97,7 @@ inline struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags)
 // If there is only one parent in the map, return the pointer to that.
 // If there is more than one pointer, find the one with the children
 // list having the same ancestor and a level 1 less than the child.
-struct qnode *qn_lookup_parent(struct qnode *qn, unsigned long crc)
+qnode *qn_lookup_parent(qnode *qn, unsigned long crc)
 {
 	qnodemap_t& qnmap = public_cqnmap.qnmap;
 	qnitpair_t  range = qnmap.equal_range(crc);
@@ -116,11 +118,7 @@ struct qnode *qn_lookup_parent(struct qnode *qn, unsigned long crc)
 			return ((parent.level == qn->level - 1) &&
 				(parent.ancestor == qn->ancestor));
 		});
-#if 0
-	qnit = find_if (range.first, range.second,
-			[](qnpair_t& lqn) {
-				return (lqn.second.children.size() > 0); });
-#endif
+
 	return qnit != range.second ? &(*qnit).second : NULL;
 }
 
@@ -170,16 +168,6 @@ Cqnodemap& get_public_cqnmap()
 void delete_qnode(struct qnode *qn)
 {
 	delete qn;
-}
-
-struct qnode* qn_lookup_crc_other(unsigned long crc, Cqnodemap& Cqnmap)
-{
-	return lookup_crc(crc, Cqnmap.qnmap);
-}
-
-struct qnode* qn_lookup_crc(unsigned long crc)
-{
-	return lookup_crc(crc, public_cqnmap.qnmap);
 }
 
 void qn_add_to_decl(struct qnode *qn, char *decl)
@@ -240,7 +228,17 @@ static inline bool qn_is_spiral(qnode* qn)
 			return ((lqn.second.sname == qn->sname) &&
 				(lqn.second.ancestor == qn->ancestor));
 			});
-
+#ifndef NDEBUG
+	if (qnit != range.second) {
+		qnode& pqn = (*qnit).second;
+		cout << "parent: " << pqn.sdecl << " " << pqn.sname << " "
+		     << pqn.crc << " " << pqn.level << " " << pqn.ancestor.first
+		     << " " << pqn.ancestor.second << endl;
+		cout << "  this: " << qn->sdecl << " " << qn->sname << " "
+		     << qn->crc << " " << qn->level << " " << qn->ancestor.first
+		     << " " << qn->ancestor.second << endl;
+	}
+#endif
 	return qnit != range.second;
 }
 
@@ -286,7 +284,8 @@ int qn_is_dup(struct qnode *qn)
 	if (qnit == range.second)
 		return DUP_NOT;
 
-	return retval = qn_is_spiral(qn) ? DUP_MANY : DUP_ONE;
+	retval = qn_is_spiral(qn) ? DUP_MANY : DUP_ONE;
+	return retval;
 }
 
 static inline void write_cqnmap(const char *filename, Cqnodemap& cqnmap)
@@ -390,13 +389,16 @@ void kb_dump_cqnmap(char *filename)
 		if (qn.flags & CTL_FILE)
 			cout << "FILE: ";
 
-		cout << format("%10lu %08x %s ")
-			% qnp.first % qn.flags % qn.sdecl;
+		cout << format("%12lu %3d %08x %s ")
+			% qnp.first %qn.level % qn.flags % qn.sdecl;
 		if (qn.flags & CTL_POINTER) cout << "*";
 		cout << qn.sname << endl;
 
-		cout << "\tparent: " << qn.parent.first
-		     << " " << qn.parent.second << endl;
+		cout << format("\tparent  : %12lu %3d\n")
+			% qn.parent.first % qn.parent.second;
+
+		cout << format("\tancestor: %12lu %3d\n")
+			% qn.ancestor.first % qn.ancestor.second;
 
 		if (!qn.children.size())
 			goto bottom;
@@ -405,7 +407,7 @@ void kb_dump_cqnmap(char *filename)
 
 		for_each (qn.children.begin(), qn.children.end(),
 			 [](pair<const unsigned long, int>& lcn) {
-				cout << format ("\t\t%10lu %3d\n")
+				cout << format ("\t\t%12lu %3d\n")
 					% lcn.first % lcn.second;
 			  });
 bottom:

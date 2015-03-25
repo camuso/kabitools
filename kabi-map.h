@@ -158,9 +158,11 @@ public:
 
 extern Cqnodemap& get_public_cqnmap();
 extern qnode* qn_lookup_crc_other(unsigned long crc, Cqnodemap& cqnmap);
+extern qnode *qn_lookup_parent(qnode *qn, unsigned long crc);
 extern bool qn_is_duplist(qnode* qn, qnodemap_t& qnmap);
 extern int kb_read_cqnmap(std::string filename, Cqnodemap &cqnmap);
 extern void kb_write_cqnmap_other(std::string& filename, Cqnodemap& cqnmap);
+
 extern "C"
 {
 #endif
@@ -177,7 +179,6 @@ extern void qn_add_parent(struct qnode *qn, struct qnode *parent);
 extern void qn_add_child(struct qnode *qn, struct qnode *child);
 extern struct qnode *qn_lookup_crc(unsigned long crc);
 extern struct qnode *qn_lookup_crc_slist(unsigned long crc);
-extern struct qnode *qn_lookup_parent(struct qnode *qn, unsigned long crc);
 extern bool qn_lookup_child(struct qnode *qn, unsigned long crc);
 extern void qn_add_to_decl(struct qnode *qn, char *decl);
 extern void qn_trim_decl(struct qnode *qn);
