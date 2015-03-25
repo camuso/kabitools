@@ -50,6 +50,7 @@ class lookup
 public:
 	lookup(){}
 	lookup(int argc, char **argv);
+	int run();
 	static std::string get_helptext();
 private:
 	int process_args(int argc, char **argv);
@@ -80,11 +81,14 @@ private:
 	// member basetypes
 	cnodemap_t *m_cnmap;
 	qnodemap_t &m_qnodes = m_cqnmap.qnmap;
+	typedef std::pair<int, std::string> errpair;
 	std::vector<row> m_rows;
+	std::vector<errpair> m_errors;
 	std::string m_datafile = "../kabi-data.dat";
-	std::string m_filelist;
+	std::string m_filelist = "./redhat/kabi/parser/kabi-files.list";
 	std::string m_declstr;
 	unsigned long m_crc;
+	int m_count = 0;
 	int m_flags;
 	int m_errindex = 0;
 	int m_exemask  = KB_COUNT | KB_DECL | KB_EXPORTS | KB_STRUCT;

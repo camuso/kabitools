@@ -64,9 +64,10 @@ kabi-lookup -[vw] -c|d|e|s symbol [-b datafile]\n\
                   The -v switch prints descendants of nonscalar members. \n\
     -v          - verbose lists all descendants of a symbol. \n\
     -w          - whole words only, default is \"match any and all\" \n\
-    -f datafile - Optional data file. Must be generated using kabi-parser. \n\
-                  The default is \"../kabi-data.dat\" relative to top of \n\
-                  kernel tree. \n\
+    -f filelist - Optional list of data files that were created by kabi-parser. \n\
+                  The default list created by running kabi-data.sh is \n\
+		  \"./redhat/kabi/parser/kabi-files.list\" relative to the \n\
+                  top of the kernel tree. \n\
     --no-dups   - A structure can appear more than once in the nest of an \n\
                   exported function, for example a pointer back to itself as\n\
                   parent to one of its descendants. This switch limits the \n\
@@ -82,19 +83,31 @@ lookup::lookup(int argc, char **argv)
 		m_err.print_cmd_errmsg(m_errindex, m_declstr, m_datafile);
 		exit(m_errindex);
 	}
+}
 
+int lookup::run()
+{
 	ifstream ifs(m_filelist.c_str());
 	if(!ifs.is_open()) {
-		cout << "Cannot open file: " << m_datafile << endl;
-		exit(1);
+		cout << "Cannot open file: " << m_filelist << endl;
+		exit(EXE_NOFILE);
 	}
 
 	while (getline(ifs, m_datafile)) {
 		if ((m_errindex = execute(m_datafile))) {
-			m_err.print_cmd_errmsg(m_errindex, m_declstr, m_datafile);
-			exit(m_errindex);
+			errpair ep = make_pair(m_errindex,
+					       m_datafile);
+			m_errors.push_back(ep);
 		}
 	}
+
+	if ((m_flags & m_exemask) == KB_COUNT)
+		cout << endl;
+
+	for (auto it : m_errors)
+		m_err.print_cmd_errmsg(it.first, m_declstr, it.second);
+
+	return(m_errindex);
 }
 
 int lookup::count_bits(unsigned mask)
@@ -134,10 +147,8 @@ int lookup::process_args(int argc, char **argv)
 
 int lookup::execute(string datafile)
 {
-	::kb_read_cqnmap(datafile, m_cqnmap);
-
-	if (!find_decl(m_qnr, m_declstr))
-		return EXE_NOTFOUND;
+	if(kb_read_cqnmap(datafile, m_cqnmap) != 0)
+		return EXE_NOFILE;
 
 	switch (m_flags & m_exemask) {
 	case KB_COUNT   : return exe_count();
@@ -150,28 +161,27 @@ int lookup::execute(string datafile)
 
 int lookup::exe_count()
 {
-	int count = 0;
-
 	if (m_opts.kb_flags & KB_WHOLE_WORD) {
 		m_crc = raw_crc32(m_declstr.c_str());
 		pair<qniterator_t, qniterator_t> range;
 		range = m_qnodes.equal_range(m_crc);
 		for_each (range.first, range.second,
-			  [&count](qnpair_t& lqn)
+			  [this](qnpair_t& lqn)
 			  {
 				if (lqn.second.children.size())
-					count += lqn.second.parents.size();
+					this->m_count
+						+= lqn.second.parents.size();
 			  });
 	} else {
 		for (auto it : m_qnodes) {
 			qnode& qn = it.second;
 			if (qn.sdecl.find(m_declstr) != string::npos)
-				count += qn.parents.size();
+				m_count += qn.parents.size();
 		}
 	}
 
-	cout << count << endl;
-	return count !=0 ? EXE_OK : EXE_NOTFOUND;
+	cout << m_count << "\r";
+	return m_count !=0 ? EXE_OK : EXE_NOTFOUND;
 }
 
 bool lookup::find_decl(qnode& qnr, string decl)
@@ -373,4 +383,5 @@ int lookup::exe_struct()
 int main(int argc, char *argv[])
 {
 	lookup lu(argc, argv);
+	return lu.run();
 }
