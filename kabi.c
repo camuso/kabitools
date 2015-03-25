@@ -65,7 +65,7 @@
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-//#define NDEBUG
+#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -236,7 +236,8 @@ static void get_symbols	(struct qnode *parent,
 
 		init_crc(decl, qn, parent);
 #ifndef NDEBUG
-		if ((qn->crc == 3613290044))// || (parent->crc == 410729264))
+		if (qn->name && ((strstr(qn->name, "page_table_lock") != NULL)))
+		//if ((qn->crc == 3613290044))// || (parent->crc == 410729264))
 			puts(decl);
 #endif
 		if (parent->crc == qn->crc)
@@ -246,7 +247,7 @@ static void get_symbols	(struct qnode *parent,
 
 			switch (qn_is_dup(qn)) {
 			case DUP_NOT  : break;
-			case DUP_ONE  : qn->flags &= ~CTL_HASLIST; continue;
+			case DUP_ONE  : qn->flags &= ~CTL_HASLIST; return;
 			case DUP_MANY : qn->flags &= ~CTL_HASLIST; return;
 			default       : qn->flags &= ~CTL_HASLIST; return;
 			}
