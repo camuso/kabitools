@@ -33,6 +33,7 @@
 using namespace std;
 
 Cqnodemap public_cqnmap;
+qnodemap_t temp_qnodes;
 dupmap_t dupmap;
 
 static inline qnode* lookup_crc(unsigned long crc, qnodemap_t& qnmap)
@@ -62,9 +63,25 @@ static inline qnode* init_qnode(qnode *parent, qnode *qn, enum ctlflags flags)
 	qn->name    = NULL;
 	qn->symlist = NULL;
 	qn->flags   = flags;
-
 	qn->level = parent->level+1;
+	qn->parent = pnode_t(parent->crc, parent->level);
+
 	return qn;
+}
+
+void init_crc(const char *decl, struct qnode *qn, struct qnode *parent)
+{
+	qn->crc = raw_crc32(decl);
+
+	if (qn->flags & (CTL_ARG | CTL_RETURN))
+		qn->ancestor = pnode_t(qn->crc, qn->level);
+	else
+		qn->ancestor = parent->ancestor;
+}
+
+void init_ancestor(unsigned long crc, struct qnode *qn)
+{
+	qn->ancestor = pnode_t(crc, qn->level);
 }
 
 inline struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags)
@@ -76,13 +93,12 @@ inline struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags)
 
 // If no parent exists, then return NULL.
 // If there is only one parent in the map, return the pointer to that.
-// If there are more than one pointer, find the one with the children
-// list having a size > 0. That's the primary parent of all duplicates
-// in the file currently being processed.
-struct qnode *qn_lookup_parent(unsigned long crc)
+// If there is more than one pointer, find the one with the children
+// list having the same ancestor and a level 1 less than the child.
+struct qnode *qn_lookup_parent(struct qnode *qn, unsigned long crc)
 {
 	qnodemap_t& qnmap = public_cqnmap.qnmap;
-	qnitpair_t range = qnmap.equal_range(crc);
+	qnitpair_t  range = qnmap.equal_range(crc);
 	qniterator_t qnit = range.first;
 
 	int count = distance(range.first, range.second);
@@ -94,9 +110,17 @@ struct qnode *qn_lookup_parent(unsigned long crc)
 		return &(*qnit).second;
 
 	qnit = find_if (range.first, range.second,
+		[&qn](qnpair_t& lqn)
+		{
+			qnode& parent = lqn.second;
+			return ((parent.level == qn->level - 1) &&
+				(parent.ancestor == qn->ancestor));
+		});
+#if 0
+	qnit = find_if (range.first, range.second,
 			[](qnpair_t& lqn) {
 				return (lqn.second.children.size() > 0); });
-
+#endif
 	return qnit != range.second ? &(*qnit).second : NULL;
 }
 
@@ -115,7 +139,8 @@ struct qnode *new_firstqnode(char *file)
 	parent->level = 0;
 	parent->flags = CTL_FILE;
 	parent->crc = raw_crc32(file);
-	insert_cnode(parent->parents, make_pair(parent->crc, parent->level));
+	parent->ancestor = pnode_t(parent->crc, 0);
+	parent->parent = parent->ancestor;
 
 	struct qnode *qn = new_qnode(parent, parent->flags);
 	qn->name  = parent->name;
@@ -128,21 +153,13 @@ struct qnode *new_firstqnode(char *file)
 
 void update_qnode(struct qnode *qn, struct qnode *parent)
 {
-	qnode *pqn = qn_lookup_parent(parent->crc);
+	qnode *pqn = qn_lookup_parent(qn, parent->crc);
 	pqn = pqn ? pqn : parent;
 
-	// Record the parent's crc and level in this qnode's parents map.
-	// Record this qnode's crc and level in the parent's children map.
 	qn->sname = qn->name ? string(qn->name) : string("");
-	insert_cnode(qn->parents, make_pair(parent->crc, parent->level));
+	qn->parent = pnode_t(parent->crc, parent->level);
 	insert_cnode(pqn->children, make_pair(qn->crc, qn->level));
 	insert_qnode(public_cqnmap.qnmap, qn);
-}
-
-void update_dupmap(qnode *qn)
-{
-	if (dupmap.find(qn->crc) == dupmap.end())
-		dupmap.insert(dupair_t(qn->crc, *qn));
 }
 
 Cqnodemap& get_public_cqnmap()
@@ -189,7 +206,6 @@ const char *qn_get_decl(struct qnode *qn)
 	return qn->sdecl.c_str();
 }
 
-//static inline bool is_inlist(pair<unsigned long, int> cn, cnodemap_t& cnmap)
 static inline bool is_inlist(cnpair_t& cn, cnodemap_t& cnmap)
 {
 	pair<cniterator_t, cniterator_t> range;
@@ -199,25 +215,38 @@ static inline bool is_inlist(cnpair_t& cn, cnodemap_t& cnmap)
 		return false;
 
 	cniterator_t it = find_if (range.first, range.second,
-				[&cn](pair<unsigned long, int> lcn)
+				[&cn](cnpair_t lcn)
 				{ return lcn.second == cn.second; });
 	return it != range.second;
 }
 
 static inline void update_duplicate(qnode *qn, qnode *parent)
 {
-	cnpair_t parentcn = make_pair(parent->crc, parent->level);
-	if (!is_inlist(parentcn, qn->parents))
-		insert_cnode(qn->parents, parentcn);
-
 	cnpair_t childcn = make_pair(qn->crc, qn->level);
 	if (!is_inlist(childcn, parent->children))
 		insert_cnode(parent->children, childcn);
+
+	dupmap.insert(dupair_t(qn->crc, *qn));
 }
 
-bool qn_is_dup(struct qnode *qn)
+static inline bool qn_is_spiral(qnode* qn)
 {
-	bool retval = false;
+	qnodemap_t& qnmap = public_cqnmap.qnmap;
+	qnitpair_t range = qnmap.equal_range(qn->crc);
+	qniterator_t qnit = range.first;
+
+	qnit = find_if (range.first, range.second,
+		[&qn](qnpair_t& lqn) {
+			return ((lqn.second.sname == qn->sname) &&
+				(lqn.second.ancestor == qn->ancestor));
+			});
+
+	return qnit != range.second;
+}
+
+int qn_is_dup(struct qnode *qn)
+{
+	int retval = DUP_NOT;
 	qnode* mapparent;
 
 	qnodemap_t& qnmap = public_cqnmap.qnmap;
@@ -226,56 +255,38 @@ bool qn_is_dup(struct qnode *qn)
 
 	int count = distance(range.first, range.second);
 
-	if ((range.first == qnmap.end()) || (count < 1))
-		return false;
+	if ((range.first == qnmap.end()) || (count < 1)) {
+		mapparent = qn_lookup_parent(qn, qn->parent.first);
+
+		if (qn->sdecl == mapparent->sdecl) {
+			update_duplicate(qn, mapparent);
+			return DUP_ONE;
+		} else
+			return DUP_NOT;
+	}
 
 	if (count == 1) {
 		mapparent = &(*qnit).second;
-		update_duplicate(qn, mapparent);
-		return true;
+		if (mapparent->ancestor == qn->ancestor) {
+			update_duplicate(qn, mapparent);
+			return DUP_ONE;
+		}
+		else
+			return DUP_NOT;
 	}
 
-	for_each (range.first, range.second,
-		 [&qn, &retval](qnpair_t& lqn) {
-			if (lqn.second.children.size() > 0) {
-				update_duplicate(qn, &lqn.second);
-				retval = true;
-			}
-		  });
+	qnit = find_if (range.first, range.second,
+		[&qn](qnpair_t& lqn)
+		{
+			qnode& parent = lqn.second;
+			return ((parent.level == qn->level - 1) &&
+				(parent.ancestor == qn->ancestor));
+		});
 
-	return retval;
-}
+	if (qnit == range.second)
+		return DUP_NOT;
 
-void kb_write_dupmap(char *filename)
-{
-	ofstream ofs(filename, ofstream::out | ofstream::app);
-	if (!ofs.is_open()) {
-		cout << "Cannot open file: " << filename << endl;
-		exit(1);
-	}
-
-	{
-		boost::archive::text_oarchive oa(ofs);
-		oa << dupmap;
-	}
-	ofs.close();
-
-}
-
-void kb_restore_dupmap(char *filename)
-{
-	ifstream ifs(filename);
-	if (!ifs.is_open()) {
-		fprintf(stderr, "File %s does not exist. A new file"
-				" will be created\n.", filename);
-		return;
-	}
-
-	{
-		boost::archive::text_iarchive ia(ifs);
-		ia >> dupmap;
-	}
-	ifs.close();
+	return retval = qn_is_spiral(qn) ? DUP_MANY : DUP_ONE;
 }
 
 static inline void write_cqnmap(const char *filename, Cqnodemap& cqnmap)
@@ -384,13 +395,8 @@ void kb_dump_cqnmap(char *filename)
 		if (qn.flags & CTL_POINTER) cout << "*";
 		cout << qn.sname << endl;
 
-		cout << "\tparents: " << qn.parents.size() << endl;
-
-		for_each (qn.parents.begin(), qn.parents.end(),
-			 [](pair<const unsigned long, int>& lcn) {
-				cout << format ("\t\t%10lu %3d\n")
-					% lcn.first % lcn.second;
-			  });
+		cout << "\tparent: " << qn.parent.first
+		     << " " << qn.parent.second << endl;
 
 		if (!qn.children.size())
 			goto bottom;
@@ -412,6 +418,6 @@ void kb_dump_qnode(struct qnode *qn)
 	cout.setf(std::ios::unitbuf);
 	cout << format("%08x %08x %03d %s %s\n")
 		% qn->crc % qn->flags % qn->level % qn->sdecl % qn->sname;
-	cout << format("\tparents: %3d   children: %3d\n")
-		% qn->parents.size() % qn->children.size();
+	cout << format("\tparent: %12d %3d  children: %3d\n")
+		% qn->parent.first %qn->parent.second % qn->children.size();
 }

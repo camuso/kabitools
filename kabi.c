@@ -65,7 +65,7 @@
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-#define NDEBUG
+//#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -216,7 +216,6 @@ static void get_symbols	(struct qnode *parent,
 
 	FOR_EACH_PTR(list, sym) {
 		const char *decl = "";
-		unsigned long crc;
 		struct qnode *qn = new_qnode(parent, flags);
 
 		get_declist(qn, sym);
@@ -235,18 +234,22 @@ static void get_symbols	(struct qnode *parent,
 				decl = cstrcat(decl, qn->name);
 		}
 
-		crc = raw_crc32(decl);
-		qn->crc = crc;
+		init_crc(decl, qn, parent);
 #ifndef NDEBUG
-		if ((qn->crc == 1622272652) || (parent->crc == 1622272652))
+		if ((qn->crc == 3613290044))// || (parent->crc == 410729264))
 			puts(decl);
 #endif
-		if (parent->crc == crc)
+		if (parent->crc == qn->crc)
 			qn->flags |= CTL_BACKPTR;
 
-		else if ((qn->flags & CTL_HASLIST) && qn_is_dup(qn)) {
-			qn->flags &= ~CTL_HASLIST;
-			return;
+		else if (qn->flags & CTL_HASLIST) {
+
+			switch (qn_is_dup(qn)) {
+			case DUP_NOT  : break;
+			case DUP_ONE  : qn->flags &= ~CTL_HASLIST; continue;
+			case DUP_MANY : qn->flags &= ~CTL_HASLIST; return;
+			default       : qn->flags &= ~CTL_HASLIST; return;
+			}
 		}
 
 		prdbg("%s%s %s\n", pad_out(qn->level, ' '), decl, qn->name);
@@ -269,15 +272,15 @@ static void build_branch(char *symname, struct qnode *parent)
 		struct qnode *bqn;
 
 #ifndef NDEBUG
-		if (!strcmp(symname, "sparse_keymap_entry_from_keycode"))
+		if (!strcmp(symname, "ipmi_register_smi"))
 			puts(symname);
 #endif
 		qn->name = symname;
 		kabiflag = true;
 		get_declist(qn, sym);
-		decl = (char *)cstrcat(qn_get_decl(qn), qn->name);
 		qn_trim_decl(qn);
-		qn->crc = raw_crc32(decl);
+		decl = cstrcat(qn_get_decl(qn), qn->name);
+		init_crc(decl, qn, parent);
 		prdbg("EXPORTED: %s\n", decl);
 		update_qnode(qn, parent);
 
@@ -286,7 +289,7 @@ static void build_branch(char *symname, struct qnode *parent)
 			get_declist(bqn, basetype);
 			qn_trim_decl(bqn);
 			decl = qn_get_decl(bqn);
-			bqn->crc = raw_crc32(decl);
+			init_crc(decl, bqn, parent);
 			prdbg("RETURN: %s\n", decl);
 			update_qnode(bqn, qn);
 		}

@@ -36,7 +36,6 @@ enum ctlflags {
 	CTL_HASLIST	= 1 << 10,
 };
 
-
 #ifdef __cplusplus
 
 // This is a hash map used for parents and children of qnodes.
@@ -55,6 +54,8 @@ enum ctlflags {
 typedef std::multimap<unsigned long, int> cnodemap_t;
 typedef cnodemap_t::value_type cnpair_t;	// pair<unsigned long&&, int&&>
 typedef cnodemap_t::iterator cniterator_t;
+
+typedef std::pair<unsigned long, int> pnode_t;
 
 #endif
 
@@ -97,15 +98,18 @@ struct qnode
 	qnode(){}
 	std::string sname;
 	std::string sdecl;
-	cnodemap_t parents;
 	cnodemap_t children;
+
+	pnode_t parent;
+	pnode_t ancestor;
 
 	// Boost serialization
 	template<class Archive>
         void serialize(Archive &ar, const unsigned int version)
         {
 		if (version){;}
-		ar & flags & sdecl & sname & parents & children;
+		ar & flags & level & sdecl & sname
+		   & parent & ancestor & children;
 	}
 #endif
 };
@@ -127,6 +131,16 @@ typedef std::pair<qniterator_t, qniterator_t> qnitpair_t;
 typedef std::map<unsigned long, qnode> dupmap_t;
 typedef dupmap_t::value_type dupair_t;
 typedef dupmap_t::iterator dupiterator_t;
+
+#endif
+
+enum dupcodes {
+	DUP_NOT,	// not a duplicate
+	DUP_ONE,	// only one dup so far
+	DUP_MANY,	// we're starting a spiral
+};
+
+#ifdef __cplusplus
 
 class Cqnodemap
 {
@@ -153,20 +167,22 @@ extern "C"
 
 extern struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags);
 extern struct qnode *new_firstqnode(char *file);
+extern void init_crc(const char *decl, struct qnode *qn, struct qnode *parent);
 extern void update_qnode(struct qnode *qn, struct qnode *parent);
 extern void update_dupmap(struct qnode *qn);
 extern void insert_qnode(struct qnode *qn);
 extern void delete_qnode(struct qnode *qn);
+extern void update_mapclass();
 extern void qn_add_parent(struct qnode *qn, struct qnode *parent);
 extern void qn_add_child(struct qnode *qn, struct qnode *child);
 extern struct qnode *qn_lookup_crc(unsigned long crc);
 extern struct qnode *qn_lookup_crc_slist(unsigned long crc);
-extern bool qn_lookup_parent(struct qnode *qn, unsigned long crc);
+extern struct qnode *qn_lookup_parent(struct qnode *qn, unsigned long crc);
 extern bool qn_lookup_child(struct qnode *qn, unsigned long crc);
 extern void qn_add_to_decl(struct qnode *qn, char *decl);
 extern void qn_trim_decl(struct qnode *qn);
 extern const char *qn_get_decl(struct qnode *qn);
-extern bool qn_is_dup(struct qnode *qn);
+extern int qn_is_dup(struct qnode *qn);
 extern const char *cstrcat(const char *d, const char *s);
 extern void kb_write_dupmap(char *filename);
 extern void kb_restore_dupmap(char *filename);
