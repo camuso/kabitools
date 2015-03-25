@@ -108,7 +108,7 @@ find $subdir -name \*.i -exec sh -c \
 	'grep -qm1 "__ksymtab_" $1; \
 	if [ $? -eq 0 ]; then \
 		echo $1; \
-		redhat/kabi/kabi-parser -f ${1%.*}.kb_dat $1 2>$2; \
+		redhat/kabi/kabi-parser -xf ${1%.*}.kb_dat $1 2>$2; \
 		echo "${1%.*}.kb_dat" >> $3; \
 	fi' \
 	sh '{}' $errfile $filelist \;
