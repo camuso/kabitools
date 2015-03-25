@@ -319,12 +319,12 @@ void kb_restore_cqnmap(char *filename)
 	ifs.close();
 }
 
-void kb_read_cqnmap(string filename, Cqnodemap &cqnmap)
+int kb_read_cqnmap(string filename, Cqnodemap &cqnmap)
 {
 	ifstream ifs(filename.c_str());
 	if (!ifs.is_open()) {
 		cout << "Cannot open file: " << filename << endl;
-		exit(1);
+		return(-1);
 	}
 
 	{
@@ -332,6 +332,7 @@ void kb_read_cqnmap(string filename, Cqnodemap &cqnmap)
 		ia >> cqnmap;
 	}
 	ifs.close();
+	return 0;
 }
 
 bool kb_merge_cqnmap(char *filename)
