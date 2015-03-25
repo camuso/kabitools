@@ -165,18 +165,12 @@ int lookup::exe_count()
 		m_crc = raw_crc32(m_declstr.c_str());
 		pair<qniterator_t, qniterator_t> range;
 		range = m_qnodes.equal_range(m_crc);
-		for_each (range.first, range.second,
-			  [this](qnpair_t& lqn)
-			  {
-				if (lqn.second.children.size())
-					this->m_count
-						+= lqn.second.parents.size();
-			  });
+		m_count = distance(range.first, range.second);
 	} else {
 		for (auto it : m_qnodes) {
 			qnode& qn = it.second;
 			if (qn.sdecl.find(m_declstr) != string::npos)
-				m_count += qn.parents.size();
+				++m_count;
 		}
 	}
 
@@ -255,84 +249,16 @@ void lookup::put_rows()
 	}
 }
 
-qnode* lookup::find_qnode_nextlevel(qnode* qn, long unsigned crc, int level)
+int lookup::get_parents(qnode& qn)
 {
-	qnitpair_t range = m_qnodes.equal_range(crc);
-	for (auto it = range.first; it != range.second; ++it) {
-		qn = &(*it).second;
-		qn->crc = (*it).first;
-		qn->level = level;
-		cnodemap_t& cnmap = qn->parents;
+	fill_row(&qn, qn.level);
 
-		// If we're at the top, no need to look ahead at any
-		// parents.
-		if (level == 0)
-			return qn;
-
-		// Look ahead to see if a parent in the parents map of
-		// this qnode is at the next level. If so, this is the
-		// qnode we want. This qnode's level will be the level
-		// number in the parent's cnode entry, because it's the
-		// level in the parent's hierarchy at which this qnode
-		// appears.
-		for (auto it : cnmap) {
-			if (it.second == level - 1)
-				return qn;
-		}
-	}
-	return NULL;
-}
-
-int lookup::get_parents_deep(qnode *qn, int level)
-{
-	cnodemap_t& cnmap = qn->parents;
-	qnode* pqn;
-
-	fill_row(qn, level);
-
-	if (level == 0)
+	if (qn.level == 0)
 		return EXE_OK;
 
-	for (auto it : cnmap) {
-
-		if ((pqn = find_qnode_nextlevel(pqn, it.first, level - 1)))
-			break;
-	}
-
-	if (get_parents_deep(pqn, level - 1) == EXE_OK)
-		return EXE_OK;
-
-	return EXE_NOTFOUND;
-}
-
-int lookup::get_parents_wide(qnode& qn)
-{
-	cnodemap_t& cnmap = qn.parents;
-	int retval = EXE_OK;
-	bool is_there = false;
-
-	// For each parent in the parents map of this qnode ...
-	for (auto it : cnmap) {
-		unsigned crc = it.first;   // Parent crc
-		int level = it.second;     // Parent level
-		qn.level = level + 1;      // qnode's level relative to parent
-
-		m_rows.clear();		   // record this qnode
-		m_rows.reserve(qn.level);
-		fill_row(&qn, qn.level);
-
-		// Find the parent's qnode (pqn), given its crc and
-		// hierarchical level.
-		qnode* pqn = find_qnode_nextlevel(pqn, crc, level);
-		if (pqn) {
-			is_there = true;
-			retval = get_parents_deep(pqn, level);
-		}
-
-		if (retval == EXE_OK)
-			put_rows();
-	}
-	return is_there ? EXE_OK : EXE_NOTFOUND;
+	qnode& parent = *qn_lookup_parent(&qn, qn.parent.first);
+	this->get_parents(parent);
+	return EXE_OK;
 }
 
 int lookup::exe_struct()
@@ -352,28 +278,25 @@ int lookup::exe_struct()
 				|| !(qn.flags & CTL_HASLIST))
 					return;
 
-				this->get_parents_wide(qn);
+				m_rows.clear();
+				m_rows.reserve(qn.level);
+				this->get_parents(qn);
+				put_rows();
 			  });
 	} else {
 		for (auto it : m_qnodes) {
 			qnode& qn = it.second;
 			qn.crc = it.first;
 
-			if (qn.sdecl.find(m_declstr) != string::npos)
-				this->get_parents_wide(qn);
+			if (qn.sdecl.find(m_declstr) != string::npos) {
+				m_rows.clear();
+				m_rows.reserve(qn.level);
+				this->get_parents(qn);
+			}
+			put_rows();
 		}
 	}
 
-#if 0
-	if (m_qnp->parents.size() == 0) {
-		m_rows.clear();
-		fill_row(m_qnp, 0);
-		put_rows();
-		return EXE_OK;
-	}
-
-	get_parents_wide(m_qn);
-#endif
 	return EXE_OK;
 }
 
