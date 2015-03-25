@@ -38,6 +38,6 @@ void error::print_cmd_errmsg(int err, string declstr, string datafile)
 		cout << "\nPlease read the help text below.\n"
 		     << lookup::get_helptext();
 	} else {
-		cout << format(errstr[err]) % declstr % datafile;
+		cerr << format(errstr[err]) % declstr % datafile;
 	}
 }
