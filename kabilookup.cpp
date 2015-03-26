@@ -165,7 +165,7 @@ int lookup::exe_count()
 		m_crc = raw_crc32(m_declstr.c_str());
 		pair<qniterator_t, qniterator_t> range;
 		range = m_qnodes.equal_range(m_crc);
-		m_count = distance(range.first, range.second);
+		m_count += distance(range.first, range.second);
 	} else {
 		for (auto it : m_qnodes) {
 			qnode& qn = it.second;
@@ -175,6 +175,7 @@ int lookup::exe_count()
 	}
 
 	cout << m_count << "\r";
+	cout.flush();
 	return m_count !=0 ? EXE_OK : EXE_NOTFOUND;
 }
 
