@@ -30,7 +30,8 @@ kabidump::kabidump(int argc, char **argv)
 	else
 		datafilename = m_filename;
 
-	kb_dump_cqnmap((char *)datafilename.c_str());
+	if (kb_dump_cqnmap((char *)datafilename.c_str()) != 0)
+		exit(1);
 }
 
 int main(int argc, char **argv)
