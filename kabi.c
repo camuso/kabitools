@@ -234,32 +234,47 @@ static void get_symbols	(struct qnode *parent,
 				decl = cstrcat(decl, qn->name);
 		}
 
+		// If it's not a struct or union, then we are not interested
+		// in its symbol list.
+		if (!(qn->flags & CTL_STRUCT))
+			qn->flags &= ~CTL_HASLIST;
+
 		init_crc(decl, qn, parent);
 #ifndef NDEBUG
-		if (qn->name && ((strstr(qn->name, "page_table_lock") != NULL)))
-		//if ((qn->crc == 3613290044))// || (parent->crc == 410729264))
+		//if (qn->name && ((strstr(qn->name, "page_table_lock") != NULL)))
+		if ((qn->crc == 1622272652))// || (parent->crc == 410729264))
 			puts(decl);
 #endif
 		if (parent->crc == qn->crc)
 			qn->flags |= CTL_BACKPTR;
 
-		else if (qn->flags & CTL_HASLIST) {
+		else if ((qn->flags & CTL_HASLIST) && (qn_is_dup(qn)))
+			 qn->flags &= ~CTL_HASLIST;
 
-			switch (qn_is_dup(qn)) {
-			case DUP_NOT  : break;
-			case DUP_ONE  : qn->flags &= ~CTL_HASLIST; return;
-			case DUP_MANY : qn->flags &= ~CTL_HASLIST; return;
-			default       : qn->flags &= ~CTL_HASLIST; return;
-			}
-		}
-
-		prdbg("%s%s %s\n", pad_out(qn->level, ' '), decl, qn->name);
+		prdbg("%s%s %s\n", pad_out(qn->level, '|'), decl, qn->name);
 		update_qnode(qn, parent);
 
 		if ((qn->flags & CTL_HASLIST) && !(qn->flags & CTL_BACKPTR))
 			proc_symlist(qn, (struct symbol_list *)qn->symlist,
 				     CTL_NESTED);
 	} END_FOR_EACH_PTR(sym);
+}
+
+
+static void process_return(struct symbol *basetype, struct qnode *parent)
+{
+	struct qnode *qn = new_qnode(parent, CTL_RETURN);
+	const char *decl;
+
+	get_declist(qn, basetype);
+	qn_trim_decl(qn);
+	decl = qn_get_decl(qn);
+	init_crc(decl, qn, parent);
+	prdbg(" RETURN: %s\n", decl);
+	update_qnode(qn, parent);
+
+	if (qn->flags & CTL_HASLIST)
+		proc_symlist(qn, (struct symbol_list *)qn->symlist, CTL_NESTED);
 }
 
 static void build_branch(char *symname, struct qnode *parent)
@@ -270,7 +285,6 @@ static void build_branch(char *symname, struct qnode *parent)
 		const char *decl;
 		struct symbol *basetype = sym->ctype.base_type;
 		struct qnode *qn = new_qnode(parent, CTL_EXPORTED);
-		struct qnode *bqn;
 
 #ifndef NDEBUG
 		if (!strcmp(symname, "ipmi_register_smi"))
@@ -282,18 +296,12 @@ static void build_branch(char *symname, struct qnode *parent)
 		qn_trim_decl(qn);
 		decl = cstrcat(qn_get_decl(qn), qn->name);
 		init_crc(decl, qn, parent);
-		prdbg("EXPORTED: %s\n", decl);
+		prdbg(" EXPORTED: %s\n", decl);
 		update_qnode(qn, parent);
 
-		if (qn->flags & CTL_HASLIST) {
-			bqn = new_qnode(qn, CTL_RETURN);
-			get_declist(bqn, basetype);
-			qn_trim_decl(bqn);
-			decl = qn_get_decl(bqn);
-			init_crc(decl, bqn, parent);
-			prdbg("RETURN: %s\n", decl);
-			update_qnode(bqn, qn);
-		}
+		if (qn->flags & CTL_HASLIST)
+			process_return(basetype, qn);
+
 
 		if (basetype->arguments)
 			get_symbols(qn, basetype->arguments, CTL_ARG);

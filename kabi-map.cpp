@@ -145,6 +145,7 @@ struct qnode *new_firstqnode(char *file)
 	qn->sdecl = parent->sdecl;
 	qn->level = parent->level;
 	qn->crc   = parent->crc;
+	qn->ancestor = parent->ancestor;
 	update_qnode(qn, parent);
 	return qn;
 }
@@ -204,7 +205,10 @@ static inline bool is_inlist(cnpair_t& cn, cnodemap_t& cnmap)
 
 	cniterator_t it = find_if (range.first, range.second,
 				[&cn](cnpair_t lcn)
-				{ return lcn.second == cn.second; });
+				{
+					return lcn.second == cn.second;
+				});
+
 	return it != range.second;
 }
 
@@ -217,75 +221,11 @@ static inline void update_duplicate(qnode *qn, qnode *parent)
 	dupmap.insert(dupair_t(qn->crc, *qn));
 }
 
-static inline bool qn_is_spiral(qnode* qn)
-{
-	qnodemap_t& qnmap = public_cqnmap.qnmap;
-	qnitpair_t range = qnmap.equal_range(qn->crc);
-	qniterator_t qnit = range.first;
-
-	qnit = find_if (range.first, range.second,
-		[&qn](qnpair_t& lqn) {
-			return ((lqn.second.sname == qn->sname) &&
-				(lqn.second.ancestor == qn->ancestor));
-			});
-#ifndef NDEBUG
-	if (qnit != range.second) {
-		qnode& pqn = (*qnit).second;
-		cout << "parent: " << pqn.sdecl << " " << pqn.sname << " "
-		     << pqn.crc << " " << pqn.level << " " << pqn.ancestor.first
-		     << " " << pqn.ancestor.second << endl;
-		cout << "  this: " << qn->sdecl << " " << qn->sname << " "
-		     << qn->crc << " " << qn->level << " " << qn->ancestor.first
-		     << " " << qn->ancestor.second << endl;
-	}
-#endif
-	return qnit != range.second;
-}
-
 int qn_is_dup(struct qnode *qn)
 {
-	int retval = DUP_NOT;
-	qnode* mapparent;
-
 	qnodemap_t& qnmap = public_cqnmap.qnmap;
 	qnitpair_t range = qnmap.equal_range(qn->crc);
-	qniterator_t qnit = range.first;
-
-	int count = distance(range.first, range.second);
-
-	if ((range.first == qnmap.end()) || (count < 1)) {
-		mapparent = qn_lookup_parent(qn, qn->parent.first);
-
-		if (qn->sdecl == mapparent->sdecl) {
-			update_duplicate(qn, mapparent);
-			return DUP_ONE;
-		} else
-			return DUP_NOT;
-	}
-
-	if (count == 1) {
-		mapparent = &(*qnit).second;
-		if (mapparent->ancestor == qn->ancestor) {
-			update_duplicate(qn, mapparent);
-			return DUP_ONE;
-		}
-		else
-			return DUP_NOT;
-	}
-
-	qnit = find_if (range.first, range.second,
-		[&qn](qnpair_t& lqn)
-		{
-			qnode& parent = lqn.second;
-			return ((parent.level == qn->level - 1) &&
-				(parent.ancestor == qn->ancestor));
-		});
-
-	if (qnit == range.second)
-		return DUP_NOT;
-
-	retval = qn_is_spiral(qn) ? DUP_MANY : DUP_ONE;
-	return retval;
+	return distance(range.first, range.second) > 0;
 }
 
 static inline void write_cqnmap(const char *filename, Cqnodemap& cqnmap)
