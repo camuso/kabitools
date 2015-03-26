@@ -153,7 +153,7 @@ int lookup::execute(string datafile)
 	switch (m_flags & m_exemask) {
 	case KB_COUNT   : return exe_count();
 //	case KB_DECL    : return exe_decl();
-//	case KB_EXPORTS : return exe_exports();
+	case KB_EXPORTS : return exe_exports();
 	case KB_STRUCT  : return exe_struct();
 	}
 	return 0;
@@ -300,6 +300,27 @@ int lookup::exe_struct()
 
 	return EXE_OK;
 }
+
+int lookup::get_children(qnode& qn)
+{
+
+	return EXE_OK;
+}
+
+int lookup::exe_exports()
+{
+	for (auto it : m_qnodes) {
+		qnode& qn = it.second;
+		qn.crc = it.first;
+
+		if (qn.sdecl.find(m_declstr) != string::npos) {
+			m_rows.clear();
+			m_rows.reserve(qn.level);
+		}
+	}
+	return EXE_OK;
+}
+
 
 /************************************************
 ** main()

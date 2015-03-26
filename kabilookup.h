@@ -58,9 +58,11 @@ private:
 	int get_parents_deep(qnode *qn, int level);
 	int get_parents_wide(qnode &qn);
 	int get_parents(qnode& qn);
+	int get_children(qnode& qn);
 	int execute(std::string datafile);
 	int exe_count();
 	int exe_struct();
+	int exe_exports();
 
 	// member classes
 	Cqnodemap &m_cqnmap = get_public_cqnmap();
