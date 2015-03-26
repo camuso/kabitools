@@ -36,6 +36,15 @@ enum ctlflags {
 	CTL_HASLIST	= 1 << 10,
 };
 
+enum levels {
+	LVL_FILE,
+	LVL_EXPORTED,
+	LVL_ARG,
+	LVL_RETURN = LVL_ARG,
+	LVL_NESTED,
+	LVL_COUNT
+};
+
 #ifdef __cplusplus
 
 // This is a hash map used for parents and children of qnodes.
@@ -68,14 +77,8 @@ struct qnode
 	// as the "second" field of the std::pair.
 	unsigned long crc;
 
-	// level is volatile and subject to change with each instance,
-	// even of qnodes having the same crc. It is used only during
-	// the discovery cycle of the qnode to be stored in its parents
-	// level field, indicating its level in the hierarchy of its
-	// immediate parent. The other parents in the qnode parents map
-	// may have different numbers in their level field to reflect
-	// where the respective instance of this crc/qnode pair appeared
-	// in their respective hierarchies.
+	// level in the nested hierarchy where this qnode was instantiated.
+	// preserved by serialization.
 	int level;
 
 	// These pointers go out of scope at the end of the parser's life
@@ -86,8 +89,7 @@ struct qnode
 	char *name;
 	void *symlist;
 
-	// This is the only field on this side of the c/c++ devide that
-	// is valid after the parser exits.
+	// Flags set during discovery are serialized
 	enum ctlflags flags;
 
 #ifdef __cplusplus
@@ -95,13 +97,43 @@ struct qnode
 	// This is the c++ side of the qnode. These fields will be updated
 	// at the end of the discovery process for this qnode and are
 	// valid when the qnode rematerializes after deserialization.
-	qnode(){}
-	std::string sname;
-	std::string sdecl;
-	cnodemap_t children;
 
-	pnode_t parent;
-	pnode_t ancestor;
+	qnode(){}		// constructor
+	std::string sname;	// identifier
+	std::string sdecl;	// data type declaration
+	cnodemap_t children;	// map of children symbol CRCs and their
+				// : respective levels in the hierarchy
+
+	// We want to allow nodes below an argument or return to have
+	// those ancestors in common. This assures that when traversing
+	// the tree in reverse during a lookup sequence, we will find
+	// the correct ARG or RETURN for the corresponding symbol being
+	// looked-up.
+	//
+	// Consider the following.
+	//
+	//	function struct foo *do_something(struct bar *bar_arg)
+	//
+	// do_something() has return of type struct foo*, and arg of
+	// struct bar*.
+	//
+	// All descendants discovered under these function parameters
+	// should lead back to them. It is possible that there are other
+	// struct foo in the file, and we want to assure that instances
+	// of these structs always lead back to the correct ARG or RETURN
+	// symbol from which they are descended.
+	//
+	// Also, it is possible that other functions could have struct
+	// foo and struct bar as arguments or return values, so the
+	// ARG and RETURN symbols must lead back to their respective
+	// discreet functions.
+	//
+	// Exported functions will always have unique crc, because they
+	// all occupy the same namespace and must be distinct.
+	//
+	pnode_t parent;		// Immediate predecessor
+	pnode_t ancestor;	// ARG or RETURN
+	pnode_t function;	// Function at the top
 
 	// Boost serialization
 	template<class Archive>
@@ -109,7 +141,7 @@ struct qnode
         {
 		if (version){;}
 		ar & flags & level & sdecl & sname
-		   & parent & ancestor & children;
+		   & parent & ancestor & function & children;
 	}
 #endif
 };
@@ -124,24 +156,10 @@ typedef qnodemap_t::iterator qniterator_t;
 typedef qnodemap_t::reverse_iterator qnriterator_t;
 typedef std::pair<qniterator_t, qniterator_t> qnitpair_t;
 
-// This hash map keeps track of duplicates on a file-by-file basis.
-// The dup list can be cumulatively built as each file is processed
-// depending on the "cumulative" flag state.
+// This class serves as a wrapper for the hash map of qnodes.
+// Having a cass wrapper allows us to add other controls
+// easily if needed in the future.
 //
-typedef std::map<unsigned long, qnode> dupmap_t;
-typedef dupmap_t::value_type dupair_t;
-typedef dupmap_t::iterator dupiterator_t;
-
-#endif
-
-enum dupcodes {
-	DUP_NOT,	// not a duplicate
-	DUP_ONE,	// only one dup so far
-	DUP_MANY,	// we're starting a spiral
-};
-
-#ifdef __cplusplus
-
 class Cqnodemap
 {
 public:
@@ -190,7 +208,7 @@ extern void kb_restore_dupmap(char *filename);
 extern void kb_write_cqnmap(const char *filename);
 extern void kb_restore_cqnmap(char *filename);
 extern bool kb_merge_cqnmap(char *filename);
-extern void kb_dump_cqnmap(char *filename);
+extern int kb_dump_cqnmap(char *filename);
 extern void kb_dump_qnode(struct qnode *qn);
 #ifdef __cplusplus
 }

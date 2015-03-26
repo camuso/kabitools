@@ -35,8 +35,6 @@
 using namespace std;
 
 Cqnodemap public_cqnmap;
-qnodemap_t temp_qnodes;
-dupmap_t dupmap;
 
 static inline qnode* lookup_crc(unsigned long crc, qnodemap_t& qnmap)
 {
@@ -71,14 +69,30 @@ static inline qnode* init_qnode(qnode *parent, qnode *qn, enum ctlflags flags)
 	return qn;
 }
 
+/******************************************************************************
+ * init_crc(const char *decl, qnode *qn, qnode *parent)
+ *
+ * decl   - declaration of type to be converted to crc
+ * qn     - qnode struct containing the details of this instance of this symbol
+ * parent - parent qnode
+ *
+ * See the commentary in kabi-map.h to better understand the reasoning
+ * behind the logic of this function.
+ *
+ */
 void init_crc(const char *decl, struct qnode *qn, struct qnode *parent)
 {
 	qn->crc = raw_crc32(decl);
 
-	if (qn->flags & (CTL_ARG | CTL_RETURN))
-		qn->ancestor = pnode_t(qn->crc, qn->level);
+	if (parent->flags & (CTL_ARG | CTL_RETURN))
+		qn->ancestor = pnode_t(parent->crc, parent->level);
 	else
 		qn->ancestor = parent->ancestor;
+
+	if ((qn->flags & CTL_FUNCTION) && (qn->flags & CTL_EXPORTED))
+		qn->function = pnode_t(qn->crc, qn->level);
+	else
+		qn->function = parent->function;
 }
 
 void init_ancestor(unsigned long crc, struct qnode *qn)
@@ -93,10 +107,14 @@ inline struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags)
 	return qn;
 }
 
-// If no parent exists, then return NULL.
-// If there is only one parent in the map, return the pointer to that.
-// If there is more than one pointer, find the one with the children
-// list having the same ancestor and a level 1 less than the child.
+/****************************************************************************
+ * qn_lookup_parent(qnode *qn, unsigned long crc)
+ *
+ * If no parent exists, then return NULL.
+ * If there is only one parent in the map, return the pointer to that.
+ * If there is more than one pointer, find the one with the children
+ * list having the same ancestor and a level 1 less than the child.
+ */
 qnode *qn_lookup_parent(qnode *qn, unsigned long crc)
 {
 	qnodemap_t& qnmap = public_cqnmap.qnmap;
@@ -115,17 +133,28 @@ qnode *qn_lookup_parent(qnode *qn, unsigned long crc)
 		[&qn](qnpair_t& lqn)
 		{
 			qnode& parent = lqn.second;
-			return ((parent.level == qn->level - 1) &&
-				(parent.ancestor == qn->ancestor));
+
+			if (qn->level > 3)
+				return ((parent.level == qn->level - 1) &&
+					(parent.ancestor == qn->ancestor));
+			else
+				return ((parent.level == qn->level - 1) &&
+					(parent.function == qn->function));
 		});
 
 	return qnit != range.second ? &(*qnit).second : NULL;
 }
 
-// The File is parent of all symbols found within it. The parent field
-// will point to itself, but it will not be in the children map.
-// All the exported functions in the file will be in the file node's
-// children map.
+/****************************************************************************
+ * new_firstqnode(char *file)
+ *
+ * Returns new first qnode
+ *
+ * The File is parent of all symbols found within it. The parent field
+ * will point to itself, but it will not be in the children map.
+ * All the exported functions in the file will be in the file node's
+ * children map.
+ */
 struct qnode *new_firstqnode(char *file)
 {
 	// The "parent" of the File node is itself, so all the fields should
@@ -217,8 +246,6 @@ static inline void update_duplicate(qnode *qn, qnode *parent)
 	cnpair_t childcn = make_pair(qn->crc, qn->level);
 	if (!is_inlist(childcn, parent->children))
 		insert_cnode(parent->children, childcn);
-
-	dupmap.insert(dupair_t(qn->crc, *qn));
 }
 
 int qn_is_dup(struct qnode *qn)
@@ -313,12 +340,13 @@ bool kb_merge_cqnmap(char *filename)
 #include <boost/format.hpp>
 using boost::format;
 
-void kb_dump_cqnmap(char *filename)
+int kb_dump_cqnmap(char *filename)
 {
 	Cqnodemap cqq;
 	qnodemap_t& qnmap = cqq.qnmap;
 
-	kb_read_cqnmap(string(filename), cqq);
+	if (int retval = kb_read_cqnmap(string(filename), cqq) != 0)
+		return retval;
 
 	cout << "map size: " << qnmap.size() << endl;
 
@@ -340,6 +368,9 @@ void kb_dump_cqnmap(char *filename)
 		cout << format("\tancestor: %12lu %3d\n")
 			% qn.ancestor.first % qn.ancestor.second;
 
+		cout << format("\tfunction: %12lu %3d\n")
+			% qn.function.first % qn.function.second;
+
 		if (!qn.children.size())
 			goto bottom;
 
@@ -353,6 +384,7 @@ void kb_dump_cqnmap(char *filename)
 bottom:
 		cout << endl;
 	}
+	return 0;
 }
 
 void kb_dump_qnode(struct qnode *qn)
