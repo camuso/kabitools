@@ -28,15 +28,6 @@
 #include "options.h"
 #include "error.h"
 
-enum levels {
-	LVL_FILE,
-	LVL_EXPORTED,
-	LVL_ARG,
-	LVL_RETURN = LVL_ARG,
-	LVL_NESTED,
-	LVL_COUNT
-};
-
 struct row {
 	int level;
 	int flags;

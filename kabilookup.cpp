@@ -274,8 +274,8 @@ int lookup::exe_struct()
 				qnode& qn = lqp.second;
 				qn.crc = lqp.first;
 
-				if ((qn.flags & CTL_BACKPTR)
-				|| !(qn.flags & CTL_HASLIST))
+				if (qn.flags & CTL_BACKPTR)
+				//|| !(qn.flags & CTL_HASLIST))
 					return;
 
 				m_rows.clear();
