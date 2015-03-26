@@ -104,8 +104,8 @@ struct qnode
 	cnodemap_t children;	// map of children symbol CRCs and their
 				// : respective levels in the hierarchy
 
-	// We want to allow nodes below an argument or return to have
-	// those ancestors in common. This assures that when traversing
+	// We want nodes below an argument or return to have those
+	// ancestors in common. This assures that when traversing
 	// the tree in reverse during a lookup sequence, we will find
 	// the correct ARG or RETURN for the corresponding symbol being
 	// looked-up.
@@ -126,7 +126,7 @@ struct qnode
 	// Also, it is possible that other functions could have struct
 	// foo and struct bar as arguments or return values, so the
 	// ARG and RETURN symbols must lead back to their respective
-	// discreet functions.
+	// distinct functions.
 	//
 	// Exported functions will always have unique crc, because they
 	// all occupy the same namespace and must be distinct.
@@ -175,9 +175,7 @@ public:
 };
 
 extern Cqnodemap& get_public_cqnmap();
-extern qnode* qn_lookup_crc_other(unsigned long crc, Cqnodemap& cqnmap);
 extern qnode *qn_lookup_parent(qnode *qn, unsigned long crc);
-extern bool qn_is_duplist(qnode* qn, qnodemap_t& qnmap);
 extern int kb_read_cqnmap(std::string filename, Cqnodemap &cqnmap);
 extern void kb_write_cqnmap_other(std::string& filename, Cqnodemap& cqnmap);
 
@@ -189,27 +187,21 @@ extern struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags);
 extern struct qnode *new_firstqnode(char *file);
 extern void init_crc(const char *decl, struct qnode *qn, struct qnode *parent);
 extern void update_qnode(struct qnode *qn, struct qnode *parent);
-extern void update_dupmap(struct qnode *qn);
 extern void insert_qnode(struct qnode *qn);
 extern void delete_qnode(struct qnode *qn);
-extern void update_mapclass();
-extern void qn_add_parent(struct qnode *qn, struct qnode *parent);
-extern void qn_add_child(struct qnode *qn, struct qnode *child);
 extern struct qnode *qn_lookup_crc(unsigned long crc);
-extern struct qnode *qn_lookup_crc_slist(unsigned long crc);
 extern bool qn_lookup_child(struct qnode *qn, unsigned long crc);
 extern void qn_add_to_decl(struct qnode *qn, char *decl);
 extern void qn_trim_decl(struct qnode *qn);
 extern const char *qn_get_decl(struct qnode *qn);
 extern int qn_is_dup(struct qnode *qn);
 extern const char *cstrcat(const char *d, const char *s);
-extern void kb_write_dupmap(char *filename);
-extern void kb_restore_dupmap(char *filename);
 extern void kb_write_cqnmap(const char *filename);
 extern void kb_restore_cqnmap(char *filename);
 extern bool kb_merge_cqnmap(char *filename);
 extern int kb_dump_cqnmap(char *filename);
 extern void kb_dump_qnode(struct qnode *qn);
+
 #ifdef __cplusplus
 }
 #endif

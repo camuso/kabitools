@@ -1,4 +1,3 @@
-
 /* kabi-map.cpp - multimap class for kabi-parser and kabi-lookup utilities
  *
  * Copyright (C) 2015  Red Hat Inc.
