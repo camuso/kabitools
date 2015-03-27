@@ -107,18 +107,35 @@ inline struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags)
 }
 
 /****************************************************************************
- * qn_lookup_parent(qnode *qn, unsigned long crc)
+ * qn_lookup_qnode(qnode *qn, unsigned long crc)
  *
- * If no parent exists, then return NULL.
- * If there is only one parent in the map, return the pointer to that.
- * If there is more than one pointer, find the one with the children
- * list having the same ancestor and a level 1 less than the child.
+ * Lookup a qnode in the map given either a parent or child and the crc
+ * of the qnode being sought.
+ *
+ * qn  - pointer to the parent or child qnode from which to start the search
+ * crc - the crc of the symbol encapsulated by the qnode we are looking for
+ * dir - search up (for parent) or down (for child). Default is up.
+ *       See enum qnseek and the function prototype in kabi-map.h
+ *
+ * If we can't find it, then return NULL.
+ * If there is only one instance of the qnode in the map, return its pointer.
+ * If there is more than one instance, find the one having the same ancestor
+ * or function, depending on the level we are searching from.
+ *
  */
-qnode *qn_lookup_parent(qnode *qn, unsigned long crc)
+extern qnode* qn_lookup_qnode(qnode* qn, unsigned long crc, qnseek dir)
 {
 	qnodemap_t& qnmap = public_cqnmap.qnmap;
 	qnitpair_t  range = qnmap.equal_range(crc);
 	qniterator_t qnit = range.first;
+
+	// The direction in which we are searching determines the boundary
+	// at which we search for the matching function instead of the
+	// matching arg or return. Arg and return symbols must point back
+	// to the functions from which they are descended, and nested symbols
+	// must point back to the arg or return symbol from which they are
+	// descended.
+	int lvlbound = (dir == QN_UP) ? LVL_NESTED : LVL_ARG;
 
 	int count = distance(range.first, range.second);
 
@@ -129,16 +146,16 @@ qnode *qn_lookup_parent(qnode *qn, unsigned long crc)
 		return &(*qnit).second;
 
 	qnit = find_if (range.first, range.second,
-		[&qn](qnpair_t& lqn)
+		[&qn, &dir, &lvlbound](qnpair_t& lqn)
 		{
-			qnode& parent = lqn.second;
+			qnode& rqn = lqn.second;
 
-			if (qn->level > 3)
-				return ((parent.level == qn->level - 1) &&
-					(parent.ancestor == qn->ancestor));
+			if (qn->level > lvlbound)
+				return ((rqn.level == qn->level - dir ) &&
+					(rqn.ancestor == qn->ancestor));
 			else
-				return ((parent.level == qn->level - 1) &&
-					(parent.function == qn->function));
+				return ((rqn.level == qn->level - dir) &&
+					(rqn.function == qn->function));
 		});
 
 	return qnit != range.second ? &(*qnit).second : NULL;
@@ -180,7 +197,7 @@ struct qnode *new_firstqnode(char *file)
 
 void update_qnode(struct qnode *qn, struct qnode *parent)
 {
-	qnode *pqn = qn_lookup_parent(qn, parent->crc);
+	qnode *pqn = qn_lookup_qnode(qn, parent->crc);
 	pqn = pqn ? pqn : parent;
 
 	qn->sname = qn->name ? string(qn->name) : string("");

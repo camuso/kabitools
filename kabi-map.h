@@ -45,6 +45,14 @@ enum levels {
 	LVL_COUNT
 };
 
+
+// Seek directions for qnode searches
+//
+enum qnseek {
+	QN_UP = +1,
+	QN_DN = -1
+};
+
 #ifdef __cplusplus
 
 // This is a hash map used for children of qnodes.
@@ -77,7 +85,8 @@ struct qnode
 	// as the "second" field of the std::pair.
 	unsigned long crc;
 
-	// level in the nested hierarchy where this qnode was instantiated.
+	// This is the level in the nested hierarchy where the symbol
+	// characterized by the qnode was instantiated. This field is
 	// preserved by serialization.
 	int level;
 
@@ -95,8 +104,9 @@ struct qnode
 #ifdef __cplusplus
 
 	// This is the c++ side of the qnode. These fields will be updated
-	// at the end of the discovery process for this qnode and are
-	// valid when the qnode rematerializes after deserialization.
+	// at the end of the discovery process for this instance of the
+	// corresponding symbol and are valid when the qnode rematerializes
+	// after deserialization.
 
 	qnode(){}		// constructor
 	std::string sname;	// identifier
@@ -106,9 +116,8 @@ struct qnode
 
 	// We want nodes below an argument or return to have that
 	// ancestor in common. This assures that when traversing
-	// the tree in reverse during a lookup sequence, we will find
-	// the correct ARG or RETURN for the corresponding symbol being
-	// looked-up.
+	// the tree during a lookup sequence, we will find the correct
+	// ARG or RETURN for the corresponding symbol being looked-up.
 	//
 	// Consider the following.
 	//
@@ -117,10 +126,10 @@ struct qnode
 	// do_something() has return of type struct foo*, and arg of
 	// struct bar*.
 	//
-	// All descendants discovered under these function parameters
+	// All descendant symbols discovered under these function parameters
 	// should lead back to them. It is possible that there are other
 	// struct foo in the file, and we want to assure that instances
-	// of these structs always lead back to the correct ARG or RETURN
+	// of these symbols always lead back to the correct ARG or RETURN
 	// symbol from which they are descended.
 	//
 	// Also, it is possible that other functions could have struct
@@ -157,7 +166,7 @@ typedef qnodemap_t::reverse_iterator qnriterator_t;
 typedef std::pair<qniterator_t, qniterator_t> qnitpair_t;
 
 // This class serves as a wrapper for the hash map of qnodes.
-// Having a cass wrapper allows us to add other controls
+// Having a class wrapper allows us to add other controls
 // easily if needed in the future.
 //
 class Cqnodemap
@@ -175,8 +184,8 @@ public:
 };
 
 extern Cqnodemap& get_public_cqnmap();
-extern qnode *qn_lookup_parent(qnode *qn, unsigned long crc);
-extern int kb_read_cqnmap(std::string filename, Cqnodemap &cqnmap);
+extern qnode* qn_lookup_qnode(qnode* qn, unsigned long crc, qnseek dir=QN_UP);
+extern int kb_read_cqnmap(std::string filename, Cqnodemap& cqnmap);
 extern void kb_write_cqnmap_other(std::string& filename, Cqnodemap& cqnmap);
 
 extern "C"
@@ -190,7 +199,6 @@ extern void update_qnode(struct qnode *qn, struct qnode *parent);
 extern void insert_qnode(struct qnode *qn);
 extern void delete_qnode(struct qnode *qn);
 extern struct qnode *qn_lookup_crc(unsigned long crc);
-extern bool qn_lookup_child(struct qnode *qn, unsigned long crc);
 extern void qn_add_to_decl(struct qnode *qn, char *decl);
 extern void qn_trim_decl(struct qnode *qn);
 extern const char *qn_get_decl(struct qnode *qn);
