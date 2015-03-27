@@ -36,6 +36,11 @@ struct row {
 	std::string name;
 };
 
+enum rowpolicy {
+	ROW_ACCUM,
+	ROW_FLUSH,
+};
+
 class lookup
 {
 public:
@@ -48,24 +53,26 @@ private:
 	bool check_flags();
 	int count_bits(unsigned mask);
 	std::string &pad_out(int padsize);
-	void put_row(row &r);
-	void put_rows();
-	void fill_row(const qnode *qn, int level);
-	bool find_decl(qnode &qnr, std::string decl);
+	void put_row(row& r);
+	void put_rows_from_back();
+	void put_rows_from_front();
+	void fill_row(const qnode& qn, enum rowpolicy rowpol=ROW_ACCUM);
+	bool find_decl(qnode& qnr, std::string decl);
 	bool get_qnrange(unsigned long crc, qnpair_t& range);
 	qnode* find_qnode_nextlevel(qnode* qn, long unsigned crc, int level);
-	int get_decl_list(std::vector<qnode> &retlist);
-	int get_parents_deep(qnode *qn, int level);
-	int get_parents_wide(qnode &qn);
+	int get_decl_list(std::vector<qnode>& retlist);
+	void show_spinner(int& count);
 	int get_parents(qnode& qn);
-	int get_children(qnode& qn);
+	int get_children_wide(qnode& qn);
+	int get_children_deep(qnode& parent, cnpair_t& cn);
 	int execute(std::string datafile);
 	int exe_count();
 	int exe_struct();
 	int exe_exports();
+	int exe_decl();
 
 	// member classes
-	Cqnodemap &m_cqnmap = get_public_cqnmap();
+	Cqnodemap& m_cqnmap = get_public_cqnmap();
 	options m_opts;
 	error m_err;
 	qnode m_qn;
@@ -73,15 +80,18 @@ private:
 	qnode& m_qnr = m_qn;
 
 	// member basetypes
-	cnodemap_t *m_cnmap;
-	qnodemap_t &m_qnodes = m_cqnmap.qnmap;
+	cnodemap_t* m_cnmap;
+	qnodemap_t& m_qnodes = m_cqnmap.qnmap;
 	typedef std::pair<int, std::string> errpair;
+
 	std::vector<row> m_rows;
 	std::vector<errpair> m_errors;
 	std::string m_datafile = "../kabi-data.dat";
 	std::string m_filelist = "./redhat/kabi/parser/kabi-files.list";
 	std::string m_declstr;
+
 	unsigned long m_crc;
+	bool m_isfound = false;
 	int m_count = 0;
 	int m_flags;
 	int m_errindex = 0;

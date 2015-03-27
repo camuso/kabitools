@@ -94,18 +94,18 @@ int lookup::run()
 	}
 
 	while (getline(ifs, m_datafile)) {
-		if ((m_errindex = execute(m_datafile))) {
-			errpair ep = make_pair(m_errindex,
-					       m_datafile);
-			m_errors.push_back(ep);
-		}
+		m_errindex = execute(m_datafile);
+
+		if (m_isfound && (m_flags & KB_WHOLE_WORD)
+			      && ((m_flags & KB_EXPORTS)
+			      ||  (m_flags & KB_DECL)))
+			break;
 	}
 
 	if ((m_flags & m_exemask) == KB_COUNT)
 		cout << endl;
 
-	for (auto it : m_errors)
-		m_err.print_cmd_errmsg(it.first, m_declstr, it.second);
+	m_err.print_cmd_errmsg(m_errindex, m_declstr, m_filelist);
 
 	return(m_errindex);
 }
@@ -152,7 +152,7 @@ int lookup::execute(string datafile)
 
 	switch (m_flags & m_exemask) {
 	case KB_COUNT   : return exe_count();
-//	case KB_DECL    : return exe_decl();
+	case KB_DECL    : return exe_decl();
 	case KB_EXPORTS : return exe_exports();
 	case KB_STRUCT  : return exe_struct();
 	}
@@ -203,14 +203,18 @@ int lookup::get_decl_list(std::vector<qnode> &retlist)
 	return retlist.size();
 }
 
-void lookup::fill_row(const qnode *qn, int level)
+void lookup::fill_row(const qnode& qn, rowpolicy rowpol)
 {
 	row r;
-	r.level = level;
-	r.flags = qn->flags;
-	r.decl = qn->sdecl;
-	r.name = qn->sname;
-	m_rows.push_back(r);
+	r.level = qn.level;
+	r.flags = qn.flags;
+	r.decl = qn.sdecl;
+	r.name = qn.sname;
+
+	switch (rowpol) {
+	case ROW_ACCUM : m_rows.push_back(r); break;
+	case ROW_FLUSH : put_row(r);
+	}
 }
 
 string &lookup::pad_out(int padsize)
@@ -221,7 +225,7 @@ string &lookup::pad_out(int padsize)
 	return out;
 }
 
-void lookup::put_row(row &r)
+void lookup::put_row(row& r)
 {
 	switch (r.level) {
 	case LVL_FILE:
@@ -240,24 +244,32 @@ void lookup::put_row(row &r)
 	}
 }
 
-void lookup::put_rows()
+void lookup::put_rows_from_back()
 {
-	unsigned size = m_rows.size();
-	for (unsigned i = 0; i < size; ++i) {
+	for (auto it : m_rows) {
 		row r = m_rows.back();
 		put_row(r);
 		m_rows.pop_back();
 	}
+	cout << endl;
+}
+
+void lookup::put_rows_from_front()
+{
+	for (auto it : m_rows)
+		put_row(it);
+
+	cout << endl;
 }
 
 int lookup::get_parents(qnode& qn)
 {
-	fill_row(&qn, qn.level);
+	fill_row(qn);
 
 	if (qn.level == 0)
 		return EXE_OK;
 
-	qnode& parent = *qn_lookup_parent(&qn, qn.parent.first);
+	qnode& parent = *qn_lookup_qnode(&qn, qn.parent.first);
 	this->get_parents(parent);
 	return EXE_OK;
 }
@@ -282,7 +294,7 @@ int lookup::exe_struct()
 				m_rows.clear();
 				m_rows.reserve(qn.level);
 				this->get_parents(qn);
-				put_rows();
+				put_rows_from_back();
 			  });
 	} else {
 		for (auto it : m_qnodes) {
@@ -294,33 +306,167 @@ int lookup::exe_struct()
 				m_rows.reserve(qn.level);
 				this->get_parents(qn);
 			}
-			put_rows();
+			put_rows_from_back();
 		}
 	}
 
 	return EXE_OK;
 }
 
-int lookup::get_children(qnode& qn)
+int lookup::get_children_deep(qnode& parent, cnpair_t& cn)
 {
+	qnode& qn = *qn_lookup_qnode(&parent, cn.first, QN_DN);
+
+	fill_row(qn);
+
+	if (qn.children.size() == 0)
+		return EXE_OK;
+
+	cnodemap_t& cnmap = qn.children;
+
+	for (auto it : cnmap)
+		get_children_wide(*qn_lookup_qnode(&qn, it.first, QN_DN));
 
 	return EXE_OK;
+}
+
+int lookup::get_children_wide(qnode& qn)
+{
+	fill_row(qn);
+
+	if (qn.children.size() == 0)
+		return EXE_OK;
+
+	cnodemap_t& cnmap = qn.children;
+
+	for (auto it : cnmap)
+		get_children_deep(qn, it);
+
+	return EXE_OK;
+}
+
+void lookup::show_spinner(int& count)
+{
+	if (count % 0x10000)
+		cout << "|\r";
+	if (count % 0x14000)
+		cout << "\\\r";
+	if (count % 0x18000)
+		cout << "-\r";
+	if (count % 0x1c000)
+		cout << "/\r";
+
+	cout.flush();
+	++count;
 }
 
 int lookup::exe_exports()
 {
-	for (auto it : m_qnodes) {
-		qnode& qn = it.second;
-		qn.crc = it.first;
+	int count = 0;
 
-		if (qn.sdecl.find(m_declstr) != string::npos) {
+	if (m_opts.kb_flags & KB_WHOLE_WORD) {
+		unsigned long crc = raw_crc32(m_declstr.c_str());
+		qniterator_t qnit;
+		qnitpair_t range;
+		qnode* qn = NULL;
+		int count = 0;
+
+		range = m_qnodes.equal_range(crc);
+
+		qnit = find_if (range.first, range.second,
+			  [this, &count](qnpair_t& lqp)
+			  {
+				qnode& rqn = lqp.second;
+				return (rqn.flags & CTL_EXPORTED);
+			  });
+
+		qn = (qnit != range.second) ? &(*qnit).second : NULL;
+
+		if (qn != NULL) {
+			m_isfound = true;
 			m_rows.clear();
-			m_rows.reserve(qn.level);
+			get_children_wide(*qn);
+			put_rows_from_front();
+		}
+
+	} else {
+
+		for (auto it : m_qnodes) {
+			qnode& qn = it.second;
+			qn.crc = it.first;
+			show_spinner(count);
+
+			if (!(qn.flags & CTL_EXPORTED))
+				continue;
+
+			if (qn.sname.find(m_declstr) != string::npos) {
+				qnode& parent =
+					*qn_lookup_qnode(&qn, qn.parent.first);
+				m_rows.clear();
+				fill_row(parent);
+
+				if (qn.children.size() != 0)
+					get_children_wide(qn);
+
+				put_rows_from_front();
+				m_isfound = true;
+			}
 		}
 	}
-	return EXE_OK;
+	return m_isfound ? EXE_OK : EXE_NOTFOUND_SIMPLE;
 }
 
+int lookup::exe_decl()
+{
+	int count = 0;
+	qnode* qn = NULL;
+
+	if (m_opts.kb_flags & KB_WHOLE_WORD) {
+		unsigned long crc = raw_crc32(m_declstr.c_str());
+		qniterator_t qnit;
+		qnitpair_t range;
+		range = m_qnodes.equal_range(crc);
+
+		qnit = find_if (range.first, range.second,
+			  [this, &count](qnpair_t& lqp)
+			  {
+				show_spinner(count);
+				qnode& rqn = lqp.second;
+				return ((rqn.children.size() > 0) &&
+					(rqn.flags & CTL_HASLIST) &&
+					(!(rqn.flags & CTL_BACKPTR)));
+			  });
+
+		qn = (qnit != range.second) ? &(*qnit).second : NULL;
+
+		if (qn != NULL) {
+			m_isfound = true;
+			m_rows.clear();
+			get_children_wide(*qn);
+			put_rows_from_front();
+		}
+
+	} else {
+
+		for (auto it : m_qnodes) {
+			qnode& rqn = it.second;
+			rqn.crc = it.first;
+			show_spinner(count);
+
+			if ((rqn.sdecl.find(m_declstr) != string::npos) &&
+			    (rqn.children.size() > 0) &&
+			    (rqn.flags & CTL_HASLIST) &&
+			    (!(rqn.flags & CTL_BACKPTR))) {
+				m_isfound = true;
+				qn = &rqn;
+				m_rows.clear();
+				get_children_wide(*qn);
+				put_rows_from_front();
+			}
+		}
+	}
+	return m_isfound ? EXE_OK : EXE_NOTFOUND_SIMPLE;
+}
 
 /************************************************
 ** main()
