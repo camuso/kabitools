@@ -305,8 +305,8 @@ int lookup::exe_struct()
 				m_rows.clear();
 				m_rows.reserve(qn.level);
 				this->get_parents(qn);
+				put_rows_from_back();
 			}
-			put_rows_from_back();
 		}
 	}
 
