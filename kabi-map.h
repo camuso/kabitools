@@ -47,18 +47,18 @@ enum levels {
 
 #ifdef __cplusplus
 
-// This is a hash map used for parents and children of qnodes.
+// This is a hash map used for children of qnodes.
 // The hash map is composed of a std::pair typed as cnpair_t
 // cnpair_t.first  - crc
 // cnpair_t.second - level
 //
-// In the parent list, the level field contains the level at which the qnode
-// appears in the parent's hierarchy.
-// In the child list, it's the level at which the child appears in this
+// In the child map, the level indicates wehere the child appears in this
 // qnode's hierarchy.
-// For example, if a qnode appears at level n in the hierarchy, the parent
-// in the qnode's parents map will have n in its level field and the child
-// in the qnode's children map will have n+1 in its level map.
+//
+// For example, if a qnode appears at level n in the hierarchy, the qnode's
+// entry in its parent's children map will have n in its level field.
+// Chldren pairs in the qnode's children map will have n+1 in their level
+// field.
 //
 typedef std::multimap<unsigned long, int> cnodemap_t;
 typedef cnodemap_t::value_type cnpair_t;	// pair<unsigned long&&, int&&>
@@ -72,7 +72,7 @@ struct qnode
 {	
 	// The crc is the key to the map pair. It is only valid until
 	// the parser exits. Thereafter, it is not valid as a qnode
-	// field, but rather as the the "first" field of an std::pair
+	// field, but rather as the the "first" field of a std::pair
 	// comprised of the crc and the qnode itself, which is serialized
 	// as the "second" field of the std::pair.
 	unsigned long crc;
@@ -104,8 +104,8 @@ struct qnode
 	cnodemap_t children;	// map of children symbol CRCs and their
 				// : respective levels in the hierarchy
 
-	// We want nodes below an argument or return to have those
-	// ancestors in common. This assures that when traversing
+	// We want nodes below an argument or return to have that
+	// ancestor in common. This assures that when traversing
 	// the tree in reverse during a lookup sequence, we will find
 	// the correct ARG or RETURN for the corresponding symbol being
 	// looked-up.
