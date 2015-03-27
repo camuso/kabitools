@@ -285,7 +285,6 @@ static void build_branch(char *symname, struct qnode *parent)
 		const char *decl;
 		struct symbol *basetype = sym->ctype.base_type;
 		struct qnode *qn = new_qnode(parent, CTL_EXPORTED);
-
 #ifndef NDEBUG
 		if (!strcmp(symname, "ipmi_register_smi"))
 			puts(symname);
@@ -295,13 +294,12 @@ static void build_branch(char *symname, struct qnode *parent)
 		get_declist(qn, sym);
 		qn_trim_decl(qn);
 		decl = cstrcat(qn_get_decl(qn), qn->name);
-		init_crc(decl, qn, parent);
+		init_crc(qn->name, qn, parent);
 		prdbg(" EXPORTED: %s\n", decl);
 		update_qnode(qn, parent);
 
 		if (qn->flags & CTL_HASLIST)
 			process_return(basetype, qn);
-
 
 		if (basetype->arguments)
 			get_symbols(qn, basetype->arguments, CTL_ARG);
