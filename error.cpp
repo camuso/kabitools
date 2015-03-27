@@ -18,6 +18,8 @@ void error::init(int argc, char **argv)
 	errstr[EXE_NOTFOUND] = "\"%s\" cannot be found in database file %s\n";
 	errstr[EXE_2MANY]    = "Too many items match \"%s\" in database %s."
 			       " Be more specific.\n";
+	errstr[EXE_NOTFOUND_SIMPLE] = "\"%s\" cannot be found in any of the"
+				"files listed in: %s\n";
 }
 
 void error::print_cmdline()
@@ -32,12 +34,16 @@ using boost::format;
 
 void error::print_cmd_errmsg(int err, string declstr, string datafile)
 {
-	if ((1 << err) & m_errmask) {
+	if (err == 0) {
+		return;
+	}
+	else if ((1 << err) & m_errmask) {
 		cout << format("\n%s. You typed ...\n  ") % errstr[err];
 		print_cmdline();
 		cout << "\nPlease read the help text below.\n"
 		     << lookup::get_helptext();
-	} else {
+	}
+	else {
 		cerr << format(errstr[err]) % declstr % datafile;
 	}
 }
