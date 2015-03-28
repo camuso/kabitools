@@ -118,7 +118,7 @@ void rowman::put_rows_from_back(bool quiet)
 		print_row(r, quiet);
 		rows.pop_back();
 	}
-	cout << endl;
+	if (!quiet) cout << endl;
 }
 
 void rowman::put_rows_from_front(bool quiet)
@@ -131,7 +131,7 @@ void rowman::put_rows_from_front(bool quiet)
 		print_row(it, quiet);
 	}
 
-	cout << endl;
+	if (!quiet) cout << endl;
 }
 
 void rowman::put_rows_from_back_normalized(bool quiet)
