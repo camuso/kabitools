@@ -94,8 +94,9 @@ int lookup::run()
 	}
 
 	while (getline(ifs, m_datafile)) {
+		cout << m_datafile << "\r";
 		m_errindex = execute(m_datafile);
-
+		cout << "\33[2K\r";
 		if (m_isfound && (m_flags & KB_WHOLE_WORD)
 			      && ((m_flags & KB_EXPORTS)
 			      ||  (m_flags & KB_DECL)))
@@ -203,68 +204,9 @@ int lookup::get_decl_list(std::vector<qnode> &retlist)
 	return retlist.size();
 }
 
-void lookup::fill_row(const qnode& qn, rowpolicy rowpol)
-{
-	row r;
-	r.level = qn.level;
-	r.flags = qn.flags;
-	r.decl = qn.sdecl;
-	r.name = qn.sname;
-
-	switch (rowpol) {
-	case ROW_ACCUM : m_rows.push_back(r); break;
-	case ROW_FLUSH : put_row(r);
-	}
-}
-
-string &lookup::pad_out(int padsize)
-{
-	static string out;
-	out.clear();
-	while(padsize--) out += " ";
-	return out;
-}
-
-void lookup::put_row(row& r)
-{
-	switch (r.level) {
-	case LVL_FILE:
-		cout << "FILE: " << r.decl << endl;
-		break;
-	case LVL_EXPORTED:
-		cout << " EXPORTED: " << r.decl << " " << r.name << endl;
-		break;
-	case LVL_ARG:
-		cout << ((r.flags & CTL_RETURN) ? "  RETURN: " : "  ARG: ");
-		cout << r.decl << " " << r.name << endl;
-		break;
-	default:
-		cout << pad_out(r.level) << r.decl << " " << r.name << endl;
-		break;
-	}
-}
-
-void lookup::put_rows_from_back()
-{
-	for (auto it : m_rows) {
-		row r = m_rows.back();
-		put_row(r);
-		m_rows.pop_back();
-	}
-	cout << endl;
-}
-
-void lookup::put_rows_from_front()
-{
-	for (auto it : m_rows)
-		put_row(it);
-
-	cout << endl;
-}
-
 int lookup::get_parents(qnode& qn)
 {
-	fill_row(qn);
+	m_rowman.fill_row(qn);
 
 	if (qn.level == 0)
 		return EXE_OK;
@@ -291,10 +233,10 @@ int lookup::exe_struct()
 				//|| !(qn.flags & CTL_HASLIST))
 					return;
 
-				m_rows.clear();
-				m_rows.reserve(qn.level);
+				m_rowman.rows.clear();
+				m_rowman.rows.reserve(qn.level);
 				this->get_parents(qn);
-				put_rows_from_back();
+				m_rowman.put_rows_from_back();
 			  });
 	} else {
 		for (auto it : m_qnodes) {
@@ -302,10 +244,10 @@ int lookup::exe_struct()
 			qn.crc = it.first;
 
 			if (qn.sdecl.find(m_declstr) != string::npos) {
-				m_rows.clear();
-				m_rows.reserve(qn.level);
+				m_rowman.rows.clear();
+				m_rowman.rows.reserve(qn.level);
 				this->get_parents(qn);
-				put_rows_from_back();
+				m_rowman.put_rows_from_back();
 			}
 		}
 	}
@@ -317,7 +259,7 @@ int lookup::get_children_deep(qnode& parent, cnpair_t& cn)
 {
 	qnode& qn = *qn_lookup_qnode(&parent, cn.first, QN_DN);
 
-	fill_row(qn);
+	m_rowman.fill_row(qn);
 
 	if (qn.children.size() == 0)
 		return EXE_OK;
@@ -332,7 +274,7 @@ int lookup::get_children_deep(qnode& parent, cnpair_t& cn)
 
 int lookup::get_children_wide(qnode& qn)
 {
-	fill_row(qn);
+	m_rowman.fill_row(qn);
 
 	if (qn.children.size() == 0)
 		return EXE_OK;
@@ -384,9 +326,9 @@ int lookup::exe_exports()
 
 		if (qn != NULL) {
 			m_isfound = true;
-			m_rows.clear();
+			m_rowman.rows.clear();
 			get_children_wide(*qn);
-			put_rows_from_front();
+			m_rowman.put_rows_from_front();
 		}
 
 	} else {
@@ -402,13 +344,13 @@ int lookup::exe_exports()
 			if (qn.sname.find(m_declstr) != string::npos) {
 				qnode& parent =
 					*qn_lookup_qnode(&qn, qn.parent.first);
-				m_rows.clear();
-				fill_row(parent);
+				m_rowman.rows.clear();
+				m_rowman.fill_row(parent);
 
 				if (qn.children.size() != 0)
 					get_children_wide(qn);
 
-				put_rows_from_front();
+				m_rowman.put_rows_from_front();
 				m_isfound = true;
 			}
 		}
@@ -441,9 +383,9 @@ int lookup::exe_decl()
 
 		if (qn != NULL) {
 			m_isfound = true;
-			m_rows.clear();
+			m_rowman.rows.clear();
 			get_children_wide(*qn);
-			put_rows_from_front();
+			m_rowman.put_rows_from_front();
 		}
 
 	} else {
@@ -459,9 +401,9 @@ int lookup::exe_decl()
 			    (!(rqn.flags & CTL_BACKPTR))) {
 				m_isfound = true;
 				qn = &rqn;
-				m_rows.clear();
+				m_rowman.rows.clear();
 				get_children_wide(*qn);
-				put_rows_from_front();
+				m_rowman.put_rows_from_front();
 			}
 		}
 	}

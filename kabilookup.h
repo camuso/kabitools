@@ -29,20 +29,6 @@
 #include "error.h"
 #include "rowman.h"
 
-struct row {
-	int level;
-	int flags;
-	std::string file;
-	std::string decl;
-	std::string name;
-	enum rowflags rowflags;
-};
-
-enum rowpolicy {
-	ROW_ACCUM,
-	ROW_FLUSH,
-};
-
 class lookup
 {
 public:
@@ -55,10 +41,6 @@ private:
 	bool check_flags();
 	int count_bits(unsigned mask);
 	std::string &pad_out(int padsize);
-	void put_row(row& r);
-	void put_rows_from_back();
-	void put_rows_from_front();
-	void fill_row(const qnode& qn, enum rowpolicy rowpol=ROW_ACCUM);
 	bool find_decl(qnode& qnr, std::string decl);
 	bool get_qnrange(unsigned long crc, qnpair_t& range);
 	qnode* find_qnode_nextlevel(qnode* qn, long unsigned crc, int level);
@@ -75,6 +57,7 @@ private:
 
 	// member classes
 	Cqnodemap& m_cqnmap = get_public_cqnmap();
+	rowman m_rowman;
 	options m_opts;
 	error m_err;
 	qnode m_qn;
@@ -86,7 +69,6 @@ private:
 	qnodemap_t& m_qnodes = m_cqnmap.qnmap;
 	typedef std::pair<int, std::string> errpair;
 
-	std::vector<row> m_rows;
 	std::vector<errpair> m_errors;
 	std::string m_datafile = "../kabi-data.dat";
 	std::string m_filelist = "./redhat/kabi/parser/kabi-files.list";
