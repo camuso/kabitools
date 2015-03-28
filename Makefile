@@ -9,8 +9,8 @@ COMMON_HDRS	:= checksum.h kabi-map.h
 PARSER_OBJS	:= $(COMMON_OBJS) kabi.o
 PARSER_HDRS	:= $(COMMON_HDRS) kabi.h $
 
-LOOKUP_OBJS	:= $(COMMON_OBJS) kabilookup.o options.o error.o
-LOOKUP_HDRS	:= $(COMMON_HDRS) kabilookup.h options.h error.h
+LOOKUP_OBJS	:= $(COMMON_OBJS) kabilookup.o options.o error.o rowman.o qrow.o
+LOOKUP_HDRS	:= $(COMMON_HDRS) kabilookup.h options.h error.h rowman.h qrow.h
 
 # COMPDB_OBJS	:= kabi-compdb.o kabi-node.o
 # COMPDB_HDRS	:= kabi-compdb.h kabi-node.h
