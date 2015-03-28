@@ -27,6 +27,7 @@
 #include "kabi-map.h"
 #include "options.h"
 #include "error.h"
+#include "rowman.h"
 
 struct row {
 	int level;
@@ -34,6 +35,7 @@ struct row {
 	std::string file;
 	std::string decl;
 	std::string name;
+	enum rowflags rowflags;
 };
 
 enum rowpolicy {
