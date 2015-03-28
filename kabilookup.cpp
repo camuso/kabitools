@@ -127,6 +127,9 @@ int lookup::count_bits(unsigned mask)
 // Check for mutually exclusive flags.
 bool lookup::check_flags()
 {
+	if (m_flags & KB_QUIET)
+		m_flags &= ~KB_VERBOSE;
+
 	return !(count_bits(m_flags & m_exemask) > 1);
 }
 
@@ -140,7 +143,8 @@ int lookup::process_args(int argc, char **argv)
 	if(!argc)
 		return EXE_ARG2SML;
 
-	m_flags = m_opts.get_options(&argindex, &argv[0], m_declstr, m_filelist);
+	m_flags = KB_VERBOSE;
+	m_flags |= m_opts.get_options(&argindex, &argv[0], m_declstr, m_filelist);
 
 	if (m_flags < 0 || !check_flags())
 		return EXE_BADFORM;
@@ -220,7 +224,7 @@ int lookup::get_parents(qnode& qn)
 
 int lookup::exe_struct()
 {
-	bool verbose = m_flags & KB_VERBOSE;
+	bool quiet = m_flags & KB_QUIET;
 
 	if (m_flags & KB_WHOLE_WORD) {
 		unsigned long crc = raw_crc32(m_declstr.c_str());
@@ -228,7 +232,7 @@ int lookup::exe_struct()
 		range = m_qnodes.equal_range(crc);
 
 		for_each (range.first, range.second,
-			  [this, verbose](qnpair_t& lqp)
+			  [this, quiet](qnpair_t& lqp)
 			  {
 				qnode& qn = lqp.second;
 				qn.crc = lqp.first;
@@ -240,7 +244,7 @@ int lookup::exe_struct()
 				m_rowman.rows.clear();
 				m_rowman.rows.reserve(qn.level);
 				this->get_parents(qn);
-				m_rowman.put_rows_from_back(verbose);
+				m_rowman.put_rows_from_back(quiet);
 			  });
 	} else {
 		for (auto it : m_qnodes) {
@@ -251,7 +255,7 @@ int lookup::exe_struct()
 				m_rowman.rows.clear();
 				m_rowman.rows.reserve(qn.level);
 				this->get_parents(qn);
-				m_rowman.put_rows_from_back(verbose);
+				m_rowman.put_rows_from_back(quiet);
 			}
 		}
 	}
@@ -309,7 +313,7 @@ void lookup::show_spinner(int& count)
 int lookup::exe_exports()
 {
 	int count = 0;
-	bool verbose = m_flags & KB_VERBOSE;
+	bool quiet = m_flags & KB_QUIET;
 
 	if (m_opts.kb_flags & KB_WHOLE_WORD) {
 		unsigned long crc = raw_crc32(m_declstr.c_str());
@@ -333,7 +337,7 @@ int lookup::exe_exports()
 			m_isfound = true;
 			m_rowman.rows.clear();
 			get_children_wide(*qn);
-			m_rowman.put_rows_from_front(verbose);
+			m_rowman.put_rows_from_front(quiet);
 		}
 
 	} else {
@@ -355,7 +359,7 @@ int lookup::exe_exports()
 				if (qn.children.size() != 0)
 					get_children_wide(qn);
 
-				m_rowman.put_rows_from_front(verbose);
+				m_rowman.put_rows_from_front(quiet);
 				m_isfound = true;
 			}
 		}
@@ -366,7 +370,7 @@ int lookup::exe_exports()
 int lookup::exe_decl()
 {
 	int count = 0;
-	bool verbose = m_flags & KB_VERBOSE;
+	bool quiet = m_flags & KB_QUIET;
 	qnode* qn = NULL;
 
 	if (m_opts.kb_flags & KB_WHOLE_WORD) {
@@ -391,7 +395,7 @@ int lookup::exe_decl()
 			m_isfound = true;
 			m_rowman.rows.clear();
 			get_children_wide(*qn);
-			m_rowman.put_rows_from_front_normalized(verbose);
+			m_rowman.put_rows_from_front_normalized(quiet);
 		}
 
 	} else {
@@ -409,7 +413,7 @@ int lookup::exe_decl()
 				qn = &rqn;
 				m_rowman.rows.clear();
 				get_children_wide(*qn);
-				m_rowman.put_rows_from_front_normalized(verbose);
+				m_rowman.put_rows_from_front_normalized(quiet);
 			}
 		}
 	}

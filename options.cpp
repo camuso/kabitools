@@ -77,6 +77,8 @@ bool options::parse_opt(char opt, char ***argv, string &declstr, string &datafil
 	case 's' : kb_flags |= KB_STRUCT;
 		   declstr = *((*argv)++);
 		   break;
+	case 'q' : kb_flags |= KB_QUIET;
+		   break;
 	case 'v' : kb_flags |= KB_VERBOSE;
 		   break;
 	case 'w' : kb_flags |= KB_WHOLE_WORD;

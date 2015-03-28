@@ -48,7 +48,7 @@ string &rowman::indent(int padsize)
 	return out;
 }
 
-void rowman::print_row(qrow& r, bool verbose)
+void rowman::print_row(qrow& r, bool quiet)
 {
 	if (is_dup(r))
 		return;
@@ -73,17 +73,17 @@ void rowman::print_row(qrow& r, bool verbose)
 		break;
 	default:
 
-		if(!verbose && is_dup(dups[LVL_ARG]))
+		if(quiet && is_dup(dups[LVL_ARG]))
 			return;
 
-		if (set_dup(r) && verbose)
+		if (set_dup(r) && !quiet)
 			cout << indent(r.level) << r.decl << " "
 			     << r.name << endl;
 		break;
 	}
 }
 
-void rowman::print_row_normalized(qrow& r, bool verbose)
+void rowman::print_row_normalized(qrow& r, bool quiet)
 {
 	if (!m_normalized) {
 		m_normalized = true;
@@ -92,7 +92,7 @@ void rowman::print_row_normalized(qrow& r, bool verbose)
 
 	int current_level = r.level - m_normalized_level;
 
-	if (!verbose && (current_level > 1))
+	if (quiet && (current_level > 1))
 		return;
 
 	if (is_dup(r))
@@ -107,51 +107,51 @@ void rowman::print_row_normalized(qrow& r, bool verbose)
 }
 
 
-void rowman::put_rows_from_back(bool verbose)
+void rowman::put_rows_from_back(bool quiet)
 {
 	cout << "\33[2K\r";
 
 	for (auto it : rows) {
 		qrow& r = rows.back();
 		if (rows.size() == 1)
-			print_row(r, true);
-		print_row(r, verbose);
+			print_row(r, false);
+		print_row(r, quiet);
 		rows.pop_back();
 	}
 	cout << endl;
 }
 
-void rowman::put_rows_from_front(bool verbose)
+void rowman::put_rows_from_front(bool quiet)
 {
 	cout << "\33[2K\r";
 
 	for (auto it : rows) {
 		if (it == rows.back())
-			print_row(it, true);
-		print_row(it, verbose);
+			print_row(it, false);
+		print_row(it, quiet);
 	}
 
 	cout << endl;
 }
 
-void rowman::put_rows_from_back_normalized(bool verbose)
+void rowman::put_rows_from_back_normalized(bool quiet)
 {
 	cout << "\33[2K\r";
 
 	for (auto it : rows) {
 		qrow& r = rows.back();
-		print_row_normalized(r, verbose);
+		print_row_normalized(r, quiet);
 		rows.pop_back();
 	}
 	cout << endl;
 }
 
-void rowman::put_rows_from_front_normalized(bool verbose)
+void rowman::put_rows_from_front_normalized(bool quiet)
 {
 	cout << "\33[2K\r";
 
 	for (auto it : rows)
-		print_row_normalized(it, verbose);
+		print_row_normalized(it, quiet);
 
 	cout << endl;
 }

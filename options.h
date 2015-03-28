@@ -17,6 +17,7 @@ enum kbflags {
 	KB_DATABASE	= 1 << 6,
 	KB_NODUPS	= 1 << 7,
 	KB_ARGS		= 1 << 8,
+	KB_QUIET	= 1 << 9,
 };
 
 class options
