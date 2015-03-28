@@ -93,6 +93,8 @@ int lookup::run()
 		exit(EXE_NOFILE);
 	}
 
+	cout << endl;
+
 	while (getline(ifs, m_datafile)) {
 		cout << m_datafile << "\r";
 		m_errindex = execute(m_datafile);
@@ -218,13 +220,15 @@ int lookup::get_parents(qnode& qn)
 
 int lookup::exe_struct()
 {
-	if (m_opts.kb_flags & KB_WHOLE_WORD) {
+	bool verbose = m_flags & KB_VERBOSE;
+
+	if (m_flags & KB_WHOLE_WORD) {
 		unsigned long crc = raw_crc32(m_declstr.c_str());
 		qnitpair_t range;
 		range = m_qnodes.equal_range(crc);
 
 		for_each (range.first, range.second,
-			  [this](qnpair_t& lqp)
+			  [this, verbose](qnpair_t& lqp)
 			  {
 				qnode& qn = lqp.second;
 				qn.crc = lqp.first;
@@ -236,7 +240,7 @@ int lookup::exe_struct()
 				m_rowman.rows.clear();
 				m_rowman.rows.reserve(qn.level);
 				this->get_parents(qn);
-				m_rowman.put_rows_from_back();
+				m_rowman.put_rows_from_back(verbose);
 			  });
 	} else {
 		for (auto it : m_qnodes) {
@@ -247,7 +251,7 @@ int lookup::exe_struct()
 				m_rowman.rows.clear();
 				m_rowman.rows.reserve(qn.level);
 				this->get_parents(qn);
-				m_rowman.put_rows_from_back();
+				m_rowman.put_rows_from_back(verbose);
 			}
 		}
 	}
@@ -305,6 +309,7 @@ void lookup::show_spinner(int& count)
 int lookup::exe_exports()
 {
 	int count = 0;
+	bool verbose = m_flags & KB_VERBOSE;
 
 	if (m_opts.kb_flags & KB_WHOLE_WORD) {
 		unsigned long crc = raw_crc32(m_declstr.c_str());
@@ -328,7 +333,7 @@ int lookup::exe_exports()
 			m_isfound = true;
 			m_rowman.rows.clear();
 			get_children_wide(*qn);
-			m_rowman.put_rows_from_front();
+			m_rowman.put_rows_from_front(verbose);
 		}
 
 	} else {
@@ -350,7 +355,7 @@ int lookup::exe_exports()
 				if (qn.children.size() != 0)
 					get_children_wide(qn);
 
-				m_rowman.put_rows_from_front();
+				m_rowman.put_rows_from_front(verbose);
 				m_isfound = true;
 			}
 		}
@@ -361,6 +366,7 @@ int lookup::exe_exports()
 int lookup::exe_decl()
 {
 	int count = 0;
+	bool verbose = m_flags & KB_VERBOSE;
 	qnode* qn = NULL;
 
 	if (m_opts.kb_flags & KB_WHOLE_WORD) {
@@ -385,7 +391,7 @@ int lookup::exe_decl()
 			m_isfound = true;
 			m_rowman.rows.clear();
 			get_children_wide(*qn);
-			m_rowman.put_rows_from_front();
+			m_rowman.put_rows_from_front_normalized(verbose);
 		}
 
 	} else {
@@ -403,7 +409,7 @@ int lookup::exe_decl()
 				qn = &rqn;
 				m_rowman.rows.clear();
 				get_children_wide(*qn);
-				m_rowman.put_rows_from_front();
+				m_rowman.put_rows_from_front_normalized(verbose);
 			}
 		}
 	}
