@@ -3,43 +3,110 @@ kabiparser
 
 Parse .i files for symbols that must be kabi protected
 
-Parse .i files for symbols that must be kabi protected
-
 Preparation
 
-1. Save makei.sh in redhat/scripts
+1.  git clone git@github.com:camuso/kabiparser.git
+
+2. git clone git@github.com:camuso/kabiparser.git
+   To build the toolkit, you must download and build the sparse
+   C-semantic parser from this site.
+   http://git.kernel.org/cgit/devel/sparse/sparse.git/
+
+   Build the static libsparse.a and copy it into /usr/lib
+   Also copy all the sparse/*.h files into /usr/lib/sparse/.
+
+3. Download the boost library. For fedora users, this will simply
+   be "yum install boost". For ubuntu users, "apt-get install boost"
+   The kabiparser Makefile expects the boost library to be in
+   /usr/lib64 and the boost headers in /usr/include/boost
+
+   If you're using Ubuntu, you will probably have to edit the Makefile
+   to point to the locations of these files, if they are not the same
+   as fedora.
+
+4. Build the toolkit and put the tools in the correct redhat directories
+   off the kernel tree.
+
+   $ make
+
+   $ rsync -Pva kabi-parser kabi-dump kabi-lookup kabi-data.sh \
+      <top-of-your-linux-kernel-tree>/redhat/kabi/.
+
+   $ rsync -Pva makei.sh <top-of-you-linux-kernel-tree>/redhat/scripts/.
+
+   Save makei.sh in redhat/scripts
    From the top of the kernel tree ...
       $ makei.sh ./
 
-   This takes somewhat longer than building the kernel.
-   Ultimately this should be done as a make target.
+5. From the top of your linux tree, do the following.
 
-2. git clone git@github.com:camuso/kabiparser.git
+   $ ./redhat/scripts/makei.sh ./
 
-   $ make kabi
-   $ cp kabi redhat/kabi/kabi-parser
+   $ ./redhat/kabi/kabi-data.sh -d ./
 
-3. Copy kabilist.sh script to redhat/kabi/.
-   From the top of the kernel tree run ...
+   Each of those steps takes about 5 minutes on a core-duo quad-core
+   desktop. There are more than 3000 files with over 18000 exported
+   symbols that must be processed.
 
-   $ redhat/kabi/kabilist.sh
+   There are options only to build subdirectories. You can see the
+   options by invoking these scripts without arguments.
 
-   This takes a just a few minutes and creates
-   redhat/kabi/kabilist.log
+   The makei.sh script calls the kernel make to create the preproccesor
+   intermediate (".i") files that are needed by kabi-parser to build the
+   database.
 
-To see which exported functions use a given data structure
+   The database is distributed as ".kb_dat" files having the same name
+   stem as the source ".i" file from which they were created and residing
+   in the same source directory.
 
-Copy attached kabilist-search.sh to redhat/kabi/.
+   These can be cleaned out with "git clean -f", but that will also erase
+   files you may want to keep. Instead you can simply do the following.
 
-From the top of the kernel tree, invoke kabilist-search with
-any regex.
+   $ find . -name \*.kb_dat -exec rm -f '{}' \;
 
-$ kabilist-search "struct bio_set"
-struct bio_set *fs_bio_set IN struct bio_set *fs_bio_set
-struct bio_set *bs IN function struct bio *bio_alloc_bioset
-struct bio_set *bs IN function struct bio *bio_clone_bioset
-struct bio_set *bs IN function void bioset_free
-function struct bio_set *bioset_create IN function struct bio_set *bioset_create
-struct bio_set *bs IN function int bioset_integrity_create
-struct bio_set *bs IN function void bioset_integrity_free
+Using kabi-lookup
+-----------------
+
+This tool enables the user to determine whether a compound data type,
+i.e. struct or union, has any relation to exported symbols. Conversely,
+you can use the tool to search for exported symbols to see their entire
+dependency tree.
+
+You can also use to tool to count how many times a given symbol appears
+in the dependency trees of all the exported symbols in the kernel.
+
+Searches can be generalized or specific. The -w switch makes the search
+specific. The -w switch also makes searches faster, since it creates
+a hash from the name to search the underlying hash table.
+
+Examples.
+
+$ ./redhat/kabi/kabi-lookup -s "struct pci_dev"
+
+NOTE: Quotes are needed around patterns having spaces.
+
+Searches for all instances "struct pci_dev", including such patterns as
+"struct pci_device_id".
+
+$ /redhat/kabi/kabi-lookup -sw "struct pci_dev"
+
+Will search only for exactly "struct pci_dev" and will do so faster.
+Exact matches for compound data types must include the "struct" or
+"union" declaration.
+
+$ /redhat/kabi/kabi-lookup -e mlx4_cq
+
+Searches for any and all exported symbols that match "mlx4_cq" and their
+argument lists and return values.
+
+$ /redhat/kabi/kabi-lookup -ew mlx4_cq_modify
+
+Will find the one and only unique mlx4_cq_modify exported symbol and
+its argument lists and return values.
+
+
+There is also a -q option for a quiet "less verbose" output.
+
+To see all the options for kabi-lookup, simply invoke it without
+arguments.
 
