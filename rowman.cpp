@@ -11,6 +11,12 @@ rowman::rowman()
 	dups.resize(LVL_COUNT);
 }
 
+void rowman::clear_dups(qrow& row)
+{
+	for (int i = row.level + 1; i < LVL_COUNT; ++i)
+		dups.at(i).clear();
+}
+
 bool rowman::set_dup(qrow &row)
 {
 	int duplevel = row.level >= LVL_NESTED ? LVL_NESTED : row.level;
@@ -26,8 +32,7 @@ bool rowman::set_dup(qrow &row)
 bool rowman::is_dup(qrow &row)
 {
 	int duplevel = row.level >= LVL_NESTED ? LVL_NESTED : row.level;
-	qrow& dup = dups.at(duplevel);
-	return (dup == row);
+	return dups.at(duplevel) == row;
 }
 
 void rowman::fill_row(const qnode& qn)
@@ -60,11 +65,13 @@ void rowman::print_row(qrow& r, bool quiet)
 			cout << "FILE: " << r.decl << endl;
 		break;
 	case LVL_EXPORTED:
+		clear_dups(r);
 		if (set_dup(r))
 			cout << " EXPORTED: " << r.decl << " "
 			     << r.name << endl;
 		break;
 	case LVL_ARG:
+		clear_dups(r);
 		if (set_dup(r)) {
 			cout << ((r.flags & CTL_RETURN) ?
 					 "  RETURN: " : "  ARG: ");

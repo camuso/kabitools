@@ -27,7 +27,8 @@ private:
 	void print_row_normalized(qrow& r, bool quiet = false);
 	bool set_dup(qrow& row);
 	bool is_dup(qrow& row);
-	void clear_dups() {dups.clear(); dups.resize(LVL_COUNT);}
+	void clear_dups() { dups.clear(); dups.resize(LVL_COUNT); }
+	void clear_dups(qrow &row);
 
 	rowvec_t dups;
 	bool m_normalized = false;
