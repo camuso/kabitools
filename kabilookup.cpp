@@ -62,7 +62,7 @@ kabi-lookup -[vw] -c|d|e|s symbol [-b datafile]\n\
                   will print all the descendants of nonscalar arguments. \n\
     -d symbol   - Seeks a data structure and prints its members to stdout. \n\
                   The -v switch prints descendants of nonscalar members. \n\
-    -v          - verbose lists all descendants of a symbol. \n\
+    -q          - \"Quiet\" option limits the amount of output. \n\
     -w          - whole words only, default is \"match any and all\" \n\
     -f filelist - Optional list of data files that were created by kabi-parser. \n\
                   The default list created by running kabi-data.sh is \n\
