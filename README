@@ -1,14 +1,61 @@
 kabiparser
 ==========
 
-Parse .i files for symbols that must be kabi protected
+This is a toolkit comprised of the following utilities.
+
+makei.sh    - Uses the kernel make to compile preprocessor .i files.
+
+kabi-parser - Parses preprocessor .i files for exported symbols and the
+              compound data types on which they depend. The results for
+	      each .i file serialized into a data file ending with .kb_dat.
+	      Exported symbols and their entire dependency trees are
+	      recorded.
+
+	      The data files have the same name stem and reside in the
+	      same directory as their .i sources. The data is organized as
+	      as a graph using a symbol's crc and its place in the
+	      hierarchy of its dependent exported symbol as the "edges"
+	      between each vertex.
+
+	      Data is filtered to minimize data file size and maximize
+	      performance. Compound data types will include their
+	      backpointers, which introduces a bit of redundancy, but
+	      maximizes the information in the database.
+
+kabi-data.sh - A shell script wrapper for kabi-parser that invokes it for
+               each .i file in the kernel tree. This shell script creates
+	       a list of files processed to be used by kabi-lookup tool.
+
+kabi-dump    - Dumps the contents of a serialized .kb_dat file to make it
+               humanly readable.
+
+kabi-lookup  - Utility that traverses the .kb_dat files looking for symbols
+               on which exported symbols depend. The searches are as follows.
+
+	       -s <string> - searches for the symbol of a compound data type
+	                     that matches the string. Adding the -w "whole
+			     word" switch will speed up the search, but the
+			     symbol must be exact. Strings having spaces
+			     must be wraped in quotes.
+
+	       -e <string> - searches for an exported symbol. Partial strings
+	                     that omit the -w switch will generate output
+			     from any and all symbols that match the partial
+			     pattern, but will take a little longer to
+			     perform.
+
+	       -d <string> - searches for the declaration of a compound data
+	                     type and prints its tree to the screen.
+
+	       -c <string> - counts the number of times the string pattern
+	                     is encountered in the database.
 
 Preparation
+-----------
 
 1.  git clone git@github.com:camuso/kabiparser.git
 
-2. git clone git@github.com:camuso/kabiparser.git
-   To build the toolkit, you must download and build the sparse
+2. To build the toolkit, you must download and build the sparse
    C-semantic parser from this site.
    http://git.kernel.org/cgit/devel/sparse/sparse.git/
 
@@ -48,7 +95,7 @@ Preparation
    desktop. There are more than 3000 files with over 18000 exported
    symbols that must be processed.
 
-   There are options only to build subdirectories. You can see the
+   There are options to build only subdirectories. You can see the
    options by invoking these scripts without arguments.
 
    The makei.sh script calls the kernel make to create the preproccesor
@@ -63,6 +110,7 @@ Preparation
    files you may want to keep. Instead you can simply do the following.
 
    $ find . -name \*.kb_dat -exec rm -f '{}' \;
+
 
 Using kabi-lookup
 -----------------
