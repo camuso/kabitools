@@ -62,7 +62,7 @@ void rowman::print_row(qrow& r, bool quiet)
 	case LVL_FILE:
 		clear_dups();
 		if (set_dup(r))
-			cout << "FILE: " << r.decl << endl;
+			cout << endl << "FILE: " << r.decl << endl;
 		break;
 	case LVL_EXPORTED:
 		clear_dups(r);
@@ -125,7 +125,6 @@ void rowman::put_rows_from_back(bool quiet)
 		print_row(r, quiet);
 		rows.pop_back();
 	}
-	if (!quiet) cout << endl;
 }
 
 void rowman::put_rows_from_front(bool quiet)
@@ -137,8 +136,6 @@ void rowman::put_rows_from_front(bool quiet)
 			print_row(it, false);
 		print_row(it, quiet);
 	}
-
-	if (!quiet) cout << endl;
 }
 
 void rowman::put_rows_from_back_normalized(bool quiet)

@@ -93,8 +93,6 @@ int lookup::run()
 		exit(EXE_NOFILE);
 	}
 
-	cout << endl;
-
 	while (getline(ifs, m_datafile)) {
 		cout << m_datafile << "\r";
 		m_errindex = execute(m_datafile);
@@ -105,8 +103,7 @@ int lookup::run()
 			break;
 	}
 
-	if ((m_flags & m_exemask) == KB_COUNT)
-		cout << endl;
+	cout << endl;
 
 	m_err.print_cmd_errmsg(m_errindex, m_declstr, m_filelist);
 
