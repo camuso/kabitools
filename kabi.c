@@ -241,8 +241,8 @@ static void get_symbols	(struct qnode *parent,
 
 		init_crc(decl, qn, parent);
 #ifndef NDEBUG
-		//if (qn->name && ((strstr(qn->name, "page_table_lock") != NULL)))
-		if ((qn->crc == 1622272652))// || (parent->crc == 410729264))
+		//if (qn->name && ((strstr(qn->name, "dev_root") != NULL)))
+		if ((qn->crc == 2743878935))// || (parent->crc == 410729264))
 			puts(decl);
 #endif
 		if (parent->crc == qn->crc)
@@ -282,7 +282,7 @@ static void build_branch(char *symname, struct qnode *parent)
 	struct symbol *sym;
 
 	if ((sym = find_internal_exported(symlist, symname))) {
-		const char *decl;
+		DBG(const char *decl;)
 		struct symbol *basetype = sym->ctype.base_type;
 		struct qnode *qn = new_qnode(parent, CTL_EXPORTED);
 #ifndef NDEBUG
@@ -293,7 +293,7 @@ static void build_branch(char *symname, struct qnode *parent)
 		kabiflag = true;
 		get_declist(qn, sym);
 		qn_trim_decl(qn);
-		decl = cstrcat(qn_get_decl(qn), qn->name);
+		DBG(decl = cstrcat(qn_get_decl(qn), qn->name);)
 		init_crc(qn->name, qn, parent);
 		prdbg(" EXPORTED: %s\n", decl);
 		update_qnode(qn, parent);
