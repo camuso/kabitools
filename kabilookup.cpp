@@ -88,15 +88,26 @@ lookup::lookup(int argc, char **argv)
 int lookup::run()
 {
 	ifstream ifs(m_filelist.c_str());
+
 	if(!ifs.is_open()) {
 		cout << "Cannot open file: " << m_filelist << endl;
 		exit(EXE_NOFILE);
 	}
 
 	while (getline(ifs, m_datafile)) {
-		cout << m_datafile << "\r";
+
+		if (!(m_flags & KB_COUNT)) {
+			cout << m_datafile << "\r";
+			cout.flush();
+		}
+
 		m_errindex = execute(m_datafile);
-		cout << "\33[2K\r";
+
+		if (!(m_flags & KB_COUNT)) {
+			cout << "\33[2K\r";
+			cout.flush();
+		}
+
 		if (m_isfound && (m_flags & KB_WHOLE_WORD)
 			      && ((m_flags & KB_EXPORTS)
 			      ||  (m_flags & KB_DECL)))
@@ -104,9 +115,7 @@ int lookup::run()
 	}
 
 	cout << endl;
-
 	m_err.print_cmd_errmsg(m_errindex, m_declstr, m_filelist);
-
 	return(m_errindex);
 }
 
@@ -294,20 +303,18 @@ int lookup::get_children_wide(qnode& qn)
 
 int lookup::exe_exports()
 {
-	int count = 0;
 	bool quiet = m_flags & KB_QUIET;
 
 	if (m_opts.kb_flags & KB_WHOLE_WORD) {
 		unsigned long crc = raw_crc32(m_declstr.c_str());
 		qniterator_t qnit;
 		qnitpair_t range;
-		qnode* qn = NULL;
-		int count = 0;
+		qnode *qn = NULL;
 
 		range = m_qnodes.equal_range(crc);
 
 		qnit = find_if (range.first, range.second,
-			  [this, &count](qnpair_t& lqp)
+			  [this](qnpair_t& lqp)
 			  {
 				qnode& rqn = lqp.second;
 				return (rqn.flags & CTL_EXPORTED);
@@ -317,7 +324,10 @@ int lookup::exe_exports()
 
 		if (qn != NULL) {
 			m_isfound = true;
+			qnode& parent =
+				*qn_lookup_qnode(qn, qn->parent.first);
 			m_rowman.rows.clear();
+			m_rowman.fill_row(parent);
 			get_children_wide(*qn);
 			m_rowman.put_rows_from_front(quiet);
 		}
