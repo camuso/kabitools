@@ -202,7 +202,7 @@ extern struct qnode *qn_lookup_crc(unsigned long crc);
 extern void qn_add_to_decl(struct qnode *qn, char *decl);
 extern void qn_trim_decl(struct qnode *qn);
 extern const char *qn_get_decl(struct qnode *qn);
-extern int qn_is_dup(struct qnode *qn);
+extern bool qn_is_dup(struct qnode *qn);
 extern const char *cstrcat(const char *d, const char *s);
 extern void kb_write_cqnmap(const char *filename);
 extern void kb_restore_cqnmap(char *filename);

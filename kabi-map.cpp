@@ -264,11 +264,26 @@ static inline void update_duplicate(qnode *qn, qnode *parent)
 		insert_cnode(parent->children, childcn);
 }
 
-int qn_is_dup(struct qnode *qn)
+bool qn_is_dup(struct qnode *qn)
 {
 	qnodemap_t& qnmap = public_cqnmap.qnmap;
 	qnitpair_t range = qnmap.equal_range(qn->crc);
-	return distance(range.first, range.second) > 0;
+	qniterator_t qnit;
+	int count = distance(range.first, range.second);
+
+	if (!count > 0)
+		return false;
+
+	// This is a dup only if it has the same ancestor as well as the
+	// same crc signature.
+	qnit = find_if (range.first, range.second,
+		[&qn](qnpair_t lqn)
+		{
+			return lqn.second.ancestor == qn->ancestor;
+		});
+
+	bool dup = (qnit != range.second);
+	return dup;
 }
 
 static inline void write_cqnmap(const char *filename, Cqnodemap& cqnmap)
