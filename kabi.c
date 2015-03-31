@@ -65,7 +65,7 @@
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-#define NDEBUG
+//#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -147,12 +147,16 @@ static char *pad_out(int padsize, char padchar)
 ** sparse probing and mining
 ******************************************************/
 
+//----------------------------------------------------
+// Forward Declarations
+//----------------------------------------------------
 static struct symbol *find_internal_exported(struct symbol_list *, char *);
 static const char *get_modstr(unsigned long mod);
 static void get_declist(struct qnode *qn, struct symbol *sym);
 static void get_symbols(struct qnode *parent,
 			struct symbol_list *list,
 			enum ctlflags flags);
+//-----------------------------------------------------
 
 static void proc_symlist(struct qnode *qparent,
 			 struct symbol_list *list,
@@ -208,6 +212,23 @@ static void get_declist(struct qnode *qn, struct symbol *sym)
 	get_declist(qn, basetype);
 }
 
+// For phantom structs and unions, crc is meaningless. Give them a time
+// stamp instead.
+static inline bool is_phantom(struct qnode *qn, const char *decl)
+{
+	struct timespec ts;
+
+	if (!(qn->flags & CTL_STRUCT))
+		return false;
+
+	if ((strcmp(decl, "struct") == 0 ) || (strcmp(decl, "union") == 0)) {
+		clock_gettime(CLOCK_REALTIME, &ts);
+		qn->crc = (ts.tv_sec << 32) + ts.tv_nsec;
+		return true;
+	}
+	return false;
+}
+
 static void get_symbols	(struct qnode *parent,
 			 struct symbol_list *list,
 			 enum ctlflags flags)
@@ -239,10 +260,11 @@ static void get_symbols	(struct qnode *parent,
 		if (!(qn->flags & CTL_STRUCT))
 			qn->flags &= ~CTL_HASLIST;
 
-		init_crc(decl, qn, parent);
+		if (!(is_phantom(qn, decl)))
+			init_crc(decl, qn, parent);
 #ifndef NDEBUG
 		//if (qn->name && ((strstr(qn->name, "dev_root") != NULL)))
-		if ((qn->crc == 2743878935))// || (parent->crc == 410729264))
+		if ((qn->crc == 2659943315))// || (parent->crc == 410729264))
 			puts(decl);
 #endif
 		if (parent->crc == qn->crc)
@@ -286,7 +308,7 @@ static void build_branch(char *symname, struct qnode *parent)
 		struct symbol *basetype = sym->ctype.base_type;
 		struct qnode *qn = new_qnode(parent, CTL_EXPORTED);
 #ifndef NDEBUG
-		if (!strcmp(symname, "ipmi_register_smi"))
+		if (strstr(symname, "ipmi_smi_add_proc_entry") != NULL)
 			puts(symname);
 #endif
 		qn->name = symname;

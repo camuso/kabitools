@@ -264,6 +264,16 @@ static inline void update_duplicate(qnode *qn, qnode *parent)
 		insert_cnode(parent->children, childcn);
 }
 
+static inline void copy_children(qnode& dest, qnode& src)
+{
+	// Give children the next level down
+	int level = dest.level + 1;
+	for (auto i : src.children) {
+		cnpair_t childcn = make_pair(i.first, level);
+		dest.children.insert(childcn);
+	}
+}
+
 bool qn_is_dup(struct qnode *qn)
 {
 	qnodemap_t& qnmap = public_cqnmap.qnmap;
@@ -271,19 +281,24 @@ bool qn_is_dup(struct qnode *qn)
 	qniterator_t qnit;
 	int count = distance(range.first, range.second);
 
-	if (!count > 0)
+	if ((qn->level < LVL_NESTED) || (count == 0))
 		return false;
 
-	// This is a dup only if it has the same ancestor as well as the
-	// same crc signature.
+	// If this dup does not have the same ancestor as any of the
+	// other instances of this symbol, then copy the child list
+	// from the first of these symbols encountered.
 	qnit = find_if (range.first, range.second,
 		[&qn](qnpair_t lqn)
 		{
-			return lqn.second.ancestor == qn->ancestor;
+				return lqn.second.ancestor == qn->ancestor;
 		});
 
-	bool dup = (qnit != range.second);
-	return dup;
+	if (qnit == range.second) {
+		qniterator_t& rqnit = range.first;
+		qnode& rqn = (*rqnit).second;
+		copy_children(*qn, rqn);
+	}
+	return true;
 }
 
 static inline void write_cqnmap(const char *filename, Cqnodemap& cqnmap)
