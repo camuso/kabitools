@@ -47,14 +47,20 @@ static inline qnode* alloc_qnode()
 	return qn;
 }
 
+static inline cnode* alloc_cnode(pnode_t& function, int level)
+{
+	cnode *cn = new cnode(function, level);
+	return cn;
+}
+
 void insert_qnode(qnodemap_t& qnmap, struct qnode *qn)
 {
 	qnmap.insert(qnmap.end(), qnpair_t(qn->crc, *qn));
 }
 
-static inline void insert_cnode(cnodemap_t& cnmap, pair<unsigned long, int> cn)
+static inline void insert_cnode(cnodemap_t& cnmap, pair<unsigned long, cnode> cn)
 {
-	cnmap.insert(cnmap.begin(), cn);
+	cnmap.insert(cnmap.end(), cn);
 }
 
 static inline qnode* init_qnode(qnode *parent, qnode *qn, enum ctlflags flags)
@@ -63,8 +69,6 @@ static inline qnode* init_qnode(qnode *parent, qnode *qn, enum ctlflags flags)
 	qn->symlist = NULL;
 	qn->flags   = flags;
 	qn->level = parent->level+1;
-	qn->parent = pnode_t(parent->crc, parent->level);
-
 	return qn;
 }
 
@@ -92,6 +96,16 @@ void init_crc(const char *decl, struct qnode *qn, struct qnode *parent)
 		qn->function = pnode_t(qn->crc, qn->level);
 	else
 		qn->function = parent->function;
+
+	// Now's a good time to create the cnode for this qnode and
+	// insert into the parent's children map.
+	cnode *cn = alloc_cnode(qn->function, qn->level);
+	insert_cnode(parent->children, make_pair(qn->crc, *cn));
+
+	// And while we're at it, create the parent cnode and insert
+	// that into this qnode's parents map.
+	cnode *pcn = alloc_cnode(parent->function, parent->level);
+	insert_cnode(qn->parents, make_pair(parent->crc, *pcn));
 }
 
 void init_ancestor(unsigned long crc, struct qnode *qn)
@@ -183,7 +197,6 @@ struct qnode *new_firstqnode(char *file)
 	parent->flags = CTL_FILE;
 	parent->crc = raw_crc32(file);
 	parent->ancestor = pnode_t(parent->crc, 0);
-	parent->parent = parent->ancestor;
 
 	struct qnode *qn = new_qnode(parent, parent->flags);
 	qn->name  = parent->name;
@@ -197,12 +210,7 @@ struct qnode *new_firstqnode(char *file)
 
 void update_qnode(struct qnode *qn, struct qnode *parent)
 {
-	qnode *pqn = qn_lookup_qnode(qn, parent->crc);
-	pqn = pqn ? pqn : parent;
-
 	qn->sname = qn->name ? string(qn->name) : string("");
-	qn->parent = pnode_t(parent->crc, parent->level);
-	insert_cnode(pqn->children, make_pair(qn->crc, qn->level));
 	insert_qnode(public_cqnmap.qnmap, qn);
 }
 

@@ -55,24 +55,48 @@ enum qnseek {
 
 #ifdef __cplusplus
 
-// This is a hash map used for children of qnodes.
+typedef std::pair<unsigned long, int> pnode_t;
+
+
+// cnode will be created in kabi-map.cpp::init_crc(), because that's
+// when we will have the crc with which to map this cnode into its
+// parents' children map.
+//
+class cnode
+{
+public:
+	cnode(){}
+	cnode(pnode_t& function, int level)
+		: function(function), level(level) {}
+
+	// crc of the function at the top of the tree in which this
+	// cnode appears.
+	pnode_t function;
+
+	// The hierarchical level at which this cnode appears in the
+	// tree.
+	int level;
+
+	// Boost serialization
+	template<class Archive>
+        void serialize(Archive &ar, const unsigned int version)
+        {
+		if (version){;}
+		ar & function & level;
+	}
+
+private:
+};
+
+
+// This is a hash map used for children and parents of qnodes.
 // The hash map is composed of a std::pair typed as cnpair_t
 // cnpair_t.first  - crc
-// cnpair_t.second - level
+// cnpair_t.second - cnode
 //
-// In the child map, the level indicates wehere the child appears in this
-// qnode's hierarchy.
-//
-// For example, if a qnode appears at level n in the hierarchy, the qnode's
-// entry in its parent's children map will have n in its level field.
-// Chldren pairs in the qnode's children map will have n+1 in their level
-// field.
-//
-typedef std::multimap<unsigned long, int> cnodemap_t;
-typedef cnodemap_t::value_type cnpair_t;	// pair<unsigned long&&, int&&>
+typedef std::multimap<unsigned long, cnode> cnodemap_t;
+typedef cnodemap_t::value_type cnpair_t;
 typedef cnodemap_t::iterator cniterator_t;
-
-typedef std::pair<unsigned long, int> pnode_t;
 
 #endif
 
@@ -111,8 +135,8 @@ struct qnode
 	qnode(){}		// constructor
 	std::string sname;	// identifier
 	std::string sdecl;	// data type declaration
-	cnodemap_t children;	// map of children symbol CRCs and their
-				// : respective levels in the hierarchy
+	cnodemap_t parents;	// map of parent crc and cnode objects
+	cnodemap_t children;	// map of children crc and cnode objects
 
 	// We want nodes below an argument or return to have that
 	// ancestor in common. This assures that when traversing
@@ -140,7 +164,6 @@ struct qnode
 	// Exported functions will always have unique crc, because they
 	// all occupy the same namespace and must be distinct.
 	//
-	pnode_t parent;		// Immediate predecessor
 	pnode_t ancestor;	// ARG or RETURN
 	pnode_t function;	// Function at the top
 
@@ -150,7 +173,7 @@ struct qnode
         {
 		if (version){;}
 		ar & flags & level & sdecl & sname
-		   & parent & ancestor & function & children;
+		   & function & ancestor & parents & children;
 	}
 #endif
 };
