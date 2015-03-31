@@ -65,7 +65,7 @@
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-#define NDEBUG
+//#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -147,12 +147,16 @@ static char *pad_out(int padsize, char padchar)
 ** sparse probing and mining
 ******************************************************/
 
+//----------------------------------------------------
+// Forward Declarations
+//----------------------------------------------------
 static struct symbol *find_internal_exported(struct symbol_list *, char *);
 static const char *get_modstr(unsigned long mod);
 static void get_declist(struct qnode *qn, struct symbol *sym);
 static void get_symbols(struct qnode *parent,
 			struct symbol_list *list,
 			enum ctlflags flags);
+//-----------------------------------------------------
 
 static void proc_symlist(struct qnode *qparent,
 			 struct symbol_list *list,
@@ -242,7 +246,7 @@ static void get_symbols	(struct qnode *parent,
 		init_crc(decl, qn, parent);
 #ifndef NDEBUG
 		//if (qn->name && ((strstr(qn->name, "dev_root") != NULL)))
-		if ((qn->crc == 2743878935))// || (parent->crc == 410729264))
+		if ((qn->crc == 2659943315))// || (parent->crc == 410729264))
 			puts(decl);
 #endif
 		if (parent->crc == qn->crc)
@@ -286,7 +290,7 @@ static void build_branch(char *symname, struct qnode *parent)
 		struct symbol *basetype = sym->ctype.base_type;
 		struct qnode *qn = new_qnode(parent, CTL_EXPORTED);
 #ifndef NDEBUG
-		if (!strcmp(symname, "ipmi_register_smi"))
+		if (strstr(symname, "ipmi_smi_add_proc_entry") != NULL)
 			puts(symname);
 #endif
 		qn->name = symname;

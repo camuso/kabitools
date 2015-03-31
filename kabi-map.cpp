@@ -271,7 +271,7 @@ bool qn_is_dup(struct qnode *qn)
 	qniterator_t qnit;
 	int count = distance(range.first, range.second);
 
-	if (!count > 0)
+	if ((qn->level < LVL_NESTED) || (count == 0))
 		return false;
 
 	// This is a dup only if it has the same ancestor as well as the
