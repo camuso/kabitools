@@ -35,6 +35,17 @@ using namespace std;
 
 Cqnodemap public_cqnmap;
 
+void cnode::operator = (const cnode& cn)
+{
+	function = cn.function;
+	level = cn.level;
+}
+
+bool cnode::operator ==(const cnode& cn) const
+{
+	return ((function == cn.function) && (level == cn.level));
+}
+
 static inline qnode* lookup_crc(unsigned long crc, qnodemap_t& qnmap)
 {
 	qniterator_t it = qnmap.lower_bound(crc);
@@ -58,7 +69,7 @@ void insert_qnode(qnodemap_t& qnmap, struct qnode *qn)
 	qnmap.insert(qnmap.end(), qnpair_t(qn->crc, *qn));
 }
 
-static inline void insert_cnode(cnodemap_t& cnmap, pair<unsigned long, cnode> cn)
+static inline void insert_cnode(cnodemap_t& cnmap, pair<crc_t, cnode> cn)
 {
 	cnmap.insert(cnmap.end(), cn);
 }
@@ -96,16 +107,6 @@ void init_crc(const char *decl, struct qnode *qn, struct qnode *parent)
 		qn->function = pnode_t(qn->crc, qn->level);
 	else
 		qn->function = parent->function;
-
-	// Now's a good time to create the cnode for this qnode and
-	// insert into the parent's children map.
-	cnode *cn = alloc_cnode(qn->function, qn->level);
-	insert_cnode(parent->children, make_pair(qn->crc, *cn));
-
-	// And while we're at it, create the parent cnode and insert
-	// that into this qnode's parents map.
-	cnode *pcn = alloc_cnode(parent->function, parent->level);
-	insert_cnode(qn->parents, make_pair(parent->crc, *pcn));
 }
 
 void init_ancestor(unsigned long crc, struct qnode *qn)
@@ -210,6 +211,16 @@ struct qnode *new_firstqnode(char *file)
 
 void update_qnode(struct qnode *qn, struct qnode *parent)
 {
+	// Now's a good time to create the cnode for this qnode and
+	// insert into the parent's children map.
+	cnode *cn = alloc_cnode(qn->function, qn->level);
+	insert_cnode(parent->children, make_pair(qn->crc, *cn));
+
+	// And while we're at it, create the parent cnode and insert
+	// that into this qnode's parents map.
+	cnode *pcn = alloc_cnode(parent->function, parent->level);
+	insert_cnode(qn->parents, make_pair(parent->crc, *pcn));
+
 	qn->sname = qn->name ? string(qn->name) : string("");
 	insert_qnode(public_cqnmap.qnmap, qn);
 }
@@ -248,18 +259,19 @@ const char *qn_get_decl(struct qnode *qn)
 	return qn->sdecl.c_str();
 }
 
-static inline bool is_inlist(cnpair_t& cn, cnodemap_t& cnmap)
+static inline bool is_inlist(cnpair_t& cnp, cnodemap_t& cnmap)
 {
 	pair<cniterator_t, cniterator_t> range;
-	range = cnmap.equal_range(cn.first);
+	range = cnmap.equal_range(cnp.first);
 
 	if (range.first == cnmap.end())
 		return false;
 
 	cniterator_t it = find_if (range.first, range.second,
-				[&cn](cnpair_t lcn)
-				{
-					return lcn.second == cn.second;
+				[&cnp](cnpair_t lcnp)
+				{	cnode& lcn = lcnp.second;
+					cnode& cn = cnp.second;
+					return lcn.operator ==(cn);
 				});
 
 	return it != range.second;
@@ -267,13 +279,24 @@ static inline bool is_inlist(cnpair_t& cn, cnodemap_t& cnmap)
 
 static inline void update_duplicate(qnode *qn, qnode *parent)
 {
-	cnpair_t childcn = make_pair(qn->crc, qn->level);
+	cnode* cn = alloc_cnode(qn->function, qn->level);
+	cnpair_t childcn = make_pair(qn->crc, *cn);
 	if (!is_inlist(childcn, parent->children))
 		insert_cnode(parent->children, childcn);
+	else
+		delete cn;
+
+	cnode *pcn = alloc_cnode(parent->function, parent->level);
+	cnpair_t parentcn = make_pair(parent->crc, *pcn);
+	if (!is_inlist(parentcn, qn->parents))
+		insert_cnode(qn->parents, parentcn);
+	else
+		delete pcn;
 }
 
-bool qn_is_dup(struct qnode *qn)
+bool qn_is_dup(struct qnode *qn, struct qnode *parent)
 {
+	bool dup = false;
 	qnodemap_t& qnmap = public_cqnmap.qnmap;
 	qnitpair_t range = qnmap.equal_range(qn->crc);
 	qniterator_t qnit;
@@ -287,10 +310,14 @@ bool qn_is_dup(struct qnode *qn)
 	qnit = find_if (range.first, range.second,
 		[&qn](qnpair_t lqn)
 		{
-			return lqn.second.ancestor == qn->ancestor;
+			return lqn.second.function == qn->function;
 		});
 
-	bool dup = (qnit != range.second);
+	if ((dup = (qnit != range.second))) {
+		dup = true;
+		update_duplicate(qn, parent);
+	}
+
 	return dup;
 }
 
@@ -379,6 +406,18 @@ bool kb_merge_cqnmap(char *filename)
 #include <boost/format.hpp>
 using boost::format;
 
+
+void static inline dump_cnmap(cnodemap_t& cnmap)
+{
+	for (auto i : cnmap) {
+		cnode& cn = i.second;
+		cout << format("\t\t  %12lu %3d %12lu %3d\n")
+			% cn.function.first % cn.function.second
+			% i.first % cn.level;
+	}
+}
+
+
 int kb_dump_cqnmap(char *filename)
 {
 	Cqnodemap cqq;
@@ -401,26 +440,22 @@ int kb_dump_cqnmap(char *filename)
 		if (qn.flags & CTL_POINTER) cout << "*";
 		cout << qn.sname << endl;
 
-		cout << format("\tparent  : %12lu %3d\n")
-			% qn.parent.first % qn.parent.second;
-
 		cout << format("\tancestor: %12lu %3d\n")
 			% qn.ancestor.first % qn.ancestor.second;
 
 		cout << format("\tfunction: %12lu %3d\n")
 			% qn.function.first % qn.function.second;
 
-		if (!qn.children.size())
-			goto bottom;
+		cout << "\tparents: " << qn.parents.size() << endl;
+
+		if (qn.parents.size() > 0)
+			dump_cnmap(qn.parents);
 
 		cout << "\tchildren: " << qn.children.size() << endl;
 
-		for_each (qn.children.begin(), qn.children.end(),
-			 [](pair<const unsigned long, int>& lcn) {
-				cout << format ("\t\t%12lu %3d\n")
-					% lcn.first % lcn.second;
-			  });
-bottom:
+		if (qn.children.size() > 0)
+			dump_cnmap(qn.children);
+
 		cout << endl;
 	}
 	return 0;
@@ -431,6 +466,4 @@ void kb_dump_qnode(struct qnode *qn)
 	cout.setf(std::ios::unitbuf);
 	cout << format("%08x %08x %03d %s %s\n")
 		% qn->crc % qn->flags % qn->level % qn->sdecl % qn->sname;
-	cout << format("\tparent: %12d %3d  children: %3d\n")
-		% qn->parent.first %qn->parent.second % qn->children.size();
 }

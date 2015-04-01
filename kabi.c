@@ -65,7 +65,7 @@
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-#define NDEBUG
+//#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -245,17 +245,20 @@ static void get_symbols	(struct qnode *parent,
 
 		init_crc(decl, qn, parent);
 #ifndef NDEBUG
-		//if (qn->name && ((strstr(qn->name, "dev_root") != NULL)))
-		if ((qn->crc == 2659943315))// || (parent->crc == 410729264))
+		//if (qn->name && ((strstr(qn->name, "st_shndx") != NULL)))
+		if ((qn->crc == 2743878935))// || (parent->crc == 410729264))
 			puts(decl);
 #endif
 		if (parent->crc == qn->crc)
 			qn->flags |= CTL_BACKPTR;
 
-		else if ((qn->flags & CTL_HASLIST) && (qn_is_dup(qn)))
+		else if ((qn->flags & CTL_HASLIST) && (qn_is_dup(qn, parent))) {
 			 qn->flags &= ~CTL_HASLIST;
+			 qn->flags |= CTL_ISDUP;
+		}
 
-		prdbg("%s%s %s\n", pad_out(qn->level, '|'), decl, qn->name);
+		prdbg("%s%s", pad_out(qn->level, '|'), decl);
+		prdbg(" %s\n", qn->name ? qn->name : "");
 		update_qnode(qn, parent);
 
 		if ((qn->flags & CTL_HASLIST) && !(qn->flags & CTL_BACKPTR))

@@ -34,6 +34,7 @@ enum ctlflags {
 	CTL_BACKPTR	= 1 << 8,
 	CTL_FILE	= 1 << 9,
 	CTL_HASLIST	= 1 << 10,
+	CTL_ISDUP	= 1 << 11,
 };
 
 enum levels {
@@ -53,9 +54,11 @@ enum qnseek {
 	QN_DN = -1
 };
 
+typedef unsigned long crc_t;
+
 #ifdef __cplusplus
 
-typedef std::pair<unsigned long, int> pnode_t;
+typedef std::pair<crc_t, int> pnode_t;
 
 
 // cnode will be created in kabi-map.cpp::init_crc(), because that's
@@ -76,6 +79,9 @@ public:
 	// The hierarchical level at which this cnode appears in the
 	// tree.
 	int level;
+
+	void operator =(const cnode& cn);
+	bool operator ==(const cnode& cn) const;
 
 	// Boost serialization
 	template<class Archive>
@@ -225,7 +231,7 @@ extern struct qnode *qn_lookup_crc(unsigned long crc);
 extern void qn_add_to_decl(struct qnode *qn, char *decl);
 extern void qn_trim_decl(struct qnode *qn);
 extern const char *qn_get_decl(struct qnode *qn);
-extern bool qn_is_dup(struct qnode *qn);
+extern bool qn_is_dup(struct qnode *qn, struct qnode *parent);
 extern const char *cstrcat(const char *d, const char *s);
 extern void kb_write_cqnmap(const char *filename);
 extern void kb_restore_cqnmap(char *filename);
