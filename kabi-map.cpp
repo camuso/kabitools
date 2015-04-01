@@ -268,22 +268,12 @@ bool qn_is_dup(struct qnode *qn)
 {
 	qnodemap_t& qnmap = public_cqnmap.qnmap;
 	qnitpair_t range = qnmap.equal_range(qn->crc);
-	qniterator_t qnit;
 	int count = distance(range.first, range.second);
 
-	if ((qn->level < LVL_NESTED) || (count == 0))
-		return false;
+	if ((qn->level > LVL_ARG) && (count > 0))
+		return true;
 
-	// This is a dup only if it has the same ancestor as well as the
-	// same crc signature.
-	qnit = find_if (range.first, range.second,
-		[&qn](qnpair_t lqn)
-		{
-			return lqn.second.ancestor == qn->ancestor;
-		});
-
-	bool dup = (qnit != range.second);
-	return dup;
+	return false;
 }
 
 static inline void write_cqnmap(const char *filename, Cqnodemap& cqnmap)
