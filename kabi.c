@@ -526,8 +526,8 @@ int main(int argc, char **argv)
 	}
 
 	argindex = get_options(&argv[1]);
-	argv += argindex;
-	argc -= argindex;
+	argv += argindex-1;
+	argc -= argindex+1;
 
 	if (cumulative) {
 		kb_restore_cqnmap(datafilename);
@@ -539,7 +539,7 @@ int main(int argc, char **argv)
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		struct qnode *qn = new_firstqnode(file);
 		prdbg("sparse file: %s\n", file);
-		symlist = sparse(file);
+		symlist = __sparse(file);
 		build_tree(symlist, qn);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
