@@ -56,10 +56,24 @@ enum qnseek {
 
 typedef unsigned long crc_t;
 
+// This struct is created to pass information from the C environment to
+// the C++ environment. It is not serialized.
+struct qnode
+{
+	crc_t crc;
+	crc_t function;
+	crc_t ancestor;
+	int level;
+	char *decl;
+	char *name;
+	void *symlist;
+	void *dnode;
+	enum ctlflags flags;
+};
+
 #ifdef __cplusplus
 
 typedef std::pair<crc_t, int> pnode_t;
-
 
 // cnode will be created in kabi-map.cpp::init_crc(), because that's
 // when we will have the crc with which to map this cnode into its
@@ -69,80 +83,11 @@ class cnode
 {
 public:
 	cnode(){}
-	cnode(pnode_t& function, int level)
-		: function(function), level(level) {}
-
-	// crc of the function at the top of the tree in which this
-	// cnode appears.
-	pnode_t function;
-
-	// The hierarchical level at which this cnode appears in the
-	// tree.
-	int level;
-
-	void operator =(const cnode& cn);
-	bool operator ==(const cnode& cn) const;
-
-	// Boost serialization
-	template<class Archive>
-        void serialize(Archive &ar, const unsigned int version)
-        {
-		if (version){;}
-		ar & function & level;
-	}
-
-private:
-};
-
-
-// This is a hash map used for children and parents of qnodes.
-// The hash map is composed of a std::pair typed as cnpair_t
-// cnpair_t.first  - crc
-// cnpair_t.second - cnode
-//
-typedef std::multimap<unsigned long, cnode> cnodemap_t;
-typedef cnodemap_t::value_type cnpair_t;
-typedef cnodemap_t::iterator cniterator_t;
-
-#endif
-
-struct qnode
-{	
-	// The crc is the key to the map pair. It is only valid until
-	// the parser exits. Thereafter, it is not valid as a qnode
-	// field, but rather as the the "first" field of a std::pair
-	// comprised of the crc and the qnode itself, which is serialized
-	// as the "second" field of the std::pair.
-	unsigned long crc;
-
-	// This is the level in the nested hierarchy where the symbol
-	// characterized by the qnode was instantiated. This field is
-	// preserved by serialization.
-	int level;
-
-	// These pointers go out of scope at the end of the parser's life
-	// and are not valid when the qnode is deserialized. They are
-	// provided in the C namespace for the C-based parser to access.
-	// They are meaningless when this structure rematerializes after
-	// deserialization.
-	char *name;
-	void *symlist;
-
-	// Flags set during discovery are serialized
-	enum ctlflags flags;
-
-#ifdef __cplusplus
-
-	// This is the c++ side of the qnode. These fields will be updated
-	// at the end of the discovery process for this instance of the
-	// corresponding symbol and are valid when the qnode rematerializes
-	// after deserialization.
-
-	qnode(){}		// constructor
-	std::string sname;	// identifier
-	std::string sdecl;	// data type declaration
-	cnodemap_t parents;	// map of parent crc and cnode objects
-	cnodemap_t children;	// map of children crc and cnode objects
+	cnode(pnode_t& function, pnode_t& ancestor, int level,
+	      ctlflags flags, std::string name)
+		: function(function), ancestor(ancestor), level(level),
+		  flags(flags), name(name)
+		{}
 
 	// We want nodes below an argument or return to have that
 	// ancestor in common. This assures that when traversing
@@ -170,52 +115,105 @@ struct qnode
 	// Exported functions will always have unique crc, because they
 	// all occupy the same namespace and must be distinct.
 	//
-	pnode_t ancestor;	// ARG or RETURN
 	pnode_t function;	// Function at the top
+	pnode_t ancestor;	// ARG or RETURN
+
+	// The hierarchical level at which this cnode appears in the
+	// tree.
+	int level;
+	ctlflags flags;
+	std::string name;
+
+	void operator =(const cnode& cn);
+	bool operator ==(const cnode& cn) const;
 
 	// Boost serialization
 	template<class Archive>
         void serialize(Archive &ar, const unsigned int version)
         {
 		if (version){;}
-		ar & flags & level & sdecl & sname
-		   & function & ancestor & parents & children;
+		ar & function & ancestor &level & flags & name;
 	}
-#endif
+
+private:
 };
 
-#ifdef __cplusplus
+// This is a hash map used for children and parents of qnodes.
+// The hash map is composed of a std::pair typed as cnpair_t
+// cnpair_t.first  - crc
+// cnpair_t.second - cnode
+//
+typedef std::multimap<unsigned long, cnode> cnodemap_t;
+typedef cnodemap_t::value_type cnpair_t;
+typedef cnodemap_t::iterator cniterator_t;
+
+
+// There should only be one dnode instance for each data type in every
+// file.
+class dnode {
+
+public:
+
+	// This is the c++ side of the qnode. These fields will be updated
+	// at the end of the discovery process for this instance of the
+	// corresponding symbol and are valid when the qnode rematerializes
+	// after deserialization.
+
+	dnode(){}		// constructor
+	dnode(std::string decl) : decl(decl) {}
+
+	std::string decl;	// data type declaration
+	cnodemap_t parents;	// multimap of parent cnodes
+	cnodemap_t siblings;	//     :       siblings
+	cnodemap_t children;	//     :       children
+
+	void operator =(const dnode& dn);
+	bool operator ==(const dnode& dn) const;
+
+	// Boost serialization
+	template<class Archive>
+        void serialize(Archive &ar, const unsigned int version)
+        {
+		if (version){;}
+		ar & sdecl & parents & siblings & children;
+	}
+};
+
 
 // This is the hash map for the qnodes.
 //
-typedef std::multimap<unsigned long, qnode> qnodemap_t;
-typedef qnodemap_t::value_type qnpair_t;
-typedef qnodemap_t::iterator qniterator_t;
-typedef qnodemap_t::reverse_iterator qnriterator_t;
-typedef std::pair<qniterator_t, qniterator_t> qnitpair_t;
+typedef std::multimap<crc_t, qnode> dnodemap_t;
+typedef dnodemap_t::value_type dnpair_t;
+typedef dnodemap_t::iterator dniterator_t;
+typedef dnodemap_t::reverse_iterator dnreviterator_t;
+typedef std::pair<dniterator_t, dniterator_t> dnitpair_t;
 
 // This class serves as a wrapper for the hash map of qnodes.
 // Having a class wrapper allows us to add other controls
 // easily if needed in the future.
 //
-class Cqnodemap
+class dnodemap
 {
 public:
-	Cqnodemap(){}
-	qnodemap_t qnmap;
+	dnodemap(){}
+	dnodemap_t dnmap;
 
 	template<class Archive>
 	void serialize(Archive &ar, const unsigned int version)
 	{
 		if (version){;}
-		ar & qnmap;
+		ar & dnmap;
 	}
 };
 
-extern Cqnodemap& get_public_cqnmap();
-extern qnode* qn_lookup_qnode(qnode* qn, unsigned long crc, qnseek dir=QN_UP);
-extern int kb_read_cqnmap(std::string filename, Cqnodemap& cqnmap);
-extern void kb_write_cqnmap_other(std::string& filename, Cqnodemap& cqnmap);
+/*****************************************
+** Function Prototypes
+*****************************************/
+
+extern dnodemap& get_public_cqnmap();
+extern dnode* qn_lookup_qnode(dnode* dn, crc_t crc, dnseek dir=QN_UP);
+extern int kb_read_dnmap(std::string filename, dnodemap& dnmap);
+extern void kb_write_dnmap_other(std::string& filename, dnodemap& dnmap);
 
 extern "C"
 {
