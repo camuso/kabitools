@@ -33,7 +33,7 @@
 
 using namespace std;
 
-Cqnodemap public_cqnmap;
+dnodemap public_dnodemap;
 
 void cnode::operator = (const cnode& cn)
 {
@@ -59,47 +59,99 @@ bool dnode::operator ==(const dnode& dn) const
 	return (decl == dn.decl);
 }
 
-//static inline qnode* lookup_crc(unsigned long crc, qnodemap_t& qnmap)
-//{
-//	qniterator_t it = qnmap.lower_bound(crc);
-//	return it != qnmap.end() ? &(*it).second : NULL;
-//}
-
-static inline qnode* alloc_qnode()
+/******************************************************************************
+ * bool has_same_ancestry(dnode& dn, cnode& cn)
+ *
+ * dn - dnode (declaration node) that abstracts the cnode's data type
+ * cn - the specific instance of this data type
+ *
+ * Returns true if dnode has parents that share the same ancestry as
+ * the cnode.
+ *
+ * Look into the parents map of a qnode to see if any of the parents
+ * there share the same ancestry as the cn parameter.
+ */
+static bool has_same_ancestry(dnode& dn, cnode& cn)
 {
-	qnode *qn = new qnode;
-	dnode *dn = new dnode;
-	qn->dnode = (void*)dnode;
-	return qn;
+	cnodemap& parents = dnode.parents;
+	cniterator cnit = find_if(parents.begin(), parents.end(),
+		[&cn](cnpair lcnp)
+		{
+			cnode& lcn = lcnp.second;
+			return (lcn.function == cn.function);
+		});
+
+	return (cnit != parents.end());
 }
 
-static inline cnode* alloc_cnode(pnode_t& function,
-				 pnode_t& ancestor,
+static dnode* lookup_dnode(cnpair& cnp)
+{
+	dnodemap& dnmap = public_dnodemap;
+	dnitpair  range = dnmap.equal_range(cnp.first);
+	dniterator dnit = range.first;
+	int count = distance(range.first, range.second);
+
+	if ((count < 1) || (range.first == dnmap.end()))
+		return NULL;
+
+	if (count == 1)
+		return &(*dnit).second;
+
+	dnit = find_if (range.first, range.second,
+		[&cnp](dnpair& ldn)
+		{
+			dnode& rdn = ldn.second;
+			cnode& cn = cnp.second;
+
+			return has_same_ancestry(rdn, cn);
+		});
+
+	return dnit != range.second ? &(*dnit).second : NULL;
+}
+
+/******************************************************************************
+ * alloc_qnode
+ *
+ * This is the object that conveys information from the parser to the c++
+ * side of the world.
+ */
+static inline sparm* alloc_sparm()
+{
+	sparm *sp = new sparm;
+	dnode *dn = new dnode;
+	sp->dnode = (void*)dnode;
+	return sp;
+}
+
+static inline cnode* alloc_cnode(edgepair& function,
+				 edgepair& argument,
 				 int level,
+				 int order,
 				 ctlflags flags,
 				 string name)
 {
-	cnode *cn = new cnode(function, ancestor, level, flags, name);
+	cnode *cn = new cnode(function, argument, order, level, flags, name);
 	return cn;
 }
 
-void insert_dnode(dnodemap_t& dnmap, struct qnode *qn)
+static inline void insert_dnode(dnodemap& dnmap, struct sparm *sp)
 {
-	dnmap.insert(dnmap.end(), dnpair_t(qn->crc, *(qn->dn)));
+	dnmap.insert(dnmap.end(), dnpair(sp->crc, *(dnode*)(sp->dnode)));
 }
 
-static inline void insert_cnode(cnodemap_t& cnmap, pair<crc_t, cnode> cn)
+static inline void insert_cnode(cnodemap& cnmap, pair<crc_t, cnode> cn)
 {
 	cnmap.insert(cnmap.end(), cn);
 }
 
-static inline qnode* init_qnode(qnode *parent, qnode *qn, enum ctlflags flags)
+static inline
+sparm* init_sparm(sparm* parent, sparm *sp, enum ctlflags flags)
 {
-	qn->name    = NULL;
-	qn->symlist = NULL;
-	qn->flags   = flags;
-	qn->level = parent->level+1;
-	return qn;
+	sp->name    = NULL;
+	sp->symlist = NULL;
+	sp->flags   = flags;
+	sp->level = parent->level+1;
+	return sp;
 }
 
 /******************************************************************************
@@ -113,86 +165,27 @@ static inline qnode* init_qnode(qnode *parent, qnode *qn, enum ctlflags flags)
  * behind the logic of this function.
  *
  */
-void init_crc(const char *decl, struct qnode *qn, struct qnode *parent)
+static inline void
+kb_init_crc(const char *decl, struct sparm *sp, struct sparm *parent)
 {
-	qn->crc = raw_crc32(decl);
+	sp->crc = raw_crc32(decl);
 
 	if (parent->flags & (CTL_ARG | CTL_RETURN))
-		qn->ancestor = parent->crc;
+		sp->argument = parent->crc;
 	else
-		qn->ancestor = parent->ancestor;
+		sp->argument = parent->argument;
 
-	if ((qn->flags & CTL_FUNCTION) && (qn->flags & CTL_EXPORTED))
-		qn->function = qn->crc;
+	if ((sp->flags & CTL_FUNCTION) && (sp->flags & CTL_EXPORTED))
+		sp->function = sp->crc;
 	else
-		qn->function = parent->function;
+		sp->function = parent->function;
 }
 
-void init_ancestor(unsigned long crc, struct cnode *cn)
+struct sparm *kb_new_sparm(struct sparm *parent, enum ctlflags flags)
 {
-	cn->ancestor = pnode_t(crc, cn->level);
-}
-
-inline struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags)
-{
-	qnode *qn = alloc_qnode();
-	init_qnode(parent, qn, flags);
-	return qn;
-}
-
-/****************************************************************************
- * kb_lookup_dnode(qnode *qn, unsigned long crc)
- *
- * Lookup a dnode in the map given either a parent or child and the crc
- * of the qnode being sought.
- *
- * dn  - pointer to the parent or child qnode from which to start the search
- * crc - the crc of the symbol encapsulated by the dnode we are looking for
- * dir - search up (for parent) or down (for child). Default is up.
- *       See enum qnseek and the function prototype in kabi-map.h
- *
- * If we can't find it, then return NULL.
- * If there is only one instance of the qnode in the map, return its pointer.
- * If there is more than one instance, find the one having the same ancestor
- * or function, depending on the level we are searching from.
- *
- */
-extern dnode* kb_lookup_qnode(dnode* dn, crc_t crc, qnseek dir)
-{
-	dnodemap_t& dnmap = public_dnmap.dnmap;
-	dnitpair_t  range = dnmap.equal_range(crc);
-	dniterator_t dnit = range.first;
-
-	// The direction in which we are searching determines the boundary
-	// at which we search for the matching function instead of the
-	// matching arg or return. Arg and return symbols must point back
-	// to the functions from which they are descended, and nested symbols
-	// must point back to the arg or return symbol from which they are
-	// descended.
-	int lvlbound = (dir == QN_UP) ? LVL_NESTED : LVL_ARG;
-
-	int count = distance(range.first, range.second);
-
-	if ((range.first == qnmap.end()) || (count < 1))
-		return NULL;
-
-	if (count == 1)
-		return &(*dnit).second;
-
-	dnit = find_if (range.first, range.second,
-		[&dn, &dir, &lvlbound](dnpair_t& ldn)
-		{
-			qnode& rdn = ldn.second;
-
-			if (dn->level > lvlbound)
-				return ((rdn.level == dn->level - dir ) &&
-					(rdn.ancestor == dn->ancestor));
-			else
-				return ((rdn.level == dn->level - dir) &&
-					(rdn.function == dn->function));
-		});
-
-	return dnit != range.second ? &(*dnit).second : NULL;
+	sparm *sp = alloc_sparm();
+	init_sparm(parent, sp, flags);
+	return sp;
 }
 
 /****************************************************************************
@@ -205,60 +198,67 @@ extern dnode* kb_lookup_qnode(dnode* dn, crc_t crc, qnseek dir)
  * All the exported functions in the file will be in the file node's
  * children map.
  */
-struct qnode *new_firstqnode(char *file)
+struct sparm *kb_new_firstsparm(char *file, int order)
 {
 	// The "parent" of the File node is itself, so all the fields should
 	// be identical, except that the parent of the File node has no
 	// parents and only one child.
-	struct qnode *parent = alloc_qnode();
+	struct sparm *parent = alloc_sparm();
 	parent->name = NULL;
-	parent->sdecl = string(file);
+	parent->decl = string(file);
 	parent->level = 0;
+	parent->order = order;
 	parent->flags = CTL_FILE;
 	parent->crc = raw_crc32(file);
-	parent->ancestor = pnode_t(parent->crc, 0);
+	parent->argument = 0;
+	parent->function = 0;
 
-	struct qnode *qn = new_qnode(parent, parent->flags);
-	qn->name  = parent->name;
-	qn->sdecl = parent->sdecl;
-	qn->level = parent->level;
-	qn->crc   = parent->crc;
-	qn->ancestor = parent->ancestor;
-	update_qnode(qn, parent);
+	struct sparm *sp = kb_new_sparm(parent, parent->flags);
+	sp->name  = parent->name;
+	sp->sdecl = parent->decl;
+	sp->level = parent->level;
+	sp->order = parent->order;
+	sp->crc   = parent->crc;
+	sp->function = parent->function;
+	sp->argument = parent->argument;
+	kb_update_nodes(sp, parent);
 	return qn;
 }
 
-void update_qnode(struct qnode *qn, struct qnode *parent)
+void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 {
-	// Now's a good time to create the cnode for this qnode and
-	// insert into the parent's children map.
-	cnode *cn = alloc_cnode(qn->function, qn->level, qn->name);
-	insert_cnode(parent->children, make_pair(qn->crc, *cn));
+	// get the dnodes from the sparm
+	dnode* dn = (dnode *)sp->dnode;
+	dnode* pdn = (dnode *)parent->dnode;
 
-	// And while we're at it, create the parent cnode and insert
-	// that into this qnode's parents map.
-	cnode *pcn = alloc_cnode(parent->function, parent->level, parent->name);
-	insert_cnode(qn->parents, make_pair(parent->crc, *pcn));
+	cnode *cn = alloc_cnode(sp->function, sp->argument, sp->level,
+				sp->order, sp->flags, sp->name);
 
-	insert_qnode(public_cqnmap.qnmap, qn);
+	cnpair cnp = make_pair(sp->crc, *cn);
+	insert_cnode(pdn->children, cnp);
+
+	if (sp->flags & CTL_ISDUP) {
+		dnode* sib = lookup_dnode(cnp);
+		insert_cnode(sib->siblings, cnp);
+		return;
+	}
+
+	insert_cnode(dn->siblings, cnp);
+
+	cnode *pcn = alloc_cnode(parent->function, parent->argument,
+				 parent->level, parent->order,
+				 parent->flags, parent->name);
+
+	insert_cnode(dn->parents, make_pair(parent->crc, *pcn));
+	insert_dnode(public_dnodemap, dn);
 }
 
-Cqnodemap& get_public_cqnmap()
+dnodemap& kb_get_public_dnodemap()
 {
-	return public_cqnmap;
+	return public_dnodemap;
 }
 
-void delete_qnode(struct qnode *qn)
-{
-	delete qn;
-}
-
-void qn_add_to_decl(struct qnode *qn, char *decl)
-{
-	qn->sdecl += string(decl) + string(" ");
-}
-
-const char *cstrcat(const char *d, const char *s)
+const char *kb_cstrcat(const char *d, const char *s)
 {
 	if (!d)
 		return s;
@@ -267,74 +267,48 @@ const char *cstrcat(const char *d, const char *s)
 	string dd = string(d) + " " + string(s);
 	return dd.c_str();
 }
-void qn_trim_decl(struct qnode *qn)
+
+void kb_add_to_decl(struct sparm *qn, char *decl)
 {
-	qn->sdecl.erase(qn->sdecl.find_last_not_of(' ') + 1);
+	dnode* dn = (dnode *)sp->dnode;
+	if (dn->decl.size() != 0)
+		dn->decl += " ";
+	dn->decl += string(decl);
 }
 
-const char *qn_get_decl(struct qnode *qn)
+void kb_trim_decl(struct sparm *sp)
 {
-	return qn->sdecl.c_str();
+	dnode* dn = (dnode *)sp->dnode;
+	dn->decl.erase(qn->sdecl.find_last_not_of(' ') + 1);
 }
 
-static inline bool is_inlist(cnpair_t& cnp, cnodemap_t& cnmap)
+const char *kb_get_decl(struct sparm *sp)
 {
-	pair<cniterator_t, cniterator_t> range;
-	range = cnmap.equal_range(cnp.first);
-
-	if (range.first == cnmap.end())
-		return false;
-
-	cniterator_t it = find_if (range.first, range.second,
-				[&cnp](cnpair_t lcnp)
-				{	cnode& lcn = lcnp.second;
-					cnode& cn = cnp.second;
-					return lcn.operator ==(cn);
-				});
-
-	return it != range.second;
+	dnode* dn = (dnode *)sp->dnode;
+	return dn->decl.c_str();
 }
 
-static inline void update_duplicate(qnode *qn, qnode *parent)
-{
-	cnode* cn = alloc_cnode(qn->function, qn->level, qn->name);
-	cnpair_t childcn = make_pair(qn->crc, *cn);
-	if (!is_inlist(childcn, parent->children))
-		insert_cnode(parent->children, childcn);
-	else
-		delete cn;
-
-	cnode *pcn = alloc_cnode(parent->function, parent->level, parent->name);
-	cnpair_t parentcn = make_pair(parent->crc, *pcn);
-	if (!is_inlist(parentcn, qn->parents))
-		insert_cnode(qn->parents, parentcn);
-	else
-		delete pcn;
-}
-
-bool qn_is_dup(struct qnode *qn, struct qnode *parent)
+bool kb_is_dup(struct sparm *sp, struct sparm *parent)
 {
 	bool dup = false;
-	qnodemap_t& qnmap = public_cqnmap.qnmap;
-	qnitpair_t range = qnmap.equal_range(qn->crc);
-	qniterator_t qnit;
+	dnode* dn = (dnode *)sp->dnode;
+	dnodemap& dnmap = public_dnodemap;
+	dnitpair range = dnmap.equal_range(sp->crc);
 	int count = distance(range.first, range.second);
 
-	if ((qn->level < LVL_NESTED) || (count == 0))
+	if ((sp->level < LVL_NESTED) || (count == 0))
 		return false;
 
 	// This is a dup only if it has the same ancestor as well as the
 	// same crc signature.
-	qnit = find_if (range.first, range.second,
-		[&qn](qnpair_t lqn)
+	dniterator dnit = find_if (range.first, range.second,
+		[&dn](dnpair ldn)
 		{
-			return lqn.second.function == qn->function;
+			return ldn.second.function == dn->function;
 		});
 
-	if ((dup = (qnit != range.second))) {
-		dup = true;
-		update_duplicate(qn, parent);
-	}
+	if (dnit != range.second)
+		sp->flags |= CTL_ISDUP;
 
 	return dup;
 }
@@ -343,7 +317,7 @@ static inline void write_cqnmap(const char *filename, Cqnodemap& cqnmap)
 {
 	ofstream ofs(filename, ofstream::out | ofstream::app);
 	if (!ofs.is_open()) {
-		cout << "Cannot open file: " << filename << endl;
+		cout << "Cannot open file: " << filename <parent< endl;
 		exit(1);
 	}
 
@@ -488,3 +462,45 @@ void kb_dump_qnode(struct qnode *qn)
 	cout << format("%08x %08x %03d %s\n")
 		% qn->crc % qn->flags % qn->level % qn->sdecl;
 }
+
+#if 0
+static inline bool is_inlist(cnpair& cnp, cnodemap& cnmap)
+{
+	pair<cniterator, cniterator> range;
+	range = cnmap.equal_range(cnp.first);
+
+	if (range.first == cnmap.end())
+		return false;
+
+	cniterator it = find_if (range.first, range.second,
+				[&cnp](cnpair lcnp)
+				{	cnode& lcn = lcnp.second;
+					cnode& cn = cnp.second;
+					return lcn.operator ==(cn);
+				});
+
+	return it != range.second;
+}
+
+static inline void update_duplicate(sparm *sp, sparm *parent)
+{
+	dnode* dn = (dnode *)sp->dnode;
+	dnode* pdn = (dnode *)parent->dnode;
+
+	cnode* cn = alloc_cnode(sp->function, sp->argument, sp->level,
+				sp->order, sp->flags, sp->name);
+	cnpair cnp = make_pair(sp->crc, *cn);
+
+	if (!is_inlist(cnp, pdn->children))
+		insert_cnode(pdn->children, cnp);
+	else
+		delete cn;
+
+	cnode *pcn = alloc_cnode(parent->function, parent->level, parent->name);
+	cnpair_t parentcn = make_pair(parent->crc, *pcn);
+	if (!is_inlist(parentcn, qn->parents))
+		insert_cnode(qn->parents, parentcn);
+	else
+		delete pcn;
+}
+#endif

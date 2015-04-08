@@ -49,45 +49,44 @@ enum levels {
 
 // Seek directions for qnode searches
 //
-enum qnseek {
-	QN_UP = +1,
-	QN_DN = -1
+enum seekdir {
+	SK_UP = +1,
+	SK_DN = -1
 };
 
 typedef unsigned long crc_t;
 
-// This struct is created to pass information from the C environment to
-// the C++ environment. It is not serialized.
-struct qnode
+// This struct is created to pass information from the sparse environment to
+// the database environment. It is not serialized.
+struct sparm
 {
-	crc_t crc;
-	crc_t function;
-	crc_t ancestor;
-	int level;
-	char *decl;
-	char *name;
-	void *symlist;
-	void *dnode;
+	crc_t crc;	// crc of this data type
+	crc_t function; // function under which it appears
+	crc_t argument;	// also returns
+	int level;	// level in the hierarchy
+	int order;	// order in which sparse discoered it
+	char *decl;	// declaration from which we derive the crc
+	char *name;	// identifier
+	void *symlist;	// for compound data types with descendant symbols
+	void *dnode;	// pointer to the dnode created for this data type
 	enum ctlflags flags;
 };
 
 #ifdef __cplusplus
 
-typedef std::pair<crc_t, int> pnode_t;
+// Nodes are connected by their place in the hierarchy
+typedef std::pair<crc_t, int> edgepair;
 
-// cnode will be created in kabi-map.cpp::init_crc(), because that's
-// when we will have the crc with which to map this cnode into its
-// parents' children map.
+// hiernode is the hierarchical instance of a datatype.
 //
 class cnode
 {
 public:
 	cnode(){}
-	cnode(pnode_t& function, pnode_t& ancestor, int level,
+	cnode(edgepair& func, edgepair& arg, int level, int order,
 	      ctlflags flags, std::string name)
-		: function(function), ancestor(ancestor), level(level),
-		  flags(flags), name(name)
-		{}
+		: function(func), argument(arg), level(level), order(order),
+		  flags(flags), name(name) {}
 
 	// We want nodes below an argument or return to have that
 	// ancestor in common. This assures that when traversing
@@ -115,12 +114,13 @@ public:
 	// Exported functions will always have unique crc, because they
 	// all occupy the same namespace and must be distinct.
 	//
-	pnode_t function;	// Function at the top
-	pnode_t ancestor;	// ARG or RETURN
+	edgepair function;	// Function at the top
+	edgepair argument;	// ARG or RETURN
 
 	// The hierarchical level at which this cnode appears in the
 	// tree.
 	int level;
+	int order;
 	ctlflags flags;
 	std::string name;
 
@@ -132,40 +132,34 @@ public:
         void serialize(Archive &ar, const unsigned int version)
         {
 		if (version){;}
-		ar & function & ancestor &level & flags & name;
+		ar & function & argument &level & order & flags & name;
 	}
 
 private:
 };
 
-// This is a hash map used for children and parents of qnodes.
+// This is a hash map used for children, parents, and siblings of dnodes.
 // The hash map is composed of a std::pair typed as cnpair_t
-// cnpair_t.first  - crc
-// cnpair_t.second - cnode
+// cnpair.first  - crc
+// cnpair.second - cnode
 //
-typedef std::multimap<unsigned long, cnode> cnodemap_t;
-typedef cnodemap_t::value_type cnpair_t;
-typedef cnodemap_t::iterator cniterator_t;
+typedef std::multimap<crc_t, cnode> cnodemap;
+typedef cnodemap::value_type cnpair;
+typedef cnodemap::iterator cniterator;
 
 
-// There should only be one dnode instance for each data type in every
-// file.
+// There should only be one dnode instance for each data type.
+//
 class dnode {
 
 public:
-
-	// This is the c++ side of the qnode. These fields will be updated
-	// at the end of the discovery process for this instance of the
-	// corresponding symbol and are valid when the qnode rematerializes
-	// after deserialization.
-
 	dnode(){}		// constructor
 	dnode(std::string decl) : decl(decl) {}
 
 	std::string decl;	// data type declaration
-	cnodemap_t parents;	// multimap of parent cnodes
-	cnodemap_t siblings;	//     :       siblings
-	cnodemap_t children;	//     :       children
+	cnodemap parents;	// multimap of parent cnodes
+	cnodemap siblings;	//     :       siblings
+	cnodemap children;	//     :       children
 
 	void operator =(const dnode& dn);
 	bool operator ==(const dnode& dn) const;
@@ -175,28 +169,28 @@ public:
         void serialize(Archive &ar, const unsigned int version)
         {
 		if (version){;}
-		ar & sdecl & parents & siblings & children;
+		ar & decl & parents & siblings & children;
 	}
 };
 
 
-// This is the hash map for the qnodes.
+// This is the hash map for the dnodes.
 //
-typedef std::multimap<crc_t, qnode> dnodemap_t;
-typedef dnodemap_t::value_type dnpair_t;
-typedef dnodemap_t::iterator dniterator_t;
-typedef dnodemap_t::reverse_iterator dnreviterator_t;
-typedef std::pair<dniterator_t, dniterator_t> dnitpair_t;
+typedef std::multimap<crc_t, dnode> dnodemap;
+typedef dnodemap::value_type dnpair;
+typedef dnodemap::iterator dniterator;
+typedef dnodemap::reverse_iterator dnreviterator;
+typedef std::pair<dniterator, dniterator> dnitpair;
 
 // This class serves as a wrapper for the hash map of qnodes.
 // Having a class wrapper allows us to add other controls
 // easily if needed in the future.
 //
-class dnodemap
+class dnodemapclass
 {
 public:
-	dnodemap(){}
-	dnodemap_t dnmap;
+	dnodemapclass(){}
+	dnodemap dnmap;
 
 	template<class Archive>
 	void serialize(Archive &ar, const unsigned int version)
@@ -210,32 +204,32 @@ public:
 ** Function Prototypes
 *****************************************/
 
-extern dnodemap& get_public_cqnmap();
-extern dnode* qn_lookup_qnode(dnode* dn, crc_t crc, dnseek dir=QN_UP);
-extern int kb_read_dnmap(std::string filename, dnodemap& dnmap);
-extern void kb_write_dnmap_other(std::string& filename, dnodemap& dnmap);
+extern dnodemap& kb_get_public_dnodemap();
+//extern dnode* qn_lookup_qnode(dnode* dn, crc_t crc, dnseek dir=QN_UP);
+extern int kb_read_dnodemap(std::string filename, dnodemap& dnmap);
+//extern void kb_write_dnmap_other(std::string& filename, dnodemap& dnmap);
 
 extern "C"
 {
 #endif
 
-extern struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags);
-extern struct qnode *new_firstqnode(char *file);
-extern void init_crc(const char *decl, struct qnode *qn, struct qnode *parent);
-extern void update_qnode(struct qnode *qn, struct qnode *parent);
-extern void insert_qnode(struct qnode *qn);
-extern void delete_qnode(struct qnode *qn);
-extern struct qnode *qn_lookup_crc(unsigned long crc);
-extern void qn_add_to_decl(struct qnode *qn, char *decl);
-extern void qn_trim_decl(struct qnode *qn);
-extern const char *qn_get_decl(struct qnode *qn);
-extern bool qn_is_dup(struct qnode *qn, struct qnode *parent);
-extern const char *cstrcat(const char *d, const char *s);
-extern void kb_write_cqnmap(const char *filename);
-extern void kb_restore_cqnmap(char *filename);
-extern bool kb_merge_cqnmap(char *filename);
-extern int kb_dump_cqnmap(char *filename);
-extern void kb_dump_qnode(struct qnode *qn);
+extern sparm *kb_new_sparm(sparm *parent, enum ctlflags flags);
+extern sparm *kb_new_firstsparm(char *file, int order);
+extern void kb_init_crc(const char *decl, sparm *sp, sparm *parent);
+extern void kb_update_nodes(sparm *qn, sparm *parent);
+extern void kb_insert_nodes(struct sparm *qn);
+//extern void delete_qnode(struct qnode *qn);
+//extern struct qnode *qn_lookup_crc(unsigned long crc);
+extern void kb_add_to_decl(struct sparm *qn, char *decl);
+extern void kb_trim_decl(struct sparm *qn);
+extern const char *kb_get_decl(struct sparm *qn);
+extern bool kb_is_dup(sparm *sp, sparm *parent);
+extern const char *kb_cstrcat(const char *d, const char *s);
+extern void kb_write_dnodemap(const char *filename);
+extern void kb_restore_dnodemap(char *filename);
+extern bool kb_merge_dnodemap(char *filename);
+extern int kb_dump_dnodemap(char *filename);
+extern void kb_dump_dnode(struct dnode *dn);
 
 #ifdef __cplusplus
 }

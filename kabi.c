@@ -106,9 +106,8 @@ static bool kp_rmfiles = false;
 static bool cumulative = false;
 static struct symbol_list *symlist = NULL;
 static bool kabiflag = false;
-
 static char *datafilename = "../kabi-data.dat";
-//static char *dupfilename = "../dupfile.dat";
+static int order = 0;
 
 /*****************************************************
 ** sparse wrappers
@@ -284,14 +283,14 @@ static void process_return(struct symbol *basetype, struct qnode *parent)
 		proc_symlist(qn, (struct symbol_list *)qn->symlist, CTL_NESTED);
 }
 
-static void build_branch(char *symname, struct qnode *parent)
+static void build_branch(char *symname, struct sparm *parent)
 {
 	struct symbol *sym;
 
 	if ((sym = find_internal_exported(symlist, symname))) {
 		DBG(const char *decl;)
 		struct symbol *basetype = sym->ctype.base_type;
-		struct qnode *qn = new_qnode(parent, CTL_EXPORTED);
+		struct sparm *sp = kb_new_sparm(parent, CTL_EXPORTED);
 #ifndef NDEBUG
 		if (strstr(symname, "ipmi_smi_add_proc_entry") != NULL)
 			puts(symname);
@@ -318,7 +317,7 @@ static inline bool begins_with(const char *a, const char *b)
 	return (strncmp(a, b, strlen(b)) == 0);
 }
 
-static void build_tree(struct symbol_list *symlist, struct qnode *parent)
+static void build_tree(struct symbol_list *symlist, struct sparm *parent)
 {
 	struct symbol *sym;
 
@@ -529,8 +528,8 @@ int main(int argc, char **argv)
 	}
 
 	argindex = get_options(&argv[1]);
-	argv += argindex;
-	argc -= argindex;
+	argv += argindex-1;
+	argc -= argindex+1;
 
 	if (cumulative) {
 		kb_restore_cqnmap(datafilename);
@@ -538,11 +537,12 @@ int main(int argc, char **argv)
 	}
 
 	symlist = sparse_initialize(argc, argv, &filelist);
+	order = 0;
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
-		struct qnode *qn = new_firstqnode(file);
+		struct sparm *sp = kb_new_firstsparm(file, ++order);
 		prdbg("sparse file: %s\n", file);
-		symlist = sparse(file);
+		symlist = __sparse(file);
 		build_tree(symlist, qn);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
