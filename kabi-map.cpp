@@ -48,7 +48,7 @@ bool cnode::operator ==(const cnode& cn) const
 
 void dnode::operator = (const dnode& dn)
 {
-	decl = dnode.decl;
+	decl = dn.decl;
 	parents.insert(dn.parents.begin(), dn.parents.end());
 	siblings.insert(dn.siblings.begin(), dn.siblings.end());
 	children.insert(dn.children.begin(), dn.children.end());
@@ -73,7 +73,7 @@ bool dnode::operator ==(const dnode& dn) const
  */
 static bool has_same_ancestry(dnode& dn, cnode& cn)
 {
-	cnodemap& parents = dnode.parents;
+	cnodemap& parents = dn.parents;
 	cniterator cnit = find_if(parents.begin(), parents.end(),
 		[&cn](cnpair lcnp)
 		{
@@ -119,7 +119,7 @@ static inline sparm* alloc_sparm()
 {
 	sparm *sp = new sparm;
 	dnode *dn = new dnode;
-	sp->dnode = (void*)dnode;
+	sp->dnode = (void*)dn;
 	return sp;
 }
 
@@ -134,9 +134,9 @@ static inline cnode* alloc_cnode(edgepair& function,
 	return cn;
 }
 
-static inline void insert_dnode(dnodemap& dnmap, struct sparm *sp)
+static inline void insert_dnode(dnodemap& dnmap, dnpair dnp)
 {
-	dnmap.insert(dnmap.end(), dnpair(sp->crc, *(dnode*)(sp->dnode)));
+	dnmap.insert(dnmap.end(), dnp);
 }
 
 static inline void insert_cnode(cnodemap& cnmap, pair<crc_t, cnode> cn)
@@ -165,8 +165,7 @@ sparm* init_sparm(sparm* parent, sparm *sp, enum ctlflags flags)
  * behind the logic of this function.
  *
  */
-static inline void
-kb_init_crc(const char *decl, struct sparm *sp, struct sparm *parent)
+void kb_init_crc(const char *decl, struct sparm *sp, struct sparm *parent)
 {
 	sp->crc = raw_crc32(decl);
 
@@ -205,7 +204,7 @@ struct sparm *kb_new_firstsparm(char *file, int order)
 	// parents and only one child.
 	struct sparm *parent = alloc_sparm();
 	parent->name = NULL;
-	parent->decl = string(file);
+	parent->decl = file;
 	parent->level = 0;
 	parent->order = order;
 	parent->flags = CTL_FILE;
@@ -215,14 +214,14 @@ struct sparm *kb_new_firstsparm(char *file, int order)
 
 	struct sparm *sp = kb_new_sparm(parent, parent->flags);
 	sp->name  = parent->name;
-	sp->sdecl = parent->decl;
+	sp->decl = parent->decl;
 	sp->level = parent->level;
 	sp->order = parent->order;
 	sp->crc   = parent->crc;
 	sp->function = parent->function;
 	sp->argument = parent->argument;
 	kb_update_nodes(sp, parent);
-	return qn;
+	return sp;
 }
 
 void kb_update_nodes(struct sparm *sp, struct sparm *parent)
@@ -230,27 +229,34 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 	// get the dnodes from the sparm
 	dnode* dn = (dnode *)sp->dnode;
 	dnode* pdn = (dnode *)parent->dnode;
+	edgepair func;
+	edgepair arg;
 
-	cnode *cn = alloc_cnode(sp->function, sp->argument, sp->level,
+	dn->decl = sp->decl;
+	dn->flags = sp->flags;
+
+	func = make_pair(sp->function, LVL_EXPORTED);
+	arg = make_pair(sp->argument, LVL_ARG);
+	cnode *cn = alloc_cnode(func, arg, sp->level,
 				sp->order, sp->flags, sp->name);
 
 	cnpair cnp = make_pair(sp->crc, *cn);
 	insert_cnode(pdn->children, cnp);
 
-	if (sp->flags & CTL_ISDUP) {
-		dnode* sib = lookup_dnode(cnp);
-		insert_cnode(sib->siblings, cnp);
+	dnode* sib = (sp->flags & CTL_ISDUP) ? lookup_dnode(cnp) : dn;
+	insert_cnode(sib->siblings, cnp);
+
+	if (sp->flags & CTL_ISDUP)
 		return;
-	}
 
-	insert_cnode(dn->siblings, cnp);
-
-	cnode *pcn = alloc_cnode(parent->function, parent->argument,
+	func = make_pair(parent->function, LVL_EXPORTED);
+	arg  = make_pair(parent->argument, LVL_ARG);
+	cnode *pcn = alloc_cnode(func, arg,
 				 parent->level, parent->order,
 				 parent->flags, parent->name);
 
 	insert_cnode(dn->parents, make_pair(parent->crc, *pcn));
-	insert_dnode(public_dnodemap, dn);
+	insert_dnode(public_dnodemap, make_pair(sp->crc, *dn));
 }
 
 dnodemap& kb_get_public_dnodemap()
@@ -268,7 +274,7 @@ const char *kb_cstrcat(const char *d, const char *s)
 	return dd.c_str();
 }
 
-void kb_add_to_decl(struct sparm *qn, char *decl)
+void kb_add_to_decl(struct sparm *sp, char *decl)
 {
 	dnode* dn = (dnode *)sp->dnode;
 	if (dn->decl.size() != 0)
@@ -279,7 +285,7 @@ void kb_add_to_decl(struct sparm *qn, char *decl)
 void kb_trim_decl(struct sparm *sp)
 {
 	dnode* dn = (dnode *)sp->dnode;
-	dn->decl.erase(qn->sdecl.find_last_not_of(' ') + 1);
+	dn->decl.erase(dn->decl.find_last_not_of(' ') + 1);
 }
 
 const char *kb_get_decl(struct sparm *sp)
@@ -288,10 +294,8 @@ const char *kb_get_decl(struct sparm *sp)
 	return dn->decl.c_str();
 }
 
-bool kb_is_dup(struct sparm *sp, struct sparm *parent)
+bool kb_is_dup(struct sparm *sp)
 {
-	bool dup = false;
-	dnode* dn = (dnode *)sp->dnode;
 	dnodemap& dnmap = public_dnodemap;
 	dnitpair range = dnmap.equal_range(sp->crc);
 	int count = distance(range.first, range.second);
@@ -299,46 +303,38 @@ bool kb_is_dup(struct sparm *sp, struct sparm *parent)
 	if ((sp->level < LVL_NESTED) || (count == 0))
 		return false;
 
-	// This is a dup only if it has the same ancestor as well as the
-	// same crc signature.
-	dniterator dnit = find_if (range.first, range.second,
-		[&dn](dnpair ldn)
-		{
-			return ldn.second.function == dn->function;
-		});
+	if (count > 0)
+		return true;
 
-	if (dnit != range.second)
-		sp->flags |= CTL_ISDUP;
-
-	return dup;
+	return false;
 }
 
-static inline void write_cqnmap(const char *filename, Cqnodemap& cqnmap)
+static inline void write_dnodemap(const char *filename, dnodemap dnmap)
 {
 	ofstream ofs(filename, ofstream::out | ofstream::app);
 	if (!ofs.is_open()) {
-		cout << "Cannot open file: " << filename <parent< endl;
+		cout << "Cannot open file: " << filename << endl;
 		exit(1);
 	}
 
 	{
 		boost::archive::text_oarchive oa(ofs);
-		oa << cqnmap;
+		oa << dnmap;
 	}
 	ofs.close();
 }
 
-void kb_write_cqnmap_other(string& filename, Cqnodemap& cqnmap)
+void kb_write_dnodemap_other(string& filename, dnodemap& dnmap)
 {
-	write_cqnmap(filename.c_str(), cqnmap);
+	write_dnodemap(filename.c_str(), dnmap);
 }
 
-void kb_write_cqnmap(const char *filename)
+void kb_write_dnodemap(const char *filename)
 {
-	write_cqnmap(filename, public_cqnmap);
+	write_dnodemap(filename, public_dnodemap);
 }
 
-void kb_restore_cqnmap(char *filename)
+void kb_restore_dnodemap(char *filename)
 {
 	ifstream ifs(filename);
 	if (!ifs.is_open()) {
@@ -349,12 +345,12 @@ void kb_restore_cqnmap(char *filename)
 
 	{
 		boost::archive::text_iarchive ia(ifs);
-		ia >> public_cqnmap;
+		ia >> public_dnodemap;
 	}
 	ifs.close();
 }
 
-int kb_read_cqnmap(string filename, Cqnodemap &cqnmap)
+int kb_read_dnodemap(string filename, dnodemap& dnmap)
 {
 	ifstream ifs(filename.c_str());
 	if (!ifs.is_open()) {
@@ -364,48 +360,30 @@ int kb_read_cqnmap(string filename, Cqnodemap &cqnmap)
 
 	{
 		boost::archive::text_iarchive ia(ifs);
-		ia >> cqnmap;
+		ia >> dnmap;
 	}
 	ifs.close();
 	return 0;
-}
-
-bool kb_merge_cqnmap(char *filename)
-{
-	Cqnodemap cqm;
-	qnodemap_t& cqm_nodes = cqm.qnmap;
-	qnodemap_t& public_nodes = public_cqnmap.qnmap;
-
-	ifstream ifs(filename);
-	if (!ifs.is_open()) {
-		return false;
-	}
-
-	{
-		boost::archive::text_iarchive ia(ifs);
-		ia >> cqm;
-	}
-	ifs.close();
-
-	cqm_nodes.insert(public_nodes.begin(), public_nodes.end());
-
-	remove(filename);
-	string datafilename(filename);
-	kb_write_cqnmap_other(datafilename, cqm);
-	return true;
 }
 
 #include <boost/format.hpp>
 using boost::format;
 
 
-void static inline dump_cnmap(cnodemap_t& cnmap)
+void static inline dump_cnmap(cnodemap& cnmap, const char* name)
 {
+	if (cnmap.size() == 0)
+		return;
+
+	cout << format("\t%s: %3d\n") % name % cnmap.size();
+
 	for (auto i : cnmap) {
+		crc_t crc = i.first;
 		cnode& cn = i.second;
-		cout << format("\t\t  %12lu %3d %12lu %3d")
-			% cn.function.first % cn.function.second
-			% i.first % cn.level;
+		// crc level order flags func_crc arg_crc name
+		cout << format("\t\t  %12lu %3d %3d %08X %12lu %12lu")
+			% crc % cn.level % cn.order % cn.flags
+			% cn.function.first % cn.argument.first;
 		if (cn.flags & CTL_POINTER)
 			cout << " *";
 		if (cn.name.size() > 0)
@@ -415,52 +393,30 @@ void static inline dump_cnmap(cnodemap_t& cnmap)
 }
 
 
-int kb_dump_cqnmap(char *filename)
+int kb_dump_dnodemap(char *filename)
 {
-	Cqnodemap cqq;
-	qnodemap_t& qnmap = cqq.qnmap;
+	dnodemap& dnmap = public_dnodemap;
 
-	if (int retval = kb_read_cqnmap(string(filename), cqq) != 0)
+	if (int retval = kb_read_dnodemap(string(filename), dnmap) != 0)
 		return retval;
 
-	cout << "map size: " << qnmap.size() << endl;
+	cout << "map size: " << dnmap.size() << endl;
 
-	for (auto it : qnmap) {
-		qnpair_t qnp = it;
-		qnode qn = qnp.second;
+	for (auto it : dnmap) {
+		dnpair dnp = it;
+		crc_t  crc = dnp.first;
+		dnode& dn  = dnp.second;
 
-		if (qn.flags & CTL_FILE)
+		if (dn.flags & CTL_FILE)
 			cout << "FILE: ";
 
-		cout << format("%12lu %3d %08x %s ")
-			% qnp.first %qn.level % qn.flags % qn.sdecl;
-
-		cout << format("\tancestor: %12lu %3d\n")
-			% qn.ancestor.first % qn.ancestor.second;
-
-		cout << format("\tfunction: %12lu %3d\n")
-			% qn.function.first % qn.function.second;
-
-		cout << "\tparents: " << qn.parents.size() << endl;
-
-		if (qn.parents.size() > 0)
-			dump_cnmap(qn.parents);
-
-		cout << "\tchildren: " << qn.children.size() << endl;
-
-		if (qn.children.size() > 0)
-			dump_cnmap(qn.children);
-
+		cout << format("%12lu %s ") % crc % dn.decl;
+		dump_cnmap(dn.parents, "parents");
+		dump_cnmap(dn.siblings, "sibliings");
+		dump_cnmap(dn.children, "children");
 		cout << endl;
 	}
 	return 0;
-}
-
-void kb_dump_qnode(struct qnode *qn)
-{
-	cout.setf(std::ios::unitbuf);
-	cout << format("%08x %08x %03d %s\n")
-		% qn->crc % qn->flags % qn->level % qn->sdecl;
 }
 
 #if 0

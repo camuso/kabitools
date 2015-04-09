@@ -151,23 +151,23 @@ static char *pad_out(int padsize, char padchar)
 //----------------------------------------------------
 static struct symbol *find_internal_exported(struct symbol_list *, char *);
 static const char *get_modstr(unsigned long mod);
-static void get_declist(struct qnode *qn, struct symbol *sym);
-static void get_symbols(struct qnode *parent,
+static void get_declist(struct sparm *sp, struct symbol *sym);
+static void get_symbols(struct sparm *parent,
 			struct symbol_list *list,
 			enum ctlflags flags);
 //-----------------------------------------------------
 
-static void proc_symlist(struct qnode *qparent,
+static void proc_symlist(struct sparm *parent,
 			 struct symbol_list *list,
 			 enum ctlflags flags)
 {
 	struct symbol *sym;
 	FOR_EACH_PTR(list, sym) {
-		get_symbols(qparent, sym->symbol_list, flags);
+		get_symbols(parent, sym->symbol_list, flags);
 	} END_FOR_EACH_PTR(sym);
 }
 
-static void get_declist(struct qnode *qn, struct symbol *sym)
+static void get_declist(struct sparm *sp, struct symbol *sym)
 {
 	struct symbol *basetype = sym->ctype.base_type;
 	const char *typnam = "\0";
@@ -188,30 +188,30 @@ static void get_declist(struct qnode *qn, struct symbol *sym)
 		}
 
 		if (basetype->type == SYM_PTR)
-			qn->flags |= CTL_POINTER;
+			sp->flags |= CTL_POINTER;
 		else
-			qn_add_to_decl(qn, (char *)typnam);
+			kb_add_to_decl(sp, (char *)typnam);
 
 		if (tm & (SM_STRUCT | SM_UNION))
-			qn->flags |= CTL_STRUCT;
+			sp->flags |= CTL_STRUCT;
 
 		if (basetype->symbol_list) {
-			add_symbol((struct symbol_list **)&qn->symlist,
+			add_symbol((struct symbol_list **)&sp->symlist,
 				    basetype);
-			qn->flags |= CTL_HASLIST;
+			sp->flags |= CTL_HASLIST;
 		}
 
 		if (tm & SM_FN)
-			qn->flags |= CTL_FUNCTION;
+			sp->flags |= CTL_FUNCTION;
 	}
 
 	if (basetype->ident)
-		qn_add_to_decl(qn, basetype->ident->name);
+		kb_add_to_decl(sp, basetype->ident->name);
 
-	get_declist(qn, basetype);
+	get_declist(sp, basetype);
 }
 
-static void get_symbols	(struct qnode *parent,
+static void get_symbols	(struct sparm *parent,
 			 struct symbol_list *list,
 			 enum ctlflags flags)
 {
@@ -219,11 +219,10 @@ static void get_symbols	(struct qnode *parent,
 
 	FOR_EACH_PTR(list, sym) {
 		const char *decl = "";
-		struct qnode *qn = new_qnode(parent, flags);
+		struct sparm *sp = kb_new_sparm(parent, flags);
 
-		get_declist(qn, sym);
-		qn_trim_decl(qn);
-		decl = qn_get_decl(qn);
+		get_declist(sp, sym);
+		decl = kb_get_decl(sp);
 
 		// We are only interested in grouping identical compound
 		// data types, so we will only create a crc for their type,
@@ -232,55 +231,54 @@ static void get_symbols	(struct qnode *parent,
 		// there will be no distinction among them.
 		//
 		if (sym->ident) {
-			qn->name = sym->ident->name;
-			if (!(qn->flags & CTL_STRUCT))
-				decl = cstrcat(decl, qn->name);
+			sp->name = sym->ident->name;
+			if (!(sp->flags & CTL_STRUCT))
+				decl = kb_cstrcat(decl, sp->name);
 		}
 
 		// If it's not a struct or union, then we are not interested
 		// in its symbol list.
-		if (!(qn->flags & CTL_STRUCT))
-			qn->flags &= ~CTL_HASLIST;
+		if (!(sp->flags & CTL_STRUCT))
+			sp->flags &= ~CTL_HASLIST;
 
-		init_crc(decl, qn, parent);
+		kb_init_crc(decl, sp, parent);
 #ifndef NDEBUG
 		//if (qn->name && ((strstr(qn->name, "st_shndx") != NULL)))
-		if ((qn->crc == 2743878935))// || (parent->crc == 410729264))
+		if ((sp->crc == 2743878935))// || (parent->crc == 410729264))
 			puts(decl);
 #endif
-		if (parent->crc == qn->crc)
-			qn->flags |= CTL_BACKPTR;
+		if (parent->crc == sp->crc)
+			sp->flags |= CTL_BACKPTR;
 
-		else if ((qn->flags & CTL_HASLIST) && (qn_is_dup(qn, parent))) {
-			 qn->flags &= ~CTL_HASLIST;
-			 qn->flags |= CTL_ISDUP;
+		else if ((sp->flags & CTL_HASLIST) && (kb_is_dup(sp))) {
+			 sp->flags &= ~CTL_HASLIST;
+			 sp->flags |= CTL_ISDUP;
 		}
 
-		prdbg("%s%s", pad_out(qn->level, '|'), decl);
-		prdbg(" %s\n", qn->name ? qn->name : "");
-		update_qnode(qn, parent);
+		prdbg("%s%s", pad_out(sp->level, '|'), decl);
+		prdbg(" %s\n", sp->name ? sp->name : "");
+		kb_update_nodes(sp, parent);
 
-		if ((qn->flags & CTL_HASLIST) && !(qn->flags & CTL_BACKPTR))
-			proc_symlist(qn, (struct symbol_list *)qn->symlist,
+		if ((sp->flags & CTL_HASLIST) && !(sp->flags & CTL_BACKPTR))
+			proc_symlist(sp, (struct symbol_list *)sp->symlist,
 				     CTL_NESTED);
 	} END_FOR_EACH_PTR(sym);
 }
 
 
-static void process_return(struct symbol *basetype, struct qnode *parent)
+static void process_return(struct symbol *basetype, struct sparm *parent)
 {
-	struct qnode *qn = new_qnode(parent, CTL_RETURN);
+	struct sparm *sp = kb_new_sparm(parent, CTL_RETURN);
 	const char *decl;
 
-	get_declist(qn, basetype);
-	qn_trim_decl(qn);
-	decl = qn_get_decl(qn);
-	init_crc(decl, qn, parent);
+	get_declist(sp, basetype);
+	decl = kb_get_decl(sp);
+	kb_init_crc(decl, sp, parent);
 	prdbg(" RETURN: %s\n", decl);
-	update_qnode(qn, parent);
+	kb_update_nodes(sp, parent);
 
-	if (qn->flags & CTL_HASLIST)
-		proc_symlist(qn, (struct symbol_list *)qn->symlist, CTL_NESTED);
+	if (sp->flags & CTL_HASLIST)
+		proc_symlist(sp, (struct symbol_list *)sp->symlist, CTL_NESTED);
 }
 
 static void build_branch(char *symname, struct sparm *parent)
@@ -295,20 +293,19 @@ static void build_branch(char *symname, struct sparm *parent)
 		if (strstr(symname, "ipmi_smi_add_proc_entry") != NULL)
 			puts(symname);
 #endif
-		qn->name = symname;
+		sp->name = symname;
 		kabiflag = true;
-		get_declist(qn, sym);
-		qn_trim_decl(qn);
-		DBG(decl = cstrcat(qn_get_decl(qn), qn->name);)
-		init_crc(qn->name, qn, parent);
+		get_declist(sp, sym);
+		DBG(decl = kb_cstrcat(kb_get_decl(sp), sp->name);)
+		kb_init_crc(sp->name, sp, parent);
 		prdbg(" EXPORTED: %s\n", decl);
-		update_qnode(qn, parent);
+		kb_update_nodes(sp, parent);
 
-		if (qn->flags & CTL_HASLIST)
-			process_return(basetype, qn);
+		if (sp->flags & CTL_HASLIST)
+			process_return(basetype, sp);
 
 		if (basetype->arguments)
-			get_symbols(qn, basetype->arguments, CTL_ARG);
+			get_symbols(sp, basetype->arguments, CTL_ARG);
 	}
 }
 
@@ -532,7 +529,7 @@ int main(int argc, char **argv)
 	argc -= argindex+1;
 
 	if (cumulative) {
-		kb_restore_cqnmap(datafilename);
+		kb_restore_dnodemap(datafilename);
 		remove(datafilename);
 	}
 
@@ -543,7 +540,7 @@ int main(int argc, char **argv)
 		struct sparm *sp = kb_new_firstsparm(file, ++order);
 		prdbg("sparse file: %s\n", file);
 		symlist = __sparse(file);
-		build_tree(symlist, qn);
+		build_tree(symlist, sp);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
 	if (! kabiflag)
@@ -552,8 +549,8 @@ int main(int argc, char **argv)
 	if (kp_rmfiles)
 		remove(datafilename);
 
-	kb_write_cqnmap(datafilename);
-	DBG(kb_dump_cqnmap(datafilename);)
+	kb_write_dnodemap(datafilename);
+	DBG(kb_dump_dnodemap(datafilename);)
 
 	return 0;
 }

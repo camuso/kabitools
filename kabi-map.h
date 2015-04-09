@@ -121,7 +121,7 @@ public:
 	// tree.
 	int level;
 	int order;
-	ctlflags flags;
+	enum ctlflags flags;
 	std::string name;
 
 	void operator =(const cnode& cn);
@@ -160,6 +160,7 @@ public:
 	cnodemap parents;	// multimap of parent cnodes
 	cnodemap siblings;	//     :       siblings
 	cnodemap children;	//     :       children
+	enum ctlflags flags;
 
 	void operator =(const dnode& dn);
 	bool operator ==(const dnode& dn) const;
@@ -213,23 +214,23 @@ extern "C"
 {
 #endif
 
-extern sparm *kb_new_sparm(sparm *parent, enum ctlflags flags);
-extern sparm *kb_new_firstsparm(char *file, int order);
-extern void kb_init_crc(const char *decl, sparm *sp, sparm *parent);
-extern void kb_update_nodes(sparm *qn, sparm *parent);
+extern struct sparm *kb_new_sparm(struct sparm *parent, enum ctlflags flags);
+extern struct sparm *kb_new_firstsparm(char *file, int order);
+extern void kb_init_crc(const char *decl, struct sparm *sp, struct sparm *parent);
+extern void kb_update_nodes(struct sparm *qn, struct sparm *parent);
 extern void kb_insert_nodes(struct sparm *qn);
 //extern void delete_qnode(struct qnode *qn);
 //extern struct qnode *qn_lookup_crc(unsigned long crc);
 extern void kb_add_to_decl(struct sparm *qn, char *decl);
 extern void kb_trim_decl(struct sparm *qn);
 extern const char *kb_get_decl(struct sparm *qn);
-extern bool kb_is_dup(sparm *sp, sparm *parent);
+extern bool kb_is_dup(struct sparm *sp);
 extern const char *kb_cstrcat(const char *d, const char *s);
 extern void kb_write_dnodemap(const char *filename);
 extern void kb_restore_dnodemap(char *filename);
-extern bool kb_merge_dnodemap(char *filename);
+//extern bool kb_merge_dnodemap(char *filename);
 extern int kb_dump_dnodemap(char *filename);
-extern void kb_dump_dnode(struct dnode *dn);
+//extern void kb_dump_dnode(struct dnode *dn);
 
 #ifdef __cplusplus
 }
