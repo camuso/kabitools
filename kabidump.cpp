@@ -56,7 +56,7 @@ kabidump::kabidump(int argc, char **argv)
 	else
 		datafilename = m_filename;
 
-	if (kb_dump_cqnmap((char *)datafilename.c_str()) != 0)
+	if (kb_dump_dnodemap((char *)datafilename.c_str()) != 0)
 		exit(1);
 }
 

@@ -37,8 +37,7 @@ public:
 	kabidump(int argc, char **argv);
 
 private:
-	Cqnodemap& m_cqnmap = get_public_cqnmap();
-	qnodemap_t& m_qnodes = m_cqnmap.qnmap;
+	dnodemap& m_dnmap = kb_get_public_dnodemap();
 	std::string m_filename = "../kabi-data.dat";
 };
 

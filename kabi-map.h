@@ -60,15 +60,15 @@ typedef unsigned long crc_t;
 // the database environment. It is not serialized.
 struct sparm
 {
-	crc_t crc;	// crc of this data type
-	crc_t function; // function under which it appears
-	crc_t argument;	// also returns
-	int level;	// level in the hierarchy
-	int order;	// order in which sparse discoered it
-	char *decl;	// declaration from which we derive the crc
-	char *name;	// identifier
-	void *symlist;	// for compound data types with descendant symbols
-	void *dnode;	// pointer to the dnode created for this data type
+	crc_t crc;	   // crc of this data type
+	crc_t function;    // function under which it appears
+	crc_t argument;	   // also returns
+	int level;	   // level in the hierarchy
+	int order;	   // order in which sparse discoered it
+	const char *decl;  // declaration from which we derive the crc
+	const char *name;  // identifier
+	void *symlist;	   // for compound data types with descendant symbols
+	void *dnode;	   // pointer to the dnode created for this data type
 	enum ctlflags flags;
 };
 

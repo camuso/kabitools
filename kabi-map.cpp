@@ -147,7 +147,7 @@ static inline void insert_cnode(cnodemap& cnmap, pair<crc_t, cnode> cn)
 static inline
 sparm* init_sparm(sparm* parent, sparm *sp, enum ctlflags flags)
 {
-	sp->name    = NULL;
+	sp->name    = "";
 	sp->symlist = NULL;
 	sp->flags   = flags;
 	sp->level = parent->level+1;
@@ -188,7 +188,7 @@ struct sparm *kb_new_sparm(struct sparm *parent, enum ctlflags flags)
 }
 
 /****************************************************************************
- * new_firstqnode(char *file)
+ * new_firstsparm(char *file, int order)
  *
  * Returns new first qnode
  *
@@ -199,28 +199,28 @@ struct sparm *kb_new_sparm(struct sparm *parent, enum ctlflags flags)
  */
 struct sparm *kb_new_firstsparm(char *file, int order)
 {
-	// The "parent" of the File node is itself, so all the fields should
-	// be identical, except that the parent of the File node has no
-	// parents and only one child.
-	struct sparm *parent = alloc_sparm();
-	parent->name = NULL;
-	parent->decl = file;
-	parent->level = 0;
-	parent->order = order;
-	parent->flags = CTL_FILE;
-	parent->crc = raw_crc32(file);
-	parent->argument = 0;
-	parent->function = 0;
+	struct sparm *sp= alloc_sparm();
 
-	struct sparm *sp = kb_new_sparm(parent, parent->flags);
-	sp->name  = parent->name;
-	sp->decl = parent->decl;
-	sp->level = parent->level;
-	sp->order = parent->order;
-	sp->crc   = parent->crc;
-	sp->function = parent->function;
-	sp->argument = parent->argument;
-	kb_update_nodes(sp, parent);
+	sp->name = "";
+	sp->decl = file;
+	sp->level = LVL_FILE;
+	sp->order = order;
+	sp->flags = CTL_FILE;
+	sp->crc = raw_crc32(file);
+	sp->argument = 0;
+	sp->function = 0;
+
+	dnode* dn = (dnode*)sp->dnode;
+	dn->decl = sp->decl;
+	dn->flags = sp->flags;
+
+	edgepair func = make_pair(sp->function, 0);
+	edgepair arg  = make_pair(sp->argument, 0);
+	cnode* cn = alloc_cnode(func, arg, sp->level, sp->order,
+				sp->flags, sp->name);
+	insert_cnode(dn->siblings, make_pair(sp->crc, *cn));
+	insert_dnode(public_dnodemap, make_pair(sp->crc, *dn));
+
 	return sp;
 }
 
@@ -232,7 +232,7 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 	edgepair func;
 	edgepair arg;
 
-	dn->decl = sp->decl;
+	sp->decl = dn->decl.c_str();
 	dn->flags = sp->flags;
 
 	func = make_pair(sp->function, LVL_EXPORTED);

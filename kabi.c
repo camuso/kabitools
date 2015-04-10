@@ -244,7 +244,7 @@ static void get_symbols	(struct sparm *parent,
 		kb_init_crc(decl, sp, parent);
 #ifndef NDEBUG
 		//if (qn->name && ((strstr(qn->name, "st_shndx") != NULL)))
-		if ((sp->crc == 2743878935))// || (parent->crc == 410729264))
+		if ((sp->crc == 1622272652))// || (parent->crc == 410729264))
 			puts(decl);
 #endif
 		if (parent->crc == sp->crc)
