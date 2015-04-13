@@ -107,7 +107,6 @@ static bool cumulative = false;
 static struct symbol_list *symlist = NULL;
 static bool kabiflag = false;
 static char *datafilename = "../kabi-data.dat";
-static int order = 0;
 
 /*****************************************************
 ** sparse wrappers
@@ -534,10 +533,9 @@ int main(int argc, char **argv)
 	}
 
 	symlist = sparse_initialize(argc, argv, &filelist);
-	order = 0;
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
-		struct sparm *sp = kb_new_firstsparm(file, ++order);
+		struct sparm *sp = kb_new_firstsparm(file);
 		prdbg("sparse file: %s\n", file);
 		symlist = __sparse(file);
 		build_tree(symlist, sp);

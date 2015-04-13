@@ -215,7 +215,7 @@ extern "C"
 #endif
 
 extern struct sparm *kb_new_sparm(struct sparm *parent, enum ctlflags flags);
-extern struct sparm *kb_new_firstsparm(char *file, int order);
+extern struct sparm *kb_new_firstsparm(char *file);
 extern void kb_init_crc(const char *decl, struct sparm *sp, struct sparm *parent);
 extern void kb_update_nodes(struct sparm *qn, struct sparm *parent);
 extern void kb_insert_nodes(struct sparm *qn);

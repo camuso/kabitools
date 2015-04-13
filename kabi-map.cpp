@@ -34,6 +34,7 @@
 using namespace std;
 
 dnodemap public_dnodemap;
+static int order = 0;
 
 void cnode::operator = (const cnode& cn)
 {
@@ -130,7 +131,7 @@ static inline cnode* alloc_cnode(edgepair& function,
 				 ctlflags flags,
 				 string name)
 {
-	cnode *cn = new cnode(function, argument, order, level, flags, name);
+	cnode *cn = new cnode(function, argument, level, order, flags, name);
 	return cn;
 }
 
@@ -151,6 +152,7 @@ sparm* init_sparm(sparm* parent, sparm *sp, enum ctlflags flags)
 	sp->symlist = NULL;
 	sp->flags   = flags;
 	sp->level = parent->level+1;
+	sp->order = ++order;
 	return sp;
 }
 
@@ -197,14 +199,14 @@ struct sparm *kb_new_sparm(struct sparm *parent, enum ctlflags flags)
  * All the exported functions in the file will be in the file node's
  * children map.
  */
-struct sparm *kb_new_firstsparm(char *file, int order)
+struct sparm *kb_new_firstsparm(char *file)
 {
 	struct sparm *sp= alloc_sparm();
 
 	sp->name = "";
 	sp->decl = file;
 	sp->level = LVL_FILE;
-	sp->order = order;
+	sp->order = ++order;
 	sp->flags = CTL_FILE;
 	sp->crc = raw_crc32(file);
 	sp->argument = 0;
