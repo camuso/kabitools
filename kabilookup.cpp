@@ -48,7 +48,7 @@ string lookup::get_helptext()
 {
 	return "\
 \n\
-kabi-lookup -[vw] -c|d|e|s symbol [-b datafile]\n\
+kabi-lookup -[vw] -c|d|e|s symbol [[--list list [--dir] | [-f file]] \n\
     Searches a kabi database for symbols. The results of the search \n\
     are printed to stdout and indented hierarchically.\n\
 \n\
@@ -62,12 +62,16 @@ kabi-lookup -[vw] -c|d|e|s symbol [-b datafile]\n\
                   will print all the descendants of nonscalar arguments. \n\
     -d symbol   - Seeks a data structure and prints its members to stdout. \n\
                   The -v switch prints descendants of nonscalar members. \n\
+    -w          - Whole words only, default is \"match any and all\" \n\
     -q          - \"Quiet\" option limits the amount of output. \n\
-    -w          - whole words only, default is \"match any and all\" \n\
-    -f filelist - Optional list of data files that were created by kabi-parser. \n\
+    --list list - List of data files that were created by kabi-parser. \n\
                   The default list created by running kabi-data.sh is \n\
 		  \"./redhat/kabi/parser/kabi-files.list\" relative to the \n\
                   top of the kernel tree. \n\
+    --dir dir   - Limits the search to files in the specified directory. \n\
+                  Only valid with --list, which is the default. \n\
+    -f          - A file created by kabi-parser to be searched \n\
+                  Mutually exclusive to --list \n\
     --no-dups   - A structure can appear more than once in the nest of an \n\
                   exported function, for example a pointer back to itself as\n\
                   parent to one of its descendants. This switch limits the \n\
@@ -119,26 +123,6 @@ int lookup::run()
 	return(m_errindex);
 }
 
-int lookup::count_bits(unsigned mask)
-{
-	int count = 0;
-
-	do {
-		count += mask & 1;
-	} while (mask >>= 1);
-
-	return count;
-}
-
-// Check for mutually exclusive flags.
-bool lookup::check_flags()
-{
-	if (m_flags & KB_QUIET)
-		m_flags &= ~KB_VERBOSE;
-
-	return !(count_bits(m_flags & m_exemask) > 1);
-}
-
 int lookup::process_args(int argc, char **argv)
 {
 	int argindex = 0;
@@ -150,9 +134,9 @@ int lookup::process_args(int argc, char **argv)
 		return EXE_ARG2SML;
 
 	m_flags = KB_VERBOSE;
-	m_flags |= m_opts.get_options(&argindex, &argv[0], m_declstr, m_filelist);
+	m_flags |= m_opts.get_options(&argindex, &argv[0]);
 
-	if (m_flags < 0 || !check_flags())
+	if (m_flags < 0)
 		return EXE_BADFORM;
 
 	return EXE_OK;
@@ -163,7 +147,7 @@ int lookup::execute(string datafile)
 	if(kb_read_cqnmap(datafile, m_cqnmap) != 0)
 		return EXE_NOFILE;
 
-	switch (m_flags & m_exemask) {
+	switch (m_opts.kb_flags & m_opts.kb_exemask) {
 	case KB_COUNT   : return exe_count();
 	case KB_DECL    : return exe_decl();
 	case KB_EXPORTS : return exe_exports();

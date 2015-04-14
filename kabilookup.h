@@ -38,8 +38,6 @@ public:
 	static std::string get_helptext();
 private:
 	int process_args(int argc, char **argv);
-	bool check_flags();
-	int count_bits(unsigned mask);
 	std::string &pad_out(int padsize);
 	bool find_decl(qnode& qnr, std::string decl);
 	bool get_qnrange(unsigned long crc, qnpair_t& range);
@@ -79,7 +77,6 @@ private:
 	int m_count = 0;
 	int m_flags;
 	int m_errindex = 0;
-	int m_exemask  = KB_COUNT | KB_DECL | KB_EXPORTS | KB_STRUCT;
 };
 
 #endif // KABILOOKUP_H
