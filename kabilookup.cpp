@@ -91,14 +91,22 @@ lookup::lookup(int argc, char **argv)
 
 int lookup::run()
 {
-	ifstream ifs(m_filelist.c_str());
+	const char* filename = (m_opts.kb_flags & KB_LIST)
+				? m_filelist.c_str()
+				: m_datafile.c_str();
+
+	ifstream ifs(filename);
 
 	if(!ifs.is_open()) {
-		cout << "Cannot open file: " << m_filelist << endl;
+		cout << "Cannot open file: " << filename << endl;
 		exit(EXE_NOFILE);
 	}
 
-	while (getline(ifs, m_datafile)) {
+	if (m_opts.kb_flags & KB_FILE) {
+		m_errindex = execute(m_datafile);
+	}
+
+	while ((m_opts.kb_flags & KB_LIST) && getline(ifs, m_datafile)) {
 
 		if (!(m_flags & KB_COUNT)) {
 			cout << m_datafile << "\r";
@@ -133,8 +141,12 @@ int lookup::process_args(int argc, char **argv)
 	if(!argc)
 		return EXE_ARG2SML;
 
-	m_flags = KB_VERBOSE;
 	m_flags |= m_opts.get_options(&argindex, &argv[0]);
+
+	m_declstr = m_opts.strparms[STR_DECL];
+	m_filelist = m_opts.strparms[STR_LIST];
+	m_datafile = m_opts.strparms[STR_FILE];
+	m_directory = m_opts.strparms[STR_DIR];
 
 	if (m_flags < 0)
 		return EXE_BADFORM;

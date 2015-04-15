@@ -68,14 +68,15 @@ private:
 	typedef std::pair<int, std::string> errpair;
 
 	std::vector<errpair> m_errors;
-	std::string m_datafile = "../kabi-data.dat";
-	std::string m_filelist = "./redhat/kabi/parser/kabi-files.list";
+	std::string m_datafile;
+	std::string m_filelist;
 	std::string m_declstr;
+	std::string m_directory;
 
 	unsigned long m_crc;
 	bool m_isfound = false;
 	int m_count = 0;
-	int m_flags;
+	int m_flags = 0;
 	int m_errindex = 0;
 };
 

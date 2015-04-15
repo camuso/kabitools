@@ -42,12 +42,13 @@ public:
 	bool parse_long_opt(char *argstr, char ***argv);
 	bool parse_opt(char opt, char ***argv);
 	int get_options(int *idx, char **argv);
-	int kb_flags;
+	int kb_flags = KB_VERBOSE | KB_LIST;
 	int kb_exemask = KB_COUNT | KB_DECL | KB_EXPORTS | KB_STRUCT;
+
+	std::string strparms[STR_COUNT];
 
 private:
 	std::string longopts[OPT_COUNT];
-	std::string strparms[STR_COUNT];
 
 };
 

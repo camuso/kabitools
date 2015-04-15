@@ -53,6 +53,7 @@ bool options::parse_long_opt(char *argstr, char ***argv)
 		break;
 	case OPT_LIST	:
 		kb_flags |= KB_LIST;
+		kb_flags &= ~KB_FILE;
 		strparms[STR_LIST] = *((*argv)++);
 		break;
 	case OPT_DIR	:
@@ -70,6 +71,8 @@ bool options::parse_opt(char opt, char ***argv)
 {
 	switch (opt) {
 	case 'f' : strparms[STR_FILE] = *((*argv)++);
+		   kb_flags |= KB_FILE;
+		   kb_flags &= ~KB_LIST;
 		   break;
 	case 'c' : kb_flags |= KB_COUNT;
 		   strparms[STR_DECL] = *((*argv)++);
@@ -84,8 +87,10 @@ bool options::parse_opt(char opt, char ***argv)
 		   strparms[STR_DECL] = *((*argv)++);
 		   break;
 	case 'q' : kb_flags |= KB_QUIET;
+		   kb_flags &= ~KB_VERBOSE;
 		   break;
 	case 'v' : kb_flags |= KB_VERBOSE;
+		   kb_flags &= ~KB_QUIET;
 		   break;
 	case 'w' : kb_flags |= KB_WHOLE_WORD;
 		   break;
