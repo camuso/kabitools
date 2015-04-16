@@ -31,9 +31,6 @@ int options::count_bits(unsigned mask)
 // Check for mutually exclusive flags.
 bool options::check_flags()
 {
-	if (kb_flags & KB_QUIET)
-		kb_flags &= ~KB_VERBOSE;
-
 	return !(count_bits(kb_flags & kb_exemask) > 1);
 }
 
@@ -132,5 +129,5 @@ chkargv:
 	}
 
 	*idx = index;
-	return kb_flags;
+	return check_flags() ? kb_flags : -1;
 }

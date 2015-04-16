@@ -91,7 +91,7 @@ lookup::lookup(int argc, char **argv)
 
 int lookup::run()
 {
-	const char* filename = (m_opts.kb_flags & KB_LIST)
+	const char* filename = (m_flags & KB_LIST)
 				? m_filelist.c_str()
 				: m_datafile.c_str();
 
@@ -102,20 +102,24 @@ int lookup::run()
 		exit(EXE_NOFILE);
 	}
 
-	if (m_opts.kb_flags & KB_FILE) {
+	if (m_flags & KB_FILE) {
 		m_errindex = execute(m_datafile);
 	}
 
-	while ((m_opts.kb_flags & KB_LIST) && getline(ifs, m_datafile)) {
+	while ((m_flags & KB_LIST) && getline(ifs, m_datafile)) {
 
-		if (!(m_flags & KB_COUNT)) {
+		if ((m_flags && KB_DIR) &&
+			(m_datafile.find(m_directory) == string::npos))
+				continue;
+
+		if (!(m_flags & KB_COUNT) && !(m_flags & KB_QUIET)) {
 			cout << m_datafile << "\r";
 			cout.flush();
 		}
 
 		m_errindex = execute(m_datafile);
 
-		if (!(m_flags & KB_COUNT)) {
+		if (!(m_flags & KB_COUNT) && !(m_flags & KB_QUIET)) {
 			cout << "\33[2K\r";
 			cout.flush();
 		}
@@ -143,13 +147,13 @@ int lookup::process_args(int argc, char **argv)
 
 	m_flags |= m_opts.get_options(&argindex, &argv[0]);
 
+	if (m_flags < 0)
+		return EXE_BADFORM;
+
 	m_declstr = m_opts.strparms[STR_DECL];
 	m_filelist = m_opts.strparms[STR_LIST];
 	m_datafile = m_opts.strparms[STR_FILE];
 	m_directory = m_opts.strparms[STR_DIR];
-
-	if (m_flags < 0)
-		return EXE_BADFORM;
 
 	return EXE_OK;
 }
