@@ -42,7 +42,7 @@ bool options::parse_long_opt(char *argstr, char ***argv)
 	unsigned i;
 
 	for (i = 0; i < OPT_COUNT; ++i)
-		if(string(++argstr) == longopts[i])
+		if(string(argstr) == longopts[i])
 			break;
 	switch (i) {
 	case OPT_NODUPS :
@@ -54,10 +54,12 @@ bool options::parse_long_opt(char *argstr, char ***argv)
 	case OPT_LIST	:
 		kb_flags |= KB_LIST;
 		kb_flags &= ~KB_FILE;
+		if (**argv == NULL) return false;
 		strparms[STR_LIST] = *((*argv)++);
 		break;
 	case OPT_DIR	:
 		kb_flags |= KB_DIR;
+		if (**argv == NULL) return false;
 		strparms[STR_DIR] = *((*argv)++);
 		break;
 	default		:
@@ -70,21 +72,26 @@ bool options::parse_long_opt(char *argstr, char ***argv)
 bool options::parse_opt(char opt, char ***argv)
 {
 	switch (opt) {
-	case 'f' : strparms[STR_FILE] = *((*argv)++);
+	case 'f' : if (**argv == NULL) return false;
+		   strparms[STR_FILE] = *((*argv)++);
 		   kb_flags |= KB_FILE;
 		   kb_flags &= ~KB_LIST;
 		   break;
-	case 'c' : kb_flags |= KB_COUNT;
+	case 'c' : if (**argv == NULL) return false;
 		   strparms[STR_DECL] = *((*argv)++);
+		   kb_flags |= KB_COUNT;
 		   break;
-	case 'd' : kb_flags |= KB_DECL;
+	case 'd' : if (**argv == NULL) return false;
 		   strparms[STR_DECL] = *((*argv)++);
+		   kb_flags |= KB_DECL;
 		   break;
-	case 'e' : kb_flags |= KB_EXPORTS;
+	case 'e' : if (**argv == NULL) return false;
 		   strparms[STR_DECL] = *((*argv)++);
+		   kb_flags |= KB_EXPORTS;
 		   break;
-	case 's' : kb_flags |= KB_STRUCT;
+	case 's' : if (**argv == NULL) return false;
 		   strparms[STR_DECL] = *((*argv)++);
+		   kb_flags |= KB_STRUCT;
 		   break;
 	case 'q' : kb_flags |= KB_QUIET;
 		   kb_flags &= ~KB_VERBOSE;
@@ -103,7 +110,7 @@ bool options::parse_opt(char opt, char ***argv)
 
 int options::get_options(int *idx, char **argv)
 {
-	int index = 0;
+	int index;
 	char *argstr;
 
 	for (index = 0; *argv[0] == '-'; ++index) {
@@ -113,12 +120,13 @@ int options::get_options(int *idx, char **argv)
 		argstr = &(*argv++)[1];
 
 		if (*argstr == '-')
-			if(parse_long_opt(argstr, &argv))
-				continue;
+			if(parse_long_opt(++argstr, &argv))
+				goto chkargv;
 
 		for (i = 0; argstr[i]; ++i)
 			if (!parse_opt(argstr[i], &argv))
 				return -1;
+chkargv:
 		if (!*argv)
 			break;
 	}
