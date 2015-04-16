@@ -6,28 +6,22 @@
 usagestr=$(
 cat <<EOF
 
-$0 -d <directory> -o <textfile> [-s subdir -b datafile -e errfile -v -h]
+$0 -d <directory> -f <filelist> [-s subdir] | -h
 
-  - Creates a SQLite database and a text file listing all exported
-    functions, their arguments, their return values, and any data
-    structures explicitly or implicitly used by them.
+  - Recursively finds .i files from the top of the directory given by
+    required -d switch and sends them to the kabi-parse to create
+    .kb_dat files to be used by kabi-lookup.
 
     This script uses the kabi-parser executable and expects it to be in
-    the redhat/kabi/ directory.
+    the ./redhat/kabi/ directory relative to the top of the kernel tree.
 
   -d directory - Required. Directory at top of tree to be parsed.
   -s subdir    - Optional directory from which to start parsing, relative
                  to the top of the tree defined by the required "directory"
                  argument above.
                  Default is from the top of the kernel tree.
-  -b database  - Optional. Default is ../kabi-data.dat relative to
-                 the top of the kernel tree. This file will contain the
-                 parser output of the hierarchical kabi data graph.
-                 If it already exists, this file will be destroyed and
-                 rebuilt.
-  -e errfile   - Optional error file. By default, errors are sent
-                 to /dev/null
-  -v           - Verbose output
+  -f filelist  - Optional path to filelist.
+                 Default is ./redhat/kabi/parser/kabi-files.list
   -h           - This help message
 
 \0
@@ -35,11 +29,9 @@ EOF
 )
 
 currentdir=$PWD
-verbose=false
-directory=""
-subdir="./"
+directory="$PWD"
+subdir=""
 datafile="kabi-data.dat"
-errfile="/dev/null"
 
 usage() {
 	echo -e "$usagestr"
@@ -72,10 +64,6 @@ while getopts "vhd:s:f:e:" OPTION; do
 		;;
 	f )	filelist="$OPTARG"
 		;;
-	e )	errfile="$OPTARG"
-		;;
-	v )	verbose=true
-		;;
 	h )	usage
 		;;
 	* )	echo -e "\n\tunrecognized option: "$OPTARG"\n"
@@ -90,6 +78,10 @@ done
 [ -e "$directory/redhat/kabi/kabi-parser" ] || noparser
 [ -d "$directory" ] || noexistdir $directory
 
+if [ "$subdir" ]; then
+	[ -d "$subdir" ] || noexistdir $subdir
+fi
+
 cd $directory
 echo "executing from $PWD"
 
@@ -98,17 +90,16 @@ filelist=$outdir/"kabi-files.list"
 [ -d "$outdir" ] || mkdir -p $outdir
 
 rm -vf $filelist
-[ -d "$subdir" ] || noexistdir $subdir
 
 echo "kabi file list: $filelist"
 
 START=$(date +%s)
 
-find $subdir -name \*.i -exec sh -c \
+find $directory$subdir -name \*.i -exec sh -c \
 	'grep -qm1 "__ksymtab_" $1; \
 	if [ $? -eq 0 ]; then \
 		echo $1; \
-		redhat/kabi/kabi-parser -xf ${1%.*}.kb_dat -Wno-sparse-error $1; \
+		./redhat/kabi/kabi-parser -xf ${1%.*}.kb_dat -Wno-sparse-error $1; \
 		echo "${1%.*}.kb_dat" >> $2; \
 	fi' \
 	sh '{}' $filelist \;
