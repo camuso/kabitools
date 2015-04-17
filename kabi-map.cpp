@@ -33,7 +33,8 @@
 
 using namespace std;
 
-Cqnodemap public_cqnmap;
+static Cqnodemap public_cqnmap;
+static int order = 0;
 
 static inline qnode* lookup_crc(unsigned long crc, qnodemap_t& qnmap)
 {
@@ -63,6 +64,7 @@ static inline qnode* init_qnode(qnode *parent, qnode *qn, enum ctlflags flags)
 	qn->symlist = NULL;
 	qn->flags   = flags;
 	qn->level = parent->level+1;
+	qn->order = ++order;
 	qn->parent = pnode_t(parent->crc, parent->level);
 
 	return qn;
@@ -365,21 +367,29 @@ int kb_dump_cqnmap(char *filename)
 {
 	Cqnodemap cqq;
 	qnodemap_t& qnmap = cqq.qnmap;
+	qnodemap_t ordered;
 
 	if (int retval = kb_read_cqnmap(string(filename), cqq) != 0)
 		return retval;
 
 	cout << "map size: " << qnmap.size() << endl;
 
-	for (auto it : qnmap) {
+	for (auto it: qnmap) {
+		qnode qn = it.second;
+		qn.crc = it.first;
+		qnpair_t qnp = make_pair(qn.order, qn);
+		ordered.insert(ordered.end(), qnp);
+	}
+
+	for (auto it : ordered) {
 		qnpair_t qnp = it;
 		qnode qn = qnp.second;
 
 		if (qn.flags & CTL_FILE)
 			cout << "FILE: ";
 
-		cout << format("%12lu %3d %08x %s ")
-			% qnp.first %qn.level % qn.flags % qn.sdecl;
+		cout << format("%12lu %3d %05d %08x %s ")
+			% qn.crc %qn.level % qnp.first % qn.flags % qn.sdecl;
 		if (qn.flags & CTL_POINTER) cout << "*";
 		cout << qn.sname << endl;
 

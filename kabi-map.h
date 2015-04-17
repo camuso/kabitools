@@ -90,6 +90,10 @@ struct qnode
 	// preserved by serialization.
 	int level;
 
+	// This is the order in which this qnode was discovered relative
+	// to the other qnodes in the data file.
+	int order;
+
 	// These pointers go out of scope at the end of the parser's life
 	// and are not valid when the qnode is deserialized. They are
 	// provided in the C namespace for the C-based parser to access.
@@ -149,7 +153,7 @@ struct qnode
         void serialize(Archive &ar, const unsigned int version)
         {
 		if (version){;}
-		ar & flags & level & sdecl & sname
+		ar & flags & level &order & sdecl & sname
 		   & parent & ancestor & function & children;
 	}
 #endif
@@ -196,9 +200,6 @@ extern struct qnode *new_qnode(struct qnode *parent, enum ctlflags flags);
 extern struct qnode *new_firstqnode(char *file);
 extern void init_crc(const char *decl, struct qnode *qn, struct qnode *parent);
 extern void update_qnode(struct qnode *qn, struct qnode *parent);
-extern void insert_qnode(struct qnode *qn);
-extern void delete_qnode(struct qnode *qn);
-extern struct qnode *qn_lookup_crc(unsigned long crc);
 extern void qn_add_to_decl(struct qnode *qn, char *decl);
 extern void qn_trim_decl(struct qnode *qn);
 extern const char *qn_get_decl(struct qnode *qn);
