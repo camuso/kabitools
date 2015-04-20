@@ -25,6 +25,7 @@ qrow::qrow(const qrow& r)
 {
 	crc = r.crc;
 	level = r.level;
+	order = r.order;
 	flags = r.flags;
 	file = r.file;
 	decl = r.decl;
@@ -35,6 +36,7 @@ void qrow::operator = (const qrow& r)
 {
 	crc = r.crc;
 	level = r.level;
+	order = r.order;
 	flags = r.flags;
 	file = r.file;
 	decl = r.decl;
@@ -51,6 +53,7 @@ void qrow::clear()
 {
 	this->crc = 0;
 	this->level = 0;
+	this->order = 0;
 	this->flags = 0;
 	this->file = "";
 	this->decl = "";

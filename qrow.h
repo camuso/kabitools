@@ -34,6 +34,7 @@ public:
 
 	unsigned long crc;
 	int level;
+	int order;
 	int flags;
 	std::string file;
 	std::string decl;

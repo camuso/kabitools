@@ -20,6 +20,7 @@
  */
 
 #include <iostream>
+#include <algorithm>
 #include <boost/format.hpp>
 #include "qrow.h"
 #include "rowman.h"
@@ -60,6 +61,7 @@ void rowman::fill_row(const qnode& qn)
 {
 	qrow r;
 	r.level = qn.level;
+	r.order = qn.order;
 	r.flags = qn.flags;
 	r.decl = qn.sdecl;
 	r.name = qn.sname;
@@ -152,6 +154,13 @@ void rowman::put_rows_from_front(bool quiet)
 {
 	cout << "\33[2K\r";
 
+	sort(rows.begin(), rows.end(), [](qrow const& a, qrow const& b)
+	{
+		if (a.order < b.order) return true;
+		if (a.order > b.order) return false;
+		return false;
+	});
+
 	for (auto it : rows) {
 		if (it == rows.back())
 			print_row(it, false);
@@ -162,6 +171,13 @@ void rowman::put_rows_from_front(bool quiet)
 void rowman::put_rows_from_back_normalized(bool quiet)
 {
 	cout << "\33[2K\r";
+
+	sort(rows.begin(), rows.end(), [](qrow const& a, qrow const& b)
+	{
+		if (a.order > b.order) return true;
+		if (a.order < b.order) return false;
+		return false;
+	});
 
 	for (auto it : rows) {
 		qrow& r = rows.back();
