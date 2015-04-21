@@ -191,6 +191,13 @@ void rowman::put_rows_from_front_normalized(bool quiet)
 {
 	cout << "\33[2K\r";
 
+	sort(rows.begin(), rows.end(), [](qrow const& a, qrow const& b)
+	{
+		if (a.order < b.order) return true;
+		if (a.order > b.order) return false;
+		return false;
+	});
+
 	for (auto it : rows)
 		print_row_normalized(it, quiet);
 
