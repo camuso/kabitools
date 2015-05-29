@@ -20,6 +20,7 @@
  *
  */
 
+#include <iostream>
 #include <cstring>
 #include <fstream>
 #include <boost/format.hpp>
