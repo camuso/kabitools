@@ -77,7 +77,7 @@ struct sparm
 // Nodes are connected by their place in the hierarchy
 typedef std::pair<crc_t, int> edgepair;
 
-// hiernode is the hierarchical instance of a datatype.
+// cnode is the hierarchical instance of a datatype.
 //
 class cnode
 {

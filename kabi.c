@@ -452,6 +452,7 @@ static struct symbol *find_internal_exported (struct symbol_list *symlist,
 			case SYM_STRUCT:
 			case SYM_UNION:
 				goto fie_foundit;
+			default: continue;
 			}
 		}
 	} END_FOR_EACH_PTR(sym);
