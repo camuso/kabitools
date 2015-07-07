@@ -61,10 +61,10 @@ typedef unsigned long crc_t;
 struct sparm
 {
 	crc_t crc;	   // crc of this data type
-	crc_t function;    // function under which it appears
-	crc_t argument;	   // also returns
+	crc_t function;    // crc of the function under which it appears
+	crc_t argument;	   // crc of the arg or ret under which it appears
 	int level;	   // level in the hierarchy
-	int order;	   // order in which sparse discoered it
+	int order;	   // order in which sparse discovered it
 	const char *decl;  // declaration from which we derive the crc
 	const char *name;  // identifier
 	void *symlist;	   // for compound data types with descendant symbols
@@ -77,7 +77,8 @@ struct sparm
 // Nodes are connected by their place in the hierarchy
 typedef std::pair<crc_t, int> edgepair;
 
-// cnode is the hierarchical instance of a datatype.
+// cnode is the hierarchical instance of a datatype. In graph database
+// terms, it is an edge.
 //
 class cnode
 {
@@ -120,6 +121,9 @@ public:
 	// The hierarchical level at which this cnode appears in the
 	// tree.
 	int level;
+
+	// The order in which it was discovered, in order to properly
+	// reconstruct the hierarchy.
 	int order;
 	enum ctlflags flags;
 	std::string name;
@@ -149,6 +153,7 @@ typedef cnodemap::iterator cniterator;
 
 
 // There should only be one dnode instance for each data type.
+// In graph database terms, this is a vertex.
 //
 class dnode {
 

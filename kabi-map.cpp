@@ -69,7 +69,7 @@ bool dnode::operator ==(const dnode& dn) const
  * Returns true if dnode has parents that share the same ancestry as
  * the cnode.
  *
- * Look into the parents map of a qnode to see if any of the parents
+ * Look into the parents map of a dnode to see if any of the parents
  * there share the same ancestry as the cn parameter.
  */
 static bool has_same_ancestry(dnode& dn, cnode& cn)
@@ -160,11 +160,30 @@ sparm* init_sparm(sparm* parent, sparm *sp, enum ctlflags flags)
  * init_crc(const char *decl, qnode *qn, qnode *parent)
  *
  * decl   - declaration of type to be converted to crc
- * qn     - qnode struct containing the details of this instance of this symbol
- * parent - parent qnode
+ * sp     - struct sparm containing the details of this instance of this symbol
+ * parent - parent sparm
  *
- * See the commentary in kabi-map.h to better understand the reasoning
- * behind the logic of this function.
+ * See the commentary in kabi-map.h
+ *
+ * If the parent is an arg or ret, then the argument field will contain the crc
+ * of the declaration of the parent's data type.
+ *
+ * If the parent is NOT an arg or ret, the argument field will contain the crc
+ * of the parent's argument field.
+ *
+ * This logic guarantees that the exported function's argument will be
+ * ancestral to all the data types that appear below it in the hierarchy
+ * of the exported function. The argument field of the data types appearing
+ * first level down from the ancestral argument are the first to appear
+ * under that argument, so their argument fields point back to the crc of
+ * the exported function's argument itself. Data types at lower levels
+ * also point back to the same exported function's argument by inheriting
+ * its crc from the upper levels, back to the first level.
+ *
+ * If the data type is an exported function, its function field will contain
+ * the crc of its own declaration. For all data below the function level, the
+ * function field will contain the crc of the exported function at the top
+ * level of the hierarchy.
  *
  */
 void kb_init_crc(const char *decl, struct sparm *sp, struct sparm *parent)
