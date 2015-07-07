@@ -467,7 +467,7 @@ fie_foundit:
 
 static bool parse_opt(char opt, char ***argv, int *index)
 {
-	int optstatus = 1;
+	int optstatus = true;
 
 	switch (opt) {
 	case 'f' : datafilename = *((*argv)++);
@@ -479,7 +479,7 @@ static bool parse_opt(char opt, char ***argv, int *index)
 		   break;
 	case 'h' : puts(helptext);
 		   exit(0);
-	default  : optstatus = -1;
+	default  : optstatus = false;
 		   break;
 	}
 
@@ -497,9 +497,13 @@ static int get_options(char **argv)
 		// Point to the first character of the actual option
 		argstr = &(*argv++)[1];
 
-		for (i = 0; argstr[i]; ++i)
-			if (!parse_opt(argstr[i], &argv, &index))
-				return false;
+		for (i = 0; argstr[i]; ++i) {
+			if (!parse_opt(argstr[i], &argv, &index)) {
+				printf ("invalid option: %c\n", argstr[i]);
+				return index;
+			}
+		}
+
 		if (!*argv)
 			break;
 	}
@@ -525,8 +529,9 @@ int main(int argc, char **argv)
 	}
 
 	argindex = get_options(&argv[1]);
-	argv += argindex-1;
-	argc -= argindex+1;
+	argv[argindex] = argv[0];
+	argv += argindex;
+	argc -= argindex;
 
 	if (cumulative) {
 		kb_restore_dnodemap(datafilename);
