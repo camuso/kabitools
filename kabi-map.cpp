@@ -209,14 +209,13 @@ struct sparm *kb_new_sparm(struct sparm *parent, enum ctlflags flags)
 }
 
 /****************************************************************************
- * new_firstsparm(char *file, int order)
+ * kb_new_firstsparm(char *file)
  *
- * Returns new first qnode
+ * Returns new first sparm
  *
- * The File is parent of all symbols found within it. The parent field
- * will point to itself, but it will not be in the children map.
- * All the exported functions in the file will be in the file node's
- * children map.
+ * The File is parent of all symbols found within it. Because it is at the
+ * top of the hierarchy, it's ancestry fields, function and argument, will
+ * have zeroes in it.
  */
 struct sparm *kb_new_firstsparm(char *file)
 {
@@ -245,38 +244,73 @@ struct sparm *kb_new_firstsparm(char *file)
 	return sp;
 }
 
+
+/****************************************************************************
+ * kb_update_nodes
+ *
+ * Given the sparm of the newly processed node and its parent, update the
+ * corresponding dnode and cnode. If the dnode is the first of its type,
+ * as characterized by its CRC, its cnode will be the first entry in its
+ * siblings cnodemap, and the dnode will be inserted into the public_dnodemap.
+ * If not, the original dnode will get this dnode's cnode inserted into its
+ * siblings cnodemap, and the dnode for this symbol will be dropped on the
+ * floor.
+ */
 void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 {
 	// get the dnodes from the sparm
 	dnode* dn = (dnode *)sp->dnode;
 	dnode* pdn = (dnode *)parent->dnode;
-	edgepair func;
-	edgepair arg;
 
+	// create the edgepairs for the symbol's ancestry
+	edgepair func = make_pair(sp->function, LVL_EXPORTED);
+	edgepair arg = make_pair(sp->argument, LVL_ARG);
+
+	// Extract the declaration string from the one stored in the dnode
+	// by calls to kb_add_to_decl() made by kabi.c::get_declist and
+	// store it in the sparm.decl field to be passed back to the caller.
 	sp->decl = dn->decl.c_str();
 	dn->flags = sp->flags;
 
-	func = make_pair(sp->function, LVL_EXPORTED);
-	arg = make_pair(sp->argument, LVL_ARG);
+	// Create a cnode for this sparm.
 	cnode *cn = alloc_cnode(func, arg, sp->level,
 				sp->order, sp->flags, sp->name);
 
+	// Create a cnode pair using the new cnode descriptor of this symbol
+	// and its CRC. Insert the cnode into the parent dnode's children
+	// cnodemap.
 	cnpair cnp = make_pair(sp->crc, *cn);
 	insert_cnode(pdn->children, cnp);
 
+	// If we've seen this dnode before, use the cnodepair to lookup
+	// the original dnode instance and insert the cnode of the new
+	// dnode into the sibling cnodemap of the original instance.
+	// If thisis the first instance of this dnode instance, then its
+	// cnode will be the first in its siblings cnodemap.
 	dnode* sib = (sp->flags & CTL_ISDUP) ? lookup_dnode(cnp) : dn;
 	insert_cnode(sib->siblings, cnp);
 
+	// If we've seen this dnode before, then we're done at this point.
+	// This dnode will not be inserted in the public_dnodemap, since
+	// there is already a dnode for this symbol in the public_dnodemap.
+	// All the hierarchical details of this node have been stored as a
+	// cnode in the dnode's siblings cnodemap.
 	if (sp->flags & CTL_ISDUP)
 		return;
 
+	// If this is the first instance of this dnode, then we need to
+	// create a cnode for its parents and put that cnode in the
+	// dnode parents cnodemap.
 	func = make_pair(parent->function, LVL_EXPORTED);
 	arg  = make_pair(parent->argument, LVL_ARG);
+
 	cnode *pcn = alloc_cnode(func, arg,
 				 parent->level, parent->order,
 				 parent->flags, parent->name);
 
 	insert_cnode(dn->parents, make_pair(parent->crc, *pcn));
+
+	// Now insert this unique dnode into the public_dnodemap.
 	insert_dnode(public_dnodemap, make_pair(sp->crc, *dn));
 }
 
