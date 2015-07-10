@@ -50,7 +50,6 @@ bool cnode::operator ==(const cnode& cn) const
 void dnode::operator = (const dnode& dn)
 {
 	decl = dn.decl;
-	parents.insert(dn.parents.begin(), dn.parents.end());
 	siblings.insert(dn.siblings.begin(), dn.siblings.end());
 	children.insert(dn.children.begin(), dn.children.end());
 }
@@ -72,6 +71,8 @@ bool dnode::operator ==(const dnode& dn) const
  * Look into the parents map of a dnode to see if any of the parents
  * there share the same ancestry as the cn parameter.
  */
+#if 0
+Need to rethink how to do this.
 static bool has_same_ancestry(dnode& dn, cnode& cn)
 {
 	cnodemap& parents = dn.parents;
@@ -84,8 +85,9 @@ static bool has_same_ancestry(dnode& dn, cnode& cn)
 
 	return (cnit != parents.end());
 }
+#endif
 
-static dnode* lookup_dnode(cnpair& cnp)
+static dnpair* lookup_dnode(cnpair cnp)
 {
 	dnodemap& dnmap = public_dnodemap;
 	dnitpair  range = dnmap.equal_range(cnp.first);
@@ -96,8 +98,10 @@ static dnode* lookup_dnode(cnpair& cnp)
 		return NULL;
 
 	if (count == 1)
-		return &(*dnit).second;
+		return &(*dnit);
 
+#if 0
+	Need to rethink how to do this.
 	dnit = find_if (range.first, range.second,
 		[&cnp](dnpair& ldn)
 		{
@@ -106,12 +110,13 @@ static dnode* lookup_dnode(cnpair& cnp)
 
 			return has_same_ancestry(rdn, cn);
 		});
+#endif
 
-	return dnit != range.second ? &(*dnit).second : NULL;
+	return dnit != range.second ? &(*dnit) : NULL;
 }
 
 /******************************************************************************
- * alloc_qnode
+ * alloc_sparm
  *
  * This is the object that conveys information from the parser to the c++
  * side of the world.
@@ -120,7 +125,7 @@ static inline sparm* alloc_sparm()
 {
 	sparm *sp = new sparm;
 	dnode *dn = new dnode;
-	sp->dnode = (void*)dn;
+	sp->dnode = (void*)dn;	// dnode descriptor of this declaration
 	return sp;
 }
 
@@ -249,22 +254,33 @@ struct sparm *kb_new_firstsparm(char *file)
  * kb_update_nodes
  *
  * Given the sparm of the newly processed node and its parent, update the
- * corresponding dnode and cnode. If the dnode is the first of its type,
- * as characterized by its CRC, its cnode will be the first entry in its
- * siblings cnodemap, and the dnode will be inserted into the public_dnodemap.
+ * corresponding dnode and cnode with data collected by kabi::get_symbols
+ * and kabi::get_declist.
+ * If the dnode is the first of its type, as characterized by its CRC, its
+ * cnode will be the first entry in its siblings cnodemap, and the dnode
+ * will be inserted into the public_dnodemap.
  * If not, the original dnode will get this dnode's cnode inserted into its
  * siblings cnodemap, and the dnode for this symbol will be dropped on the
  * floor.
  */
 void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 {
-	// get the dnodes from the sparm
+	// Varibles we can assign now
+
 	dnode* dn = (dnode *)sp->dnode;
 	dnode* pdn = (dnode *)parent->dnode;
+	dnpair dnp = make_pair(sp->crc, *dn);
 
-	// create the edgepairs for the symbol's ancestry
+	cnode* pcn = (cnode *)parent->cnode;
+	cnpair pcnp = make_pair(parent->crc, *pcn);
+
 	edgepair func = make_pair(sp->function, LVL_EXPORTED);
 	edgepair arg = make_pair(sp->argument, LVL_ARG);
+
+	// Variables we must assign later.
+
+	cnode* cn;
+	std::pair<crc_t, cnode> cnp;
 
 	// Extract the declaration string from the one stored in the dnode
 	// by calls to kb_add_to_decl() made by kabi.c::get_declist and
@@ -272,23 +288,29 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 	sp->decl = dn->decl.c_str();
 	dn->flags = sp->flags;
 
-	// Create a cnode for this sparm.
-	cnode *cn = alloc_cnode(func, arg, sp->level,
-				sp->order, sp->flags, sp->name);
+	// Create a cnode for this declaration and copy its pointer to
+	// the sparm to be used if the sparm is also a parent.
+	cn = alloc_cnode(func, arg, sp->level, sp->order, sp->flags, sp->name);
+	sp->cnode = (void *)cn;
 
 	// Create a cnode pair using the new cnode descriptor of this symbol
 	// and its CRC. Insert the cnode into the parent dnode's children
 	// cnodemap.
-	cnpair cnp = make_pair(sp->crc, *cn);
+	cnp = make_pair(sp->crc, *cn);
 	insert_cnode(pdn->children, cnp);
+
+	// Insert the parent's crc/cnode pair into this cnode's parent map.
+	// The map will contain only this cnode's parent crc/cnode pair.
+	cn->parent.insert(pcnp);
 
 	// If we've seen this dnode before, use the cnodepair to lookup
 	// the original dnode instance and insert the cnode of the new
 	// dnode into the sibling cnodemap of the original instance.
 	// If thisis the first instance of this dnode instance, then its
 	// cnode will be the first in its siblings cnodemap.
-	dnode* sib = (sp->flags & CTL_ISDUP) ? lookup_dnode(cnp) : dn;
-	insert_cnode(sib->siblings, cnp);
+	dnpair* sib = (sp->flags & CTL_ISDUP) ? lookup_dnode(cnp) : &dnp;
+	insert_cnode(sib->second.siblings, cnp);
+	cn->sibling.insert(*sib);
 
 	// If we've seen this dnode before, then we're done at this point.
 	// This dnode will not be inserted in the public_dnodemap, since
@@ -298,20 +320,10 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 	if (sp->flags & CTL_ISDUP)
 		return;
 
-	// If this is the first instance of this dnode, then we need to
-	// create a cnode for its parents and put that cnode in the
-	// dnode parents cnodemap.
-	func = make_pair(parent->function, LVL_EXPORTED);
-	arg  = make_pair(parent->argument, LVL_ARG);
-
-	cnode *pcn = alloc_cnode(func, arg,
-				 parent->level, parent->order,
-				 parent->flags, parent->name);
-
-	insert_cnode(dn->parents, make_pair(parent->crc, *pcn));
-
 	// Now insert this unique dnode into the public_dnodemap.
 	insert_dnode(public_dnodemap, make_pair(sp->crc, *dn));
+#if 0
+#endif
 }
 
 dnodemap& kb_get_public_dnodemap()
@@ -466,7 +478,6 @@ int kb_dump_dnodemap(char *filename)
 			cout << "FILE: ";
 
 		cout << format("%12lu %s ") % crc % dn.decl;
-		dump_cnmap(dn.parents, "parents");
 		dump_cnmap(dn.siblings, "sibliings");
 		dump_cnmap(dn.children, "children");
 		cout << endl;

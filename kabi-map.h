@@ -69,16 +69,37 @@ struct sparm
 	const char *name;  // identifier
 	void *symlist;	   // for compound data types with descendant symbols
 	void *dnode;	   // pointer to the dnode created for this data type
+	void *cnode;	   // pointer to the cnode for this instance of dnode
 	enum ctlflags flags;
 };
 
 #ifdef __cplusplus
 
+class dnode;
+class cnode;
+
+// This is the hash map for the dnodes.
+//
+typedef std::multimap<crc_t, dnode> dnodemap;
+typedef dnodemap::value_type dnpair;
+typedef dnodemap::iterator dniterator;
+typedef dnodemap::reverse_iterator dnreviterator;
+typedef std::pair<dniterator, dniterator> dnitpair;
+
+// This is a hash map used for children, parents, and siblings of dnodes.
+// The hash map is composed of a std::pair typed as cnpair
+// cnpair.first  - crc
+// cnpair.second - cnode
+//
+typedef std::multimap<crc_t, cnode> cnodemap;
+typedef cnodemap::value_type cnpair;
+typedef cnodemap::iterator cniterator;
+
 // Nodes are connected by their place in the hierarchy
 typedef std::pair<crc_t, int> edgepair;
 
-// cnode is the hierarchical instance of a datatype. In graph database
-// terms, it is an edge.
+// cnode is the hierarchical instance of a declaration (dnode).
+// The declaration can be of any data type.
 //
 class cnode
 {
@@ -125,8 +146,14 @@ public:
 	// The order in which it was discovered, in order to properly
 	// reconstruct the hierarchy.
 	int order;
+
 	enum ctlflags flags;
 	std::string name;
+
+	// These maps will have only one element. They are used simply as
+	// wrappers for the crc and *node pairs.
+	std::map<crc_t, cnode> parent;  // My parent
+	std::map<crc_t, dnode> sibling; // my dnode sibling, if I have one
 
 	void operator =(const cnode& cn);
 	bool operator ==(const cnode& cn) const;
@@ -136,24 +163,38 @@ public:
         void serialize(Archive &ar, const unsigned int version)
         {
 		if (version){;}
-		ar & function & argument &level & order & flags & name;
+		ar & function & argument &level & order & flags & name
+		   & parent & sibling;
 	}
 
 private:
 };
 
-// This is a hash map used for children, parents, and siblings of dnodes.
-// The hash map is composed of a std::pair typed as cnpair_t
-// cnpair.first  - crc
-// cnpair.second - cnode
+///////////////////////////////////////////////////////////////////////////////
 //
-typedef std::multimap<crc_t, cnode> cnodemap;
-typedef cnodemap::value_type cnpair;
-typedef cnodemap::iterator cniterator;
-
-
-// There should only be one dnode instance for each data type.
-// In graph database terms, this is a vertex.
+// dnode is a descriptor of a declaration of any data type encountered by
+// the sparse semantic parser/tokenizer.
+//
+// data type is determined by the crc of the declaration.
+//
+//    - For primitive (scalar) data types, the crc is for the whole declaration,
+//      e.g. "int foo"
+//      Scalar data types have no siblings and no children. They exist as cnode
+//      instances in the children map of a parent dnode. Their own dnodes are
+//      discarded after processing, as they are no longer needed.
+//
+//    - For nonscalar types (structs, unions, arrays) and functions, the dnode
+//      maintains a cnode map of its children and siblings.
+//
+//         - Functions only have one cnode in its sibling map to characterize
+//           itself. The children cnode map of a funcion contains its arguments
+//           and its return. If an argument or return is nonscalar, it will
+//           also have a dnode and a cnode map of its children.
+//
+//         - struct, union, and array dnodes can have many sibling cnodes in
+//           the siblings cnode map. Each sibling has a cnodepair (crc, cnode)
+//           for its parent. The children cnode map contains cnodes for all
+//           the elements of the dnode (nonscalar datatype or function).
 //
 class dnode {
 
@@ -162,7 +203,10 @@ public:
 	dnode(std::string decl) : decl(decl) {}
 
 	std::string decl;	// data type declaration
-	cnodemap parents;	// multimap of parent cnodes
+
+	// Relation maps
+	// parents are
+
 	cnodemap siblings;	//     :       siblings
 	cnodemap children;	//     :       children
 	enum ctlflags flags;
@@ -175,18 +219,9 @@ public:
         void serialize(Archive &ar, const unsigned int version)
         {
 		if (version){;}
-		ar & decl & parents & siblings & children;
+		ar & decl & siblings & children;
 	}
 };
-
-
-// This is the hash map for the dnodes.
-//
-typedef std::multimap<crc_t, dnode> dnodemap;
-typedef dnodemap::value_type dnpair;
-typedef dnodemap::iterator dniterator;
-typedef dnodemap::reverse_iterator dnreviterator;
-typedef std::pair<dniterator, dniterator> dnitpair;
 
 // This class serves as a wrapper for the hash map of qnodes.
 // Having a class wrapper allows us to add other controls
