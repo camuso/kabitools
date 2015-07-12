@@ -46,7 +46,6 @@ enum levels {
 	LVL_COUNT
 };
 
-
 // Seek directions for qnode searches
 //
 enum seekdir {
@@ -84,38 +83,50 @@ class cnode;
 /*
  * The diagram below shows the layout of the graph comprised of dnodes
  * and cnodes.
- *                                            ^
- *                                            |
- *                                         [cnode]
- *                                            |
- *                                          parent
- *                                            |
- *  public                                 [cnode]        ^
- * dnode map                                  |           |
- *      |                                   parent     [cnode]
- *      |                                     |           |
- *      +--- < dnode > --- sibling map --+-- [cnode]    parent
- *      |        |                       |                |
- *      |     children                   +------------ [cnode]
- *      V       map                      |
- *               |                       V
- *               +-- [cnode]
- *               |
- *               +-- [cnode] can point to a dnode with siblings and children
+ *
+ * dnode characterizes a declaration. Each declaration has only one
+ * corresponding dnode.
+ *
+ * cnode characterizes an instance of that declaration as it occurs in
+ * the hierarchy. cnodes are instantiated as siblings of dnodes and
+ * point back to the dnode with its crc.
+ *
+ * hnode characterizes the children of non scalar dnodes.
+ *
+ * Scalar data declarations will have only one dnode and one sibling cnode to
+ * characterize that instance in the hierarchy.
+ *
+ * "int foo" and "int bar" will each have their own dnode with one sibling
+ * cnode and no children.
+ *
+ * Non scalar data declarations still only have one dnode, at least one
+ * sibling cnode, and at least one child order/crc pair.
+ *
+ *  public                                 ^  [parent order/crc]
+ * dnode map                               |        |
+ *      |                                  +---> [cnode]
+ *      |                                  |        |
+ *      +--> [ dnode ] sibling cnode map --+  [sibling order/crc]
+ *      |        |                         |
+ *      |     children                     |
+ *      V       map                        |  [parent order/crc]
+ *               |                         |        |
+ *               +--> [child order/crc]    +---> [cnode]
+ *               |                         |        |
+ *               +--> [child order/crc]    V  [sibling order/crc]
  *               |
  *               V
  */
 
-// This is the hash map for the dnodes.
+// Map for the dnodes.
 //
 typedef std::map<crc_t, dnode> dnodemap;
 typedef dnodemap::value_type dnpair;
 typedef dnodemap::iterator dniterator;
 typedef dnodemap::reverse_iterator dnreviterator;
-typedef std::pair<dniterator, dniterator> dnitpair;
-typedef std::pair<crc_t, dnode*>dnpair_p;
+typedef std::pair<crc_t, dnode*> dnpair_p;
 
-// This is a hash map used for children, parents, and siblings of dnodes.
+// Map for the cnodes, siblings of dnodes.
 // The hash map is composed of a std::pair typed as cnpair
 // cnpair.first  - order in which this cnode was discovered
 // cnpair.second - cnode
@@ -124,6 +135,18 @@ typedef std::map<int, cnode> cnodemap;	// <int order, cnode cn>
 typedef cnodemap::value_type cnpair;
 typedef cnodemap::iterator cniterator;
 typedef std::pair<int, cnode*> cnpair_p;
+
+// crcpair matches a crc to the order in which it was discovered.
+// first - order
+// second - crc
+// crcnodemap will track children of dnodes by containing the crc
+// of the dnode and the order in which the child appeared. This order
+// number can then be used to find the correct cnode sibling from the
+// dnode's sibling map of cnodes.
+//
+typedef std::map<int, crc_t> crcnodemap;
+typedef crcnodemap::value_type crcpair;
+typedef crcnodemap::iterator crciterator;
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -182,10 +205,11 @@ public:
 	enum ctlflags flags;
 	std::string name;
 
-	// These maps will have only one element. They are used simply as
-	// wrappers for the crc and c/d-node pairs.
-	std::map<int, cnode> parent;	// My parent
-	std::map<crc_t, dnode> sibling; // My dnode sibling, if I have one
+	// These fields point back to the parent and sibling dnodes.
+	// Pairs made of the order in which the dnode was found and the
+	// dnode's crc.
+	std::pair<int, crc_t> parent;	// My parent dnode, by way of crc
+	std::pair<int, crc_t> sibling;  // My sibling dnode, by way of crc
 
 	void operator =(const cnode& cn);
 	bool operator ==(const cnode& cn) const;
@@ -239,7 +263,7 @@ public:
 
 	std::string decl;	// data type declaration
 	cnodemap siblings;
-	cnodemap children;
+	crcnodemap children;
 	enum ctlflags flags;
 
 	void operator =(const dnode& dn);

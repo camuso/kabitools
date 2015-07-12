@@ -93,18 +93,6 @@ static dnpair* lookup_dnode(crc_t crc)
 {
 	dniterator dnit = public_dnodemap.find(crc);
 	return dnit == public_dnodemap.end() ? NULL : &(*dnit);
-#if 0
-static bool lookup_dnode(crc_t crc, dnpair_p& dnpp)
-{
-	dnodemap& dnmap = public_dnodemap;
-	dnpair* dnp;
-	dnodemap::iterator dnit = dnmap.find(crc);
-	if(dnit == dnmap.end())
-		return false;
-	dnp = &(*dnit);
-	dnpp = make_pair(dnp->first, &dnp->second);
-	return true;
-#endif
 }
 
 static inline dnpair* insert_dnode(dnodemap& dnmap, dnpair dnp)
@@ -117,6 +105,12 @@ static inline cnpair* insert_cnode(cnodemap& cnmap, cnpair cnp)
 {
 	cniterator cnit = cnmap.insert(cnmap.end(), cnp);
 	return &(*cnit);
+}
+
+static inline crcpair* insert_crcnode(crcnodemap& crcmap, crcpair crcp)
+{
+	crciterator crcit = crcmap.insert(crcmap.end(), crcp);
+	return &(*crcit);
 }
 
 
@@ -277,7 +271,7 @@ struct sparm *kb_new_firstsparm(char *file)
  * floor.
  *
  * NOTE:
- *	make_pair creates a pair on the stack, so it is not persistant.
+ *	make_pair creates a pair on the stack, so it is not persistent.
  *
  * Create a new cnode for this dnode.
  *	func
@@ -288,46 +282,45 @@ struct sparm *kb_new_firstsparm(char *file)
  *	name
  *
  * Into the new cnode ...
- *	Put this dnode in the new cnode sibling map (only one entry)
- *	Put the parent cnode in the new cnode parent map (only one entry)
+ *	Put the order/crc pair of the parent dnode the new cnode parent field
+ *	Put the order/crc pair of the sibling dnode in the new cnode sibling
+ *	field
+ *		Must first determine where the sibling dnode is. Do a lookup
+ *		using the crc. If a dnode is found, it means this is a dup
+ *		or backpointer, so use the found dnode as the sibling.
+ *		Duplicate dnodes will be dropped, but backpointer dnodes
+ *		will be kept to a depth of one.
  *	cnode is complete at this time
  * Into the sibling dnode
- *	Put this new cnode into the dnode siblings map
+ *	Put this new cnode into the sibling dnode's siblings cnodemap
  * Into the parent dnode
- *	Put the new cnode into the parent dnode children map
+ *	Put the order/crc pair of this dnode into its parent's children dnodemap
  */
 void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 {
 	// Varibles we can assign now
-
 	dnode* dn = (dnode *)sp->dnode;		// this dnode
 	dnpair dnp = make_pair(sp->crc, *dn);	// this dnode pair
-	dnpair* dnpp = &dnp;
 	dnode* pdn = (dnode *)parent->dnode;	// parent dnode
-	cnode* pcn = (cnode *)parent->cnode;	// parent cnode
-
-
 	crc_t func = sp->function;
 	crc_t arg = sp->argument;
 
 	// Variables we must assign later.
-
 	cnode* cn;	// cnode pointer for this dnode
 	cnpair* cnp;	// pointer to cnode pair for this dnode
 	dnpair* sib;	// sibling dnode pair
 
 	// Extract the declaration string from the one stored in the dnode
-	// by calls to kb_add_to_decl() made by kabi.c::get_declist and
-	// store it in the sparm.decl field to be passed back to the caller.
+	// by kabi.c::get_declist and store it in the sparm.decl field to
+	// be passed back to the caller through this sparm,
 	sp->decl = dn->decl.c_str();
 	dn->flags = sp->flags;
 
 	// Create a cnode for this declaration.
 	cn = alloc_cnode(func, arg, sp->level, sp->order, sp->flags, sp->name);
 
-	// Insert the parent's order/cnode pair into this cnode's parent map.
-	// The map will contain only this cnode's parent crc/cnode pair.
-	insert_cnode(cn->parent, make_pair(parent->order, *pcn));
+	// Insert the parent's order/cnode pair into this cnode's parent field.
+	cn->parent = make_pair(parent->order, parent->crc);
 
 	// If we've seen this dnode before, use the cnodepair to lookup
 	// the original dnode instance and insert the cnode of the new
@@ -337,7 +330,7 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 	sib = lookup_dnode(sp->crc);
 	sib = sib ? sib : &dnp;
 	cnp = insert_cnode(sib->second.siblings, make_pair(sp->order, *cn));
-	cnp = insert_cnode(pdn->children, make_pair(sp->order, cnp->second));
+	insert_crcnode(pdn->children, make_pair(sp->order, sp->crc));
 	sp->cnode = (void *)&cnp->second;
 
 	// If this dnode is a dup or a backpointer, then return without
@@ -345,11 +338,11 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 	// already one there.
 	// All the hierarchical details of this node have been stored as a
 	// cnode in the original dnode's siblings cnodemap.
-	if ((sp->flags & CTL_ISDUP) || (sp->flags & CTL_BACKPTR))
+	if (sp->flags & CTL_ISDUP)
 		return;
+
 	// Now insert this unique dnode into the public_dnodemap.
-	dnpp = insert_dnode(public_dnodemap, dnp);
-	sp->dnode = (void *)&dnpp->second;
+	insert_dnode(public_dnodemap, dnp);
 #if 0
 #endif
 }
@@ -507,53 +500,13 @@ int kb_dump_dnodemap(char *filename)
 
 		cout << format("%12lu %s ") % crc % dn.decl;
 		dump_cnmap(dn.siblings, "sibliings");
-		dump_cnmap(dn.children, "children");
+// FIX THIS		dump_cnmap(dn.children, "children");
 		cout << endl;
 	}
 	return 0;
 }
 
 #if 0
-static inline bool is_inlist(cnpair& cnp, cnodemap& cnmap)
-{
-	pair<cniterator, cniterator> range;
-	range = cnmap.equal_range(cnp.first);
-
-	if (range.first == cnmap.end())
-		return false;
-
-	cniterator it = find_if (range.first, range.second,
-				[&cnp](cnpair lcnp)
-				{	cnode& lcn = lcnp.second;
-					cnode& cn = cnp.second;
-					return lcn.operator ==(cn);
-				});
-
-	return it != range.second;
-}
-
-static inline void update_duplicate(sparm *sp, sparm *parent)
-{
-	dnode* dn = (dnode *)sp->dnode;
-	dnode* pdn = (dnode *)parent->dnode;
-
-	cnode* cn = alloc_cnode(sp->function, sp->argument, sp->level,
-				sp->order, sp->flags, sp->name);
-	cnpair cnp = make_pair(sp->crc, *cn);
-
-	if (!is_inlist(cnp, pdn->children))
-		insert_cnode(pdn->children, cnp);
-	else
-		delete cn;
-
-	cnode *pcn = alloc_cnode(parent->function, parent->level, parent->name);
-	cnpair_t parentcn = make_pair(parent->crc, *pcn);
-	if (!is_inlist(parentcn, qn->parents))
-		insert_cnode(qn->parents, parentcn);
-	else
-		delete pcn;
-}
-
 /******************************************************************************
  * bool has_same_ancestry(dnode& dn, cnode& cn)
  *
