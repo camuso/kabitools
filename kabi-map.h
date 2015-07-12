@@ -75,29 +75,58 @@ struct sparm
 
 #ifdef __cplusplus
 
+// Forward declarations of thes c and d node classes are necessary, because
+// they reference one another.
+
 class dnode;
 class cnode;
 
+/*
+ * The diagram below shows the layout of the graph comprised of dnodes
+ * and cnodes.
+ *                                            ^
+ *                                            |
+ *                                         [cnode]
+ *                                            |
+ *                                          parent
+ *                                            |
+ *  public                                 [cnode]        ^
+ * dnode map                                  |           |
+ *      |                                   parent     [cnode]
+ *      |                                     |           |
+ *      +--- < dnode > --- sibling map --+-- [cnode]    parent
+ *      |        |                       |                |
+ *      |     children                   +------------ [cnode]
+ *      V       map                      |
+ *               |                       V
+ *               +-- [cnode]
+ *               |
+ *               +-- [cnode] can point to a dnode with siblings and children
+ *               |
+ *               V
+ */
+
 // This is the hash map for the dnodes.
 //
-typedef std::multimap<crc_t, dnode> dnodemap;
+typedef std::map<crc_t, dnode> dnodemap;
 typedef dnodemap::value_type dnpair;
 typedef dnodemap::iterator dniterator;
 typedef dnodemap::reverse_iterator dnreviterator;
 typedef std::pair<dniterator, dniterator> dnitpair;
+typedef std::pair<crc_t, dnode*>dnpair_p;
 
 // This is a hash map used for children, parents, and siblings of dnodes.
 // The hash map is composed of a std::pair typed as cnpair
-// cnpair.first  - crc
+// cnpair.first  - order in which this cnode was discovered
 // cnpair.second - cnode
 //
-typedef std::multimap<crc_t, cnode> cnodemap;
+typedef std::map<int, cnode> cnodemap;	// <int order, cnode cn>
 typedef cnodemap::value_type cnpair;
 typedef cnodemap::iterator cniterator;
+typedef std::pair<int, cnode*> cnpair_p;
 
-// Nodes are connected by their place in the hierarchy
-typedef std::pair<crc_t, int> edgepair;
-
+///////////////////////////////////////////////////////////////////////////////
+//
 // cnode is the hierarchical instance of a declaration (dnode).
 // The declaration can be of any data type.
 //
@@ -105,10 +134,13 @@ class cnode
 {
 public:
 	cnode(){}
-	cnode(edgepair& func, edgepair& arg, int level, int order,
+	cnode(crc_t func, crc_t arg, int level, int order,
 	      ctlflags flags, std::string name)
 		: function(func), argument(arg), level(level), order(order),
 		  flags(flags), name(name) {}
+
+	void insert(cnodemap&, cnpair);
+	void insert(cnodemap&, cnpair_p);
 
 	// We want nodes below an argument or return to have that
 	// ancestor in common. This assures that when traversing
@@ -136,8 +168,8 @@ public:
 	// Exported functions will always have unique crc, because they
 	// all occupy the same namespace and must be distinct.
 	//
-	edgepair function;	// Function at the top
-	edgepair argument;	// ARG or RETURN
+	crc_t function;	// Function at the top
+	crc_t argument;	// ARG or RETURN
 
 	// The hierarchical level at which this cnode appears in the
 	// tree.
@@ -151,9 +183,9 @@ public:
 	std::string name;
 
 	// These maps will have only one element. They are used simply as
-	// wrappers for the crc and *node pairs.
-	std::map<crc_t, cnode> parent;  // My parent
-	std::map<crc_t, dnode> sibling; // my dnode sibling, if I have one
+	// wrappers for the crc and c/d-node pairs.
+	std::map<int, cnode> parent;	// My parent
+	std::map<crc_t, dnode> sibling; // My dnode sibling, if I have one
 
 	void operator =(const cnode& cn);
 	bool operator ==(const cnode& cn) const;
@@ -202,13 +234,12 @@ public:
 	dnode(){}		// constructor
 	dnode(std::string decl) : decl(decl) {}
 
+	void insert(dnodemap&, dnpair);
+	void insert(dnodemap&, dnpair_p);
+
 	std::string decl;	// data type declaration
-
-	// Relation maps
-	// parents are
-
-	cnodemap siblings;	//     :       siblings
-	cnodemap children;	//     :       children
+	cnodemap siblings;
+	cnodemap children;
 	enum ctlflags flags;
 
 	void operator =(const dnode& dn);
