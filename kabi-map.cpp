@@ -113,6 +113,12 @@ static inline crcpair* insert_crcnode(crcnodemap& crcmap, crcpair crcp)
 	return &(*crcit);
 }
 
+// Use this template function when we don't care about the return value.
+template <typename Tmap, typename Tpair>
+static void insert_node(Tmap& xnodemap, Tpair xpair)
+{
+	xnodemap.insert(xnodemap.end(), xpair);
+}
 
 /******************************************************************************
  * alloc_sparm
@@ -220,10 +226,8 @@ struct sparm *kb_new_firstsparm(char *file)
 	struct sparm *sp= alloc_sparm();
 	cnode *cn;
 	dnode *dn;
-	//dnpair_p dnp;
-	//cnpair_p cnp;
-	dnpair* dnp;
 	cnpair* cnp;
+	dnpair* dnp;
 
 	sp->name = "";
 	sp->decl = file;
@@ -241,16 +245,13 @@ struct sparm *kb_new_firstsparm(char *file)
 	crc_t func = sp->function;
 	crc_t arg  = sp->argument;
 	cn = alloc_cnode(func, arg, sp->level, sp->order, sp->flags, sp->name);
+	cn->sibling = make_pair(sp->order, sp->crc);
+	cn->parent = make_pair(0,0);
 	sp->cnode = (void *)cn;
-
-	//cnp = make_pair(sp->order, cn);
-	//dnp = make_pair(sp->crc, dn);
-
-	//cn->insert(dn->siblings, cnp);
-	//dn->insert(public_dnodemap, dnp);
 
 	cnp = insert_cnode(dn->siblings, make_pair(sp->order, *cn));
 	dnp = insert_dnode(public_dnodemap, make_pair(sp->crc, *dn));
+
 	sp->cnode = (void *)&cnp->second;
 	sp->dnode = (void *)&dnp->second;
 
@@ -307,7 +308,7 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 
 	// Variables we must assign later.
 	cnode* cn;	// cnode pointer for this dnode
-	cnpair* cnp;	// pointer to cnode pair for this dnode
+	cnpair* cnp;
 	dnpair* sib;	// sibling dnode pair
 
 	// Extract the declaration string from the one stored in the dnode
@@ -330,8 +331,8 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 	sib = lookup_dnode(sp->crc);
 	sib = sib ? sib : &dnp;
 	cnp = insert_cnode(sib->second.siblings, make_pair(sp->order, *cn));
-	insert_crcnode(pdn->children, make_pair(sp->order, sp->crc));
 	sp->cnode = (void *)&cnp->second;
+	insert_node(pdn->children, make_pair(sp->order, sp->crc));
 
 	// If this dnode is a dup or a backpointer, then return without
 	// inserting the dnode into the public_dnodemap, because there's
@@ -342,7 +343,8 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 		return;
 
 	// Now insert this unique dnode into the public_dnodemap.
-	insert_dnode(public_dnodemap, dnp);
+	sib = insert_dnode(public_dnodemap, dnp);
+	sp->dnode = (void *)&sib->second;
 #if 0
 #endif
 }
@@ -390,7 +392,8 @@ bool kb_is_dup(struct sparm *sp)
 		return false;
 
 	dniterator dnit = dnmap.find(sp->crc);
-	return dnit != dnmap.end() ? true : false;
+	bool dup = dnit != dnmap.end() ? true : false;
+	return dup;
 }
 
 /*******************************************

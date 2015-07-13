@@ -74,9 +74,7 @@ struct sparm
 
 #ifdef __cplusplus
 
-// Forward declarations of thes c and d node classes are necessary, because
-// they reference one another.
-
+// Forward declarations
 class dnode;
 class cnode;
 
@@ -91,7 +89,7 @@ class cnode;
  * the hierarchy. cnodes are instantiated as siblings of dnodes and
  * point back to the dnode with its crc.
  *
- * hnode characterizes the children of non scalar dnodes.
+ * crcnode characterizes the children and parents of non scalar dnodes.
  *
  * Scalar data declarations will have only one dnode and one sibling cnode to
  * characterize that instance in the hierarchy.
@@ -102,18 +100,18 @@ class cnode;
  * Non scalar data declarations still only have one dnode, at least one
  * sibling cnode, and at least one child order/crc pair.
  *
- *  public                                 ^  [parent order/crc]
- * dnode map                               |        |
- *      |                                  +---> [cnode]
- *      |                                  |        |
- *      +--> [ dnode ] sibling cnode map --+  [sibling order/crc]
- *      |        |                         |
- *      |     children                     |
- *      V       map                        |  [parent order/crc]
- *               |                         |        |
- *               +--> [child order/crc]    +---> [cnode]
- *               |                         |        |
- *               +--> [child order/crc]    V  [sibling order/crc]
+ *  public                                   ^  [parent order/crc]
+ * dnode map                                 |        |
+ *      |                                    +---> [order/cnode]
+ *      |                                    |        |
+ *      +--> [crc/dnode] sibling cnode map --+  [sibling order/crc]
+ *      |        |                           |
+ *      |     children                       |
+ *      V       map                          |  [parent order/crc]
+ *               |                           |        |
+ *               +--> [child order/crc]      +---> [order/cnode]
+ *               |                           |        |
+ *               +--> [child order/crc]      V  [sibling order/crc]
  *               |
  *               V
  */
