@@ -240,7 +240,6 @@ struct sparm *kb_new_firstsparm(char *file)
 
 	dn = (dnode*)sp->dnode;
 	dn->decl = sp->decl;
-	dn->flags = sp->flags;
 
 	crc_t func = sp->function;
 	crc_t arg  = sp->argument;
@@ -315,13 +314,11 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 	// by kabi.c::get_declist and store it in the sparm.decl field to
 	// be passed back to the caller through this sparm,
 	sp->decl = dn->decl.c_str();
-	dn->flags = sp->flags;
 
 	// Create a cnode for this declaration.
 	cn = alloc_cnode(func, arg, sp->level, sp->order, sp->flags, sp->name);
-
-	// Insert the parent's order/cnode pair into this cnode's parent field.
 	cn->parent = make_pair(parent->order, parent->crc);
+	cn->sibling = make_pair(sp->order, sp->crc);
 
 	// If we've seen this dnode before, use the cnodepair to lookup
 	// the original dnode instance and insert the cnode of the new
@@ -332,7 +329,6 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 	sib = sib ? sib : &dnp;
 	cnp = insert_cnode(sib->second.siblings, make_pair(sp->order, *cn));
 	sp->cnode = (void *)&cnp->second;
-	insert_node(pdn->children, make_pair(sp->order, sp->crc));
 
 	// If this dnode is a dup or a backpointer, then return without
 	// inserting the dnode into the public_dnodemap, because there's
@@ -342,11 +338,9 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 	if (sp->flags & CTL_ISDUP)
 		return;
 
-	// Now insert this unique dnode into the public_dnodemap.
+	insert_node(pdn->children, make_pair(sp->order, sp->crc));
 	sib = insert_dnode(public_dnodemap, dnp);
 	sp->dnode = (void *)&sib->second;
-#if 0
-#endif
 }
 
 dnodemap& kb_get_public_dnodemap()
@@ -461,28 +455,64 @@ int kb_read_dnodemap(string filename, dnodemap& dnmap)
 using boost::format;
 
 
-void static inline dump_cnmap(cnodemap& cnmap, const char* name)
+void static inline dump_cnmap(cnodemap& cnmap, const char* field)
 {
 	if (cnmap.size() == 0)
 		return;
 
-	cout << format("\t%s: %3d\n") % name % cnmap.size();
+	cout << format("\n\t%s: %3d\n") % field % cnmap.size();
 
 	for (auto i : cnmap) {
-		crc_t crc = i.first;
+		int order = i.first;
 		cnode& cn = i.second;
 		// crc level order flags func_crc arg_crc name
-		cout << format("\t\t  %12lu %3d %3d %08X %12lu %12lu")
-			% crc % cn.level % cn.order % cn.flags
-			% cn.function % cn.argument;
+		cout << format("\t%12lu %12lu %3d %5d %04X %5d %12lu %5d %12lu ")
+			% cn.function % cn.argument
+			% cn.level % order % cn.flags
+			% cn.parent.first % cn.parent.second
+			% cn.sibling.first % cn.sibling.second;
 		if (cn.flags & CTL_POINTER)
-			cout << " *";
+			cout << "*";
 		if (cn.name.size() > 0)
-			cout << " " << cn.name;
+			cout << cn.name;
+
+		if (cn.flags & CTL_FILE)
+			cout << " : FILE";
+
 		cout << endl;
 	}
 }
 
+void static inline dump_children(dnpair dnp)
+{
+	crcnodemap crcmap = dnp.second.children;
+	cout << format("\n\tchildren: %3d\n") %crcmap.size();
+
+	if (crcmap.size() == 0)
+		return;
+
+	for (auto i : crcmap) {
+		int order = i.first;
+		crc_t crc = i.second;
+		dnpair* dnp_p = lookup_dnode(crc);
+		dnode dn = dnp_p->second;
+		cnodemap siblings = dn.siblings;
+		cnode cn = siblings[order];
+
+		cout << format("\t%12lu %5d %s ")
+			% crc % i.first % dnp_p->second.decl;
+
+		if (cn.flags & CTL_POINTER)
+			cout << "*";
+		if (cn.name.size() > 0)
+			cout << cn.name;
+
+		if (cn.flags & CTL_FILE)
+			cout << " : FILE";
+
+		cout << endl;
+	}
+}
 
 int kb_dump_dnodemap(char *filename)
 {
@@ -498,12 +528,9 @@ int kb_dump_dnodemap(char *filename)
 		crc_t  crc = dnp.first;
 		dnode& dn  = dnp.second;
 
-		if (dn.flags & CTL_FILE)
-			cout << "FILE: ";
-
 		cout << format("%12lu %s ") % crc % dn.decl;
-		dump_cnmap(dn.siblings, "sibliings");
-// FIX THIS		dump_cnmap(dn.children, "children");
+		dump_cnmap(dn.siblings, "siblings");
+		dump_children(dnp);
 		cout << endl;
 	}
 	return 0;

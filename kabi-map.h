@@ -262,7 +262,6 @@ public:
 	std::string decl;	// data type declaration
 	cnodemap siblings;
 	crcnodemap children;
-	enum ctlflags flags;
 
 	void operator =(const dnode& dn);
 	bool operator ==(const dnode& dn) const;
