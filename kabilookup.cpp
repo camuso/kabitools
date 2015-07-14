@@ -22,6 +22,7 @@
 
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <boost/format.hpp>
 
 #include "checksum.h"
@@ -30,7 +31,7 @@
 using namespace std;
 using boost::format;
 
-#define NDEBUG
+//#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -48,7 +49,7 @@ string lookup::get_helptext()
 {
 	return "\
 \n\
-kabi-lookup -[vw] -c|d|e|s symbol [-b datafile]\n\
+kabi-lookup -[qw] -c|d|e|s symbol [-f file-list]\n\
     Searches a kabi database for symbols. The results of the search \n\
     are printed to stdout and indented hierarchically.\n\
 \n\
@@ -160,14 +161,14 @@ int lookup::process_args(int argc, char **argv)
 
 int lookup::execute(string datafile)
 {
-	if(kb_read_cqnmap(datafile, m_cqnmap) != 0)
+	if(kb_read_dnodemap(datafile, m_dnmap) != 0)
 		return EXE_NOFILE;
 
 	switch (m_flags & m_exemask) {
 	case KB_COUNT   : return exe_count();
-	case KB_DECL    : return exe_decl();
+	//case KB_DECL    : return exe_decl();
 	case KB_EXPORTS : return exe_exports();
-	case KB_STRUCT  : return exe_struct();
+	//case KB_STRUCT  : return exe_struct();
 	}
 	return 0;
 }
@@ -176,13 +177,12 @@ int lookup::exe_count()
 {
 	if (m_opts.kb_flags & KB_WHOLE_WORD) {
 		m_crc = raw_crc32(m_declstr.c_str());
-		pair<qniterator_t, qniterator_t> range;
-		range = m_qnodes.equal_range(m_crc);
-		m_count += distance(range.first, range.second);
+		dnode* dn = kb_lookup_dnode(m_crc);
+		m_count += dn ? dn->siblings.size() : 0;
 	} else {
-		for (auto it : m_qnodes) {
-			qnode& qn = it.second;
-			if (qn.sdecl.find(m_declstr) != string::npos)
+		for (auto it : m_dnmap) {
+			dnode& dn = it.second;
+			if (dn.decl.find(m_declstr) != string::npos)
 				++m_count;
 		}
 	}
@@ -192,38 +192,27 @@ int lookup::exe_count()
 	return m_count !=0 ? EXE_OK : EXE_NOTFOUND;
 }
 
-bool lookup::find_decl(qnode& qnr, string decl)
+bool lookup::find_decl(dnode &dnr, string decl)
 {
 	m_crc = ::raw_crc32(decl.c_str());
+	dnode* dn = kb_lookup_dnode(m_crc);
 
-	for (auto it : m_qnodes) {
-		if (it.first == m_crc) {
-			qnr = it.second;
-			return true;
-		}
+	if (dn) {
+		dnr = *dn;
+		return true;
 	}
 	return false;
 }
 
-int lookup::get_decl_list(std::vector<qnode> &retlist)
+#if 0
+int lookup::get_parents(dnode &dn)
 {
-	for (auto it : m_qnodes) {
-		if (it.first == m_crc)
-			retlist.push_back(it.second);
-	}
-	DBG(cout << format("\"%s\" size: %d\n") % m_declstr %  m_declstr.size();)
+	m_rowman.fill_row(dn);
 
-	return retlist.size();
-}
-
-int lookup::get_parents(qnode& qn)
-{
-	m_rowman.fill_row(qn);
-
-	if (qn.level == 0)
+	if (dn.level == 0)
 		return EXE_OK;
 
-	qnode& parent = *qn_lookup_qnode(&qn, qn.parent.first);
+	qnode& parent = *qn_lookup_qnode(&dn, dn.parent.first);
 	this->get_parents(parent);
 	return EXE_OK;
 }
@@ -269,7 +258,7 @@ int lookup::exe_struct()
 	return EXE_OK;
 }
 
-int lookup::get_children_deep(qnode& parent, cnpair_t& cn)
+int lookup::get_children_deep(dnode &parent, cnpair &cn)
 {
 	qnode& qn = *qn_lookup_qnode(&parent, cn.first, QN_DN);
 
@@ -285,19 +274,49 @@ int lookup::get_children_deep(qnode& parent, cnpair_t& cn)
 
 	return EXE_OK;
 }
+#endif
 
-int lookup::get_children_wide(qnode& qn)
+/*****************************************************************************
+ * lookup::get_children_wide(dnode& dn, cnode&cn)
+ *
+ * Given references to a dnode and a cnode instance of it, walk the dnode's
+ * children crcmap
+ */
+int lookup::get_children(dnode& dn)
 {
-	m_rowman.fill_row(qn);
+	for (auto i : dn.children) {
+		int order = i.first;
+		crc_t crc = i.second;
+		dnode dn;
+		dn = *kb_lookup_dnode(crc);
+		cnodemap siblings = dn.siblings;
+		cnode cn = siblings[order];
 
-	if (qn.children.size() == 0)
-		return EXE_OK;
+		m_rowman.fill_row(dn, cn);
 
-	cnodemap_t& cnmap = qn.children;
+		if (cn.flags & CTL_BACKPTR)
+			continue;
 
-	for (auto it : cnmap)
-		get_children_deep(qn, it);
+		get_children(dn);
+	}
+	return EXE_OK;
+}
 
+/*****************************************************************************
+ * lookup::get_siblings(dnode& dn)
+ * dn - reference to a dnode
+ *
+ * Walk the siblings cnodemap in the dnode to access each instance of the
+ * symbol characterized by the dnode.
+ *
+ */
+int lookup::get_siblings(dnode& dn)
+{
+	for (auto it : dn.siblings) {
+		cnode cn = it.second;
+		m_rowman.fill_row(dn, cn);
+		get_children(dn);
+	}
 	return EXE_OK;
 }
 
@@ -307,57 +326,51 @@ int lookup::exe_exports()
 
 	if (m_opts.kb_flags & KB_WHOLE_WORD) {
 		unsigned long crc = raw_crc32(m_declstr.c_str());
-		qniterator_t qnit;
-		qnitpair_t range;
-		qnode *qn = NULL;
+		dnode* dn = kb_lookup_dnode(crc);
 
-		range = m_qnodes.equal_range(crc);
+		if (!dn)
+			return EXE_NOTFOUND_SIMPLE;
 
-		qnit = find_if (range.first, range.second,
-			  [this](qnpair_t& lqp)
-			  {
-				qnode& rqn = lqp.second;
-				return (rqn.flags & CTL_EXPORTED);
-			  });
+		m_isfound = true;
+		m_rowman.rows.clear();
 
-		qn = (qnit != range.second) ? &(*qnit).second : NULL;
+		// If there is not exactly one sibling, then this is not an
+		// exported symbol. Exports all exist in the same name space
+		// and must be unique; there can only be one.
+		if (dn->siblings.size() != 1)
+			return EXE_NOTFOUND_SIMPLE;
 
-		if (qn != NULL) {
-			m_isfound = true;
-			qnode& parent =
-				*qn_lookup_qnode(qn, qn->parent.first);
-			m_rowman.rows.clear();
-			m_rowman.fill_row(parent);
-			get_children_wide(*qn);
-			m_rowman.put_rows_from_front(quiet);
-		}
+		get_siblings(*dn);
+		m_rowman.put_rows_from_front(quiet);
 
 	} else {
 
-		for (auto it : m_qnodes) {
-			qnode& qn = it.second;
-			qn.crc = it.first;
+		for (auto it : m_dnmap) {
+			dnode& dn = it.second;
 
-			if (!(qn.flags & CTL_EXPORTED))
+			if (dn.siblings.size() != 1)
 				continue;
 
-			if (qn.sname.find(m_declstr) != string::npos) {
-				qnode& parent =
-					*qn_lookup_qnode(&qn, qn.parent.first);
-				m_rowman.rows.clear();
-				m_rowman.fill_row(parent);
+			cniterator cnit = dn.siblings.begin();
+			cnode cn = cnit->second;
 
-				if (qn.children.size() != 0)
-					get_children_wide(qn);
+			if (!(cn.flags & CTL_EXPORTED))
+				continue;
 
-				m_rowman.put_rows_from_front(quiet);
-				m_isfound = true;
-			}
+			if (cn.name.find(m_declstr) == string::npos)
+				continue;
+
+			m_rowman.rows.clear();
+			get_siblings(dn);
+			m_rowman.put_rows_from_front(quiet);
+			m_isfound = true;
 		}
 	}
+
 	return m_isfound ? EXE_OK : EXE_NOTFOUND_SIMPLE;
 }
 
+#if 0
 int lookup::exe_decl()
 {
 	int count = 0;
@@ -408,6 +421,7 @@ int lookup::exe_decl()
 	}
 	return m_isfound ? EXE_OK : EXE_NOTFOUND_SIMPLE;
 }
+#endif
 
 /************************************************
 ** main()

@@ -41,14 +41,14 @@ private:
 	bool check_flags();
 	int count_bits(unsigned mask);
 	std::string &pad_out(int padsize);
-	bool find_decl(qnode& qnr, std::string decl);
-	bool get_qnrange(unsigned long crc, qnpair_t& range);
-	qnode* find_qnode_nextlevel(qnode* qn, long unsigned crc, int level);
-	int get_decl_list(std::vector<qnode>& retlist);
+	bool find_decl(dnode& dnr, std::string decl);
+	dnode* find_qnode_nextlevel(dnode* dn, long unsigned crc, int level);
+	int get_decl_list(std::vector<dnode>& retlist);
 	void show_spinner(int& count);
-	int get_parents(qnode& qn);
-	int get_children_wide(qnode& qn);
-	int get_children_deep(qnode& parent, cnpair_t& cn);
+	int get_parents(dnode& dn);
+	int get_children(dnode& dn);
+	int get_children_deep(dnode& parent, cnpair& cn);
+	int get_siblings(dnode& dn);
 	int execute(std::string datafile);
 	int exe_count();
 	int exe_struct();
@@ -56,17 +56,15 @@ private:
 	int exe_decl();
 
 	// member classes
-	Cqnodemap& m_cqnmap = get_public_cqnmap();
+	dnodemap& m_dnmap = kb_get_public_dnodemap();
 	rowman m_rowman;
 	options m_opts;
 	error m_err;
-	qnode m_qn;
-	qnode* m_qnp = &m_qn;
-	qnode& m_qnr = m_qn;
+	dnode m_dn;
+	dnode* m_dnp = &m_dn;
+	dnode& m_dnr = m_dn;
 
 	// member basetypes
-	cnodemap_t* m_cnmap;
-	qnodemap_t& m_qnodes = m_cqnmap.qnmap;
 	typedef std::pair<int, std::string> errpair;
 
 	std::vector<errpair> m_errors;
