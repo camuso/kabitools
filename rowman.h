@@ -36,7 +36,7 @@ public:
 	rowman();
 	rowvec_t rows;
 
-	void fill_row(const qnode& qn);
+	void fill_row(const dnode &dn, const cnode& qn);
 	void put_rows_from_back(bool quiet = false);
 	void put_rows_from_front(bool quiet = false);
 	void put_rows_from_back_normalized(bool quiet = false);

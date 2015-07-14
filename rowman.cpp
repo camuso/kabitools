@@ -56,13 +56,13 @@ bool rowman::is_dup(qrow &row)
 	return dups.at(duplevel) == row;
 }
 
-void rowman::fill_row(const qnode& qn)
+void rowman::fill_row(const dnode &dn, const cnode &cn)
 {
 	qrow r;
-	r.level = qn.level;
-	r.flags = qn.flags;
-	r.decl = qn.sdecl;
-	r.name = qn.sname;
+	r.level = cn.level;
+	r.flags = cn.flags;
+	r.name = cn.name;
+	r.decl = dn.decl;
 	rows.push_back(r);
 }
 
