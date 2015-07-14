@@ -298,9 +298,7 @@ public:
 *****************************************/
 
 extern dnodemap& kb_get_public_dnodemap();
-//extern dnode* qn_lookup_qnode(dnode* dn, crc_t crc, dnseek dir=QN_UP);
 extern int kb_read_dnodemap(std::string filename, dnodemap& dnmap);
-//extern void kb_write_dnmap_other(std::string& filename, dnodemap& dnmap);
 
 extern "C"
 {
@@ -311,8 +309,6 @@ extern struct sparm *kb_new_firstsparm(char *file);
 extern void kb_init_crc(const char *decl, struct sparm *sp, struct sparm *parent);
 extern void kb_update_nodes(struct sparm *qn, struct sparm *parent);
 extern void kb_insert_nodes(struct sparm *qn);
-//extern void delete_qnode(struct qnode *qn);
-//extern struct qnode *qn_lookup_crc(unsigned long crc);
 extern void kb_add_to_decl(struct sparm *qn, char *decl);
 extern void kb_trim_decl(struct sparm *qn);
 extern const char *kb_get_decl(struct sparm *qn);
@@ -320,9 +316,8 @@ extern bool kb_is_dup(struct sparm *sp);
 extern const char *kb_cstrcat(const char *d, const char *s);
 extern void kb_write_dnodemap(const char *filename);
 extern void kb_restore_dnodemap(char *filename);
-//extern bool kb_merge_dnodemap(char *filename);
 extern int kb_dump_dnodemap(char *filename);
-//extern void kb_dump_dnode(struct dnode *dn);
+extern dnode* kb_lookup_dnode(crc_t crc);
 
 #ifdef __cplusplus
 }

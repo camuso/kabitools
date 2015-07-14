@@ -378,6 +378,14 @@ const char *kb_get_decl(struct sparm *sp)
 	return dn->decl.c_str();
 }
 
+dnode* kb_lookup_dnode(crc_t crc)
+{
+	dnpair* dnp = lookup_dnode(crc);
+	if (!dnp)
+		return NULL;
+	return &dnp->second;
+}
+
 bool kb_is_dup(struct sparm *sp)
 {
 	dnodemap& dnmap = public_dnodemap;
@@ -465,6 +473,7 @@ void static inline dump_cnmap(cnodemap& cnmap, const char* field)
 	for (auto i : cnmap) {
 		int order = i.first;
 		cnode& cn = i.second;
+
 		// crc level order flags func_crc arg_crc name
 		cout << format("\t%12lu %12lu %3d %5d %04X %5d %12lu %5d %12lu ")
 			% cn.function % cn.argument
@@ -475,9 +484,10 @@ void static inline dump_cnmap(cnodemap& cnmap, const char* field)
 			cout << "*";
 		if (cn.name.size() > 0)
 			cout << cn.name;
-
 		if (cn.flags & CTL_FILE)
 			cout << " : FILE";
+		if (cn.flags & CTL_EXPORTED)
+			cout << " : EXPORTED";
 
 		cout << endl;
 	}
