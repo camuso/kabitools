@@ -277,10 +277,12 @@ int lookup::get_children_deep(dnode &parent, cnpair &cn)
 #endif
 
 /*****************************************************************************
- * lookup::get_children_wide(dnode& dn, cnode&cn)
+ * lookup::get_children(dnode& dn)
  *
  * Given references to a dnode and a cnode instance of it, walk the dnode's
- * children crcmap
+ * children crcmap and gather the info on the children.
+ * This is done reursively, until we've parsed all the children and all
+ * their descendants.
  */
 int lookup::get_children(dnode& dn)
 {
@@ -308,7 +310,6 @@ int lookup::get_children(dnode& dn)
  *
  * Walk the siblings cnodemap in the dnode to access each instance of the
  * symbol characterized by the dnode.
- *
  */
 int lookup::get_siblings(dnode& dn)
 {
@@ -320,6 +321,15 @@ int lookup::get_siblings(dnode& dn)
 	return EXE_OK;
 }
 
+/*****************************************************************************
+ * int lookup::exe_exports()
+ *
+ * Search the graph for exported symbols. If the whole word flag is set, then
+ * the search will look for an exact match. In that case, it will find at most
+ * one matching exported symbol.
+ * If not, the code will search the graph for the string where ever it appears,
+ * even as a substring, but only exported symbols are considered.
+ */
 int lookup::exe_exports()
 {
 	bool quiet = m_flags & KB_QUIET;
