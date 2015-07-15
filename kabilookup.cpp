@@ -205,68 +205,21 @@ bool lookup::find_decl(dnode &dnr, string decl)
 	return false;
 }
 
-int lookup::exe_struct()
+/*****************************************************************************
+ * lookup::get_parents(cnode &cn)
+ *
+ * Lookup the parent's dnode using the crc from the parent field of the
+ * cnode passed as an arg.
+ *
+ * Traverse the parent's siblings map looking for the first one having
+ * the same ancestry as the cnode that was passed as an argument.
+ *
+ * Do this recursively, until we either run out of siblings or we've
+ * reached the top of the hierarchy, so that the crc is zero.
+ *
+ */
+int lookup::get_parents(cnode& cn)
 {
-	bool quiet = m_flags & KB_QUIET;
-
-	if (m_opts.kb_flags & KB_WHOLE_WORD) {
-		unsigned long crc = raw_crc32(m_declstr.c_str());
-		dnode* dn = kb_lookup_dnode(crc);
-
-		if (!dn)
-			return EXE_NOTFOUND_SIMPLE;
-
-		m_isfound = true;
-		m_rowman.rows.clear();
-
-		get_siblings_up(*dn);
-		m_rowman.put_rows_from_back(quiet);
-
-#if 0
-	if (m_flags & KB_WHOLE_WORD) {
-		unsigned long crc = raw_crc32(m_declstr.c_str());
-		qnitpair_t range;
-		range = m_qnodes.equal_range(crc);
-
-		for_each (range.first, range.second,
-			  [this, quiet](qnpair_t& lqp)
-			  {
-				qnode& qn = lqp.second;
-				qn.crc = lqp.first;
-
-				if (qn.flags & CTL_BACKPTR)
-				//|| !(qn.flags & CTL_HASLIST))
-					return;
-
-				m_rowman.rows.clear();
-				m_rowman.rows.reserve(qn.level);
-				this->get_parents(qn);
-				m_rowman.put_rows_from_back(quiet);
-			  });
-#endif
-	}
-#if 0
-	else {
-		for (auto it : m_qnodes) {
-			qnode& qn = it.second;
-			qn.crc = it.first;
-
-			if (qn.sdecl.find(m_declstr) != string::npos) {
-				m_rowman.rows.clear();
-				m_rowman.rows.reserve(qn.level);
-				this->get_parents(qn);
-				m_rowman.put_rows_from_back(quiet);
-			}
-		}
-	}
-#endif
-
-	return EXE_OK;
-}
-
-int lookup::get_parents(cnpair& cnp)
-{
-	cnode cn  = cnp.second;
 	crc_t crc = cn.parent.second;
 
 	if (!crc)
@@ -291,7 +244,7 @@ int lookup::get_parents(cnpair& cnp)
 
 	cnode parentcn = (*cnit).second;
 	m_rowman.fill_row(parentdn, parentcn);
-	this->get_parents(*cnit);
+	this->get_parents(parentcn);
 	return EXE_OK;
 }
 
@@ -334,11 +287,19 @@ int lookup::get_siblings_up(dnode& dn)
 		firstpass = false;
 	}
 
-	// Loop through each siblings cnmap in reverse to get the the deepest
-	// level at which this dnode is instantiated. Then, don't bother
-	// traversing other siblings with the same ancestors, since we have
-	// already done that from the deepest point.
+	// Catch the ones that only have one ancestry. The above loop would
+	// not capture that case, since it only detects when the ancestry
+	// has changed.
+	if ((siblings.size() == 0) && (cnmap.size() > 0))
+		siblings.insert(siblings.begin(), cnmap);
 
+	// Get the the deepest level at which this dnode is instantiated
+	// by using the reverse-begin iterator (rbegin). No need to traverse
+	// other siblings with the same ancestors, since we have already
+	// done that from the deepest point. That means we'll skip some
+	// instances of this symbol in the same hierarchy, but that much
+	// redundancy would be too noisy, imho. I can revisit this if we
+	// want all that detail later.
 	for (auto sibit : siblings) {
 		cnodemap cnmap = sibit;
 		cnpair cnp = *cnmap.rbegin();
@@ -346,7 +307,7 @@ int lookup::get_siblings_up(dnode& dn)
 
 		m_rowman.rows.reserve(cn.level);
 		m_rowman.fill_row(dn, cn);
-		get_parents(cnp);
+		get_parents(cn);
 	}
 
 	return EXE_OK;
@@ -393,6 +354,44 @@ int lookup::get_siblings(dnode& dn)
 		m_rowman.fill_row(dn, cn);
 		get_children(dn);
 	}
+	return EXE_OK;
+}
+
+/*****************************************************************************
+ * lookup::exe_struct()
+ *
+ * Search the graph for a struct matching the input string in m_declstr and
+ * dump its hierarchy everywhere it's encountered all the way up to the
+ * file level.
+ */
+int lookup::exe_struct()
+{
+	bool quiet = m_flags & KB_QUIET;
+
+	if (m_opts.kb_flags & KB_WHOLE_WORD) {
+		unsigned long crc = raw_crc32(m_declstr.c_str());
+		dnode* dn = kb_lookup_dnode(crc);
+
+		if (!dn)
+			return EXE_NOTFOUND_SIMPLE;
+
+		m_isfound = true;
+		m_rowman.rows.clear();
+
+		get_siblings_up(*dn);
+		m_rowman.put_rows_from_back(quiet);
+	} else {
+		for (auto it : m_dnmap) {
+			dnode& dn = it.second;
+
+			if (dn.decl.find(m_declstr) == string::npos)
+				continue;
+
+			get_siblings_up(dn);
+			m_rowman.put_rows_from_back(quiet);
+		}
+	}
+
 	return EXE_OK;
 }
 
@@ -516,23 +515,3 @@ int main(int argc, char *argv[])
 	lookup lu(argc, argv);
 	return lu.run();
 }
-
-#if 0
-int lookup::get_children_deep(dnode &parent, cnpair &cn)
-{
-	qnode& qn = *qn_lookup_qnode(&parent, cn.first, QN_DN);
-
-	m_rowman.fill_row(qn);
-
-	if (qn.children.size() == 0)
-		return EXE_OK;
-
-	cnodemap_t& cnmap = qn.children;
-
-	for (auto it : cnmap)
-		get_children_wide(*qn_lookup_qnode(&qn, it.first, QN_DN));
-
-	return EXE_OK;
-}
-#endif
-
