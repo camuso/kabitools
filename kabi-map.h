@@ -299,6 +299,7 @@ public:
 
 extern dnodemap& kb_get_public_dnodemap();
 extern int kb_read_dnodemap(std::string filename, dnodemap& dnmap);
+extern dnode* kb_lookup_dnode(crc_t crc);
 
 extern "C"
 {
@@ -317,7 +318,6 @@ extern const char *kb_cstrcat(const char *d, const char *s);
 extern void kb_write_dnodemap(const char *filename);
 extern void kb_restore_dnodemap(char *filename);
 extern int kb_dump_dnodemap(char *filename);
-extern dnode* kb_lookup_dnode(crc_t crc);
 
 #ifdef __cplusplus
 }
