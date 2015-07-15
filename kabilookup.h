@@ -45,10 +45,11 @@ private:
 	dnode* find_qnode_nextlevel(dnode* dn, long unsigned crc, int level);
 	int get_decl_list(std::vector<dnode>& retlist);
 	void show_spinner(int& count);
-	int get_parents(dnode& dn);
+	int get_parents(cnpair &cnp);
 	int get_children(dnode& dn);
 	int get_children_deep(dnode& parent, cnpair& cn);
 	int get_siblings(dnode& dn);
+	int get_siblings_up(dnode& dn);
 	int execute(std::string datafile);
 	int exe_count();
 	int exe_struct();

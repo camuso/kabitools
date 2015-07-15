@@ -24,6 +24,7 @@
 #include <fstream>
 #include <iostream>
 #include <boost/format.hpp>
+#include <boost/range/adaptor/reversed.hpp>
 
 #include "checksum.h"
 #include "kabilookup.h"
@@ -168,7 +169,7 @@ int lookup::execute(string datafile)
 	case KB_COUNT   : return exe_count();
 	//case KB_DECL    : return exe_decl();
 	case KB_EXPORTS : return exe_exports();
-	//case KB_STRUCT  : return exe_struct();
+	case KB_STRUCT  : return exe_struct();
 	}
 	return 0;
 }
@@ -204,23 +205,24 @@ bool lookup::find_decl(dnode &dnr, string decl)
 	return false;
 }
 
-#if 0
-int lookup::get_parents(dnode &dn)
-{
-	m_rowman.fill_row(dn);
-
-	if (dn.level == 0)
-		return EXE_OK;
-
-	qnode& parent = *qn_lookup_qnode(&dn, dn.parent.first);
-	this->get_parents(parent);
-	return EXE_OK;
-}
-
 int lookup::exe_struct()
 {
 	bool quiet = m_flags & KB_QUIET;
 
+	if (m_opts.kb_flags & KB_WHOLE_WORD) {
+		unsigned long crc = raw_crc32(m_declstr.c_str());
+		dnode* dn = kb_lookup_dnode(crc);
+
+		if (!dn)
+			return EXE_NOTFOUND_SIMPLE;
+
+		m_isfound = true;
+		m_rowman.rows.clear();
+
+		get_siblings_up(*dn);
+		m_rowman.put_rows_from_back(quiet);
+
+#if 0
 	if (m_flags & KB_WHOLE_WORD) {
 		unsigned long crc = raw_crc32(m_declstr.c_str());
 		qnitpair_t range;
@@ -241,7 +243,10 @@ int lookup::exe_struct()
 				this->get_parents(qn);
 				m_rowman.put_rows_from_back(quiet);
 			  });
-	} else {
+#endif
+	}
+#if 0
+	else {
 		for (auto it : m_qnodes) {
 			qnode& qn = it.second;
 			qn.crc = it.first;
@@ -254,27 +259,98 @@ int lookup::exe_struct()
 			}
 		}
 	}
+#endif
 
 	return EXE_OK;
 }
 
-int lookup::get_children_deep(dnode &parent, cnpair &cn)
+int lookup::get_parents(cnpair& cnp)
 {
-	qnode& qn = *qn_lookup_qnode(&parent, cn.first, QN_DN);
+	cnode cn  = cnp.second;
+	crc_t crc = cn.parent.second;
 
-	m_rowman.fill_row(qn);
-
-	if (qn.children.size() == 0)
+	if (!crc)
 		return EXE_OK;
 
-	cnodemap_t& cnmap = qn.children;
+	dnode parentdn = *kb_lookup_dnode(crc);
+	cnodemap siblings = parentdn.siblings;
+	cniterator cnit;
 
-	for (auto it : cnmap)
-		get_children_wide(*qn_lookup_qnode(&qn, it.first, QN_DN));
+	cnit = find_if(siblings.begin(), siblings.end(),
+		[cn](cnpair& lcnp) {
+			cnode lcn = lcnp.second;
+			int nextlevelup = cn.level - 1;
+			return ((lcn.level < 3) ||
+				((lcn.level == nextlevelup) &&
+				 (lcn.argument == cn.argument) &&
+				 (lcn.function == cn.function)));
+		});
+
+	if (cnit == siblings.end())
+		return EXE_OK;
+
+	cnode parentcn = (*cnit).second;
+	m_rowman.fill_row(parentdn, parentcn);
+	this->get_parents(*cnit);
+	return EXE_OK;
+}
+
+/*****************************************************************************
+ * lookup::get_siblings(dnode& dn)
+ * dn - reference to a dnode
+ *
+ * Walk the siblings cnodemap in the dnode to access each instance of the
+ * symbol characterized by the dnode.
+ *
+ * First we need to divide the list by ancestry.
+ * Then we order each of the unique ancestries by level, which is the depth
+ * at which a given instance of a symbol (dnode) was instantiated.
+ *
+ */
+int lookup::get_siblings_up(dnode& dn)
+{
+	crc_t prevarg = 0;
+	crc_t prevfunc = 0;
+
+	vector<cnodemap> siblings;
+	cnodemap cnmap;
+	bool firstpass = true;
+
+	// Create a vector of cnodemap divided according to their ancestry,
+	// and with each cnodemap indexed by level in the hierarchy in which
+	// each cnode was instantiated.
+	for (auto it : dn.siblings) {
+		cnode cn = it.second;
+
+		if (!firstpass &&
+		   ((prevarg != cn.argument) || (prevfunc != cn.function))) {
+			siblings.insert(siblings.begin(), cnmap);
+			cnmap.clear();
+		}
+
+		cnmap.insert(cnmap.begin(), make_pair(cn.level, cn));
+		prevarg = cn.argument;
+		prevfunc = cn.function;
+		firstpass = false;
+	}
+
+	// Loop through each siblings cnmap in reverse to get the the deepest
+	// level at which this dnode is instantiated. Then, don't bother
+	// traversing other siblings with the same ancestors, since we have
+	// already done that from the deepest point.
+
+	for (auto sibit : siblings) {
+		cnodemap cnmap = sibit;
+		cnpair cnp = *cnmap.rbegin();
+		cnode cn = cnp.second;
+
+		m_rowman.rows.reserve(cn.level);
+		m_rowman.fill_row(dn, cn);
+		get_parents(cnp);
+	}
 
 	return EXE_OK;
 }
-#endif
 
 /*****************************************************************************
  * lookup::get_children(dnode& dn)
@@ -289,8 +365,7 @@ int lookup::get_children(dnode& dn)
 	for (auto i : dn.children) {
 		int order = i.first;
 		crc_t crc = i.second;
-		dnode dn;
-		dn = *kb_lookup_dnode(crc);
+		dnode dn = *kb_lookup_dnode(crc);
 		cnodemap siblings = dn.siblings;
 		cnode cn = siblings[order];
 
@@ -441,3 +516,23 @@ int main(int argc, char *argv[])
 	lookup lu(argc, argv);
 	return lu.run();
 }
+
+#if 0
+int lookup::get_children_deep(dnode &parent, cnpair &cn)
+{
+	qnode& qn = *qn_lookup_qnode(&parent, cn.first, QN_DN);
+
+	m_rowman.fill_row(qn);
+
+	if (qn.children.size() == 0)
+		return EXE_OK;
+
+	cnodemap_t& cnmap = qn.children;
+
+	for (auto it : cnmap)
+		get_children_wide(*qn_lookup_qnode(&qn, it.first, QN_DN));
+
+	return EXE_OK;
+}
+#endif
+
