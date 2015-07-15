@@ -167,7 +167,7 @@ int lookup::execute(string datafile)
 
 	switch (m_flags & m_exemask) {
 	case KB_COUNT   : return exe_count();
-	//case KB_DECL    : return exe_decl();
+	case KB_DECL    : return exe_decl();
 	case KB_EXPORTS : return exe_exports();
 	case KB_STRUCT  : return exe_struct();
 	}
@@ -454,58 +454,46 @@ int lookup::exe_exports()
 	return m_isfound ? EXE_OK : EXE_NOTFOUND_SIMPLE;
 }
 
-#if 0
 int lookup::exe_decl()
 {
-	int count = 0;
 	bool quiet = m_flags & KB_QUIET;
-	qnode* qn = NULL;
 
 	if (m_opts.kb_flags & KB_WHOLE_WORD) {
 		unsigned long crc = raw_crc32(m_declstr.c_str());
-		qniterator_t qnit;
-		qnitpair_t range;
-		range = m_qnodes.equal_range(crc);
+		dnode* dn = kb_lookup_dnode(crc);
 
-		qnit = find_if (range.first, range.second,
-			  [this, &count](qnpair_t& lqp)
-			  {
-				qnode& rqn = lqp.second;
-				return ((rqn.children.size() > 0) &&
-					(rqn.flags & CTL_HASLIST) &&
-					(!(rqn.flags & CTL_BACKPTR)));
-			  });
+		if (!dn)
+			return EXE_NOTFOUND_SIMPLE;
 
-		qn = (qnit != range.second) ? &(*qnit).second : NULL;
+		cniterator cnit = dn->siblings.begin();
+		cnode cn = cnit->second;
+		m_isfound = true;
+		m_rowman.rows.clear();
+		m_rowman.fill_row(*dn, cn);
 
-		if (qn != NULL) {
-			m_isfound = true;
-			m_rowman.rows.clear();
-			get_children_wide(*qn);
-			m_rowman.put_rows_from_front_normalized(quiet);
-		}
+		get_children(*dn);
+		m_rowman.put_rows_from_front_normalized(quiet);
 
 	} else {
 
-		for (auto it : m_qnodes) {
-			qnode& rqn = it.second;
-			rqn.crc = it.first;
+		for (auto it : m_dnmap) {
+			dnode& dn = it.second;
+			cniterator cnit = dn.siblings.begin();
+			cnode cn = cnit->second;
 
-			if ((rqn.sdecl.find(m_declstr) != string::npos) &&
-			    (rqn.children.size() > 0) &&
-			    (rqn.flags & CTL_HASLIST) &&
-			    (!(rqn.flags & CTL_BACKPTR))) {
-				m_isfound = true;
-				qn = &rqn;
-				m_rowman.rows.clear();
-				get_children_wide(*qn);
-				m_rowman.put_rows_from_front_normalized(quiet);
-			}
+			if (dn.decl.find(m_declstr) == string::npos)
+				continue;
+
+			m_rowman.rows.clear();
+			m_rowman.fill_row(dn, cn);
+
+			get_children(dn);
+			m_rowman.put_rows_from_front_normalized(quiet);
 		}
 	}
+
 	return m_isfound ? EXE_OK : EXE_NOTFOUND_SIMPLE;
 }
-#endif
 
 /************************************************
 ** main()
