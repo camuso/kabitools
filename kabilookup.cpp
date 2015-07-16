@@ -122,6 +122,10 @@ int lookup::run()
 	}
 
 	cout << endl;
+
+	if (m_isfound)
+		m_errindex = EXE_OK;
+
 	m_err.print_cmd_errmsg(m_errindex, m_declstr, m_filelist);
 	return(m_errindex);
 }
@@ -383,22 +387,25 @@ int lookup::exe_struct()
 
 		m_isfound = true;
 		m_rowman.rows.clear();
-
 		get_siblings_up(*dn);
 		m_rowman.put_rows_from_back(quiet);
+
 	} else {
+
 		for (auto it : m_dnmap) {
 			dnode& dn = it.second;
 
 			if (dn.decl.find(m_declstr) == string::npos)
 				continue;
 
+			m_isfound = true;
+			m_rowman.rows.clear();
 			get_siblings_up(dn);
 			m_rowman.put_rows_from_back(quiet);
 		}
 	}
 
-	return EXE_OK;
+	return m_isfound ? EXE_OK : EXE_NOTFOUND_SIMPLE;
 }
 
 /*****************************************************************************
@@ -421,15 +428,14 @@ int lookup::exe_exports()
 		if (!dn)
 			return EXE_NOTFOUND_SIMPLE;
 
-		m_isfound = true;
-		m_rowman.rows.clear();
-
 		// If there is not exactly one sibling, then this is not an
 		// exported symbol. Exports all exist in the same name space
 		// and must be unique; there can only be one.
 		if (dn->siblings.size() != 1)
 			return EXE_NOTFOUND_SIMPLE;
 
+		m_isfound = true;
+		m_rowman.rows.clear();
 		get_siblings(*dn);
 		m_rowman.put_rows_from_front(quiet);
 
@@ -450,10 +456,10 @@ int lookup::exe_exports()
 			if (cn.name.find(m_declstr) == string::npos)
 				continue;
 
+			m_isfound = true;
 			m_rowman.rows.clear();
 			get_siblings(dn);
 			m_rowman.put_rows_from_front(quiet);
-			m_isfound = true;
 		}
 	}
 
@@ -490,6 +496,7 @@ int lookup::exe_decl()
 			if (dn.decl.find(m_declstr) == string::npos)
 				continue;
 
+			m_isfound = true;
 			m_rowman.rows.clear();
 			m_rowman.fill_row(dn, cn);
 
