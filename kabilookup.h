@@ -71,6 +71,7 @@ private:
 	std::string m_datafile = "../kabi-data.dat";
 	std::string m_filelist = "./redhat/kabi/parser/kabi-files.list";
 	std::string m_declstr;
+	std::string m_subdir;
 
 	unsigned long m_crc;
 	bool m_isfound = false;

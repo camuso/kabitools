@@ -18,6 +18,7 @@ enum kbflags {
 	KB_NODUPS	= 1 << 7,
 	KB_ARGS		= 1 << 8,
 	KB_QUIET	= 1 << 9,
+	KB_SUBDIR	= 1 << 10,
 };
 
 class options
@@ -25,9 +26,11 @@ class options
 public:
 	options();
 	int get_options(int *idx, char **argv,
-			std::string &declstr, std::string &datafile);
+			std::string &declstr, std::string &datafile,
+			std::string &subdir);
 	bool parse_opt(char opt, char ***argv,
-		       std::string &declstr, std::string &datafile);
+		       std::string &declstr, std::string &datafile,
+		       std::string &subdir);
 	bool parse_long_opt(char *argstr);
 	int kb_flags;
 

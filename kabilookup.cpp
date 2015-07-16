@@ -56,25 +56,26 @@ kabi-lookup -[qw] -c|d|e|s symbol [-f file-list]\n\
 \n\
     -c symbol   - Counts the instances of the symbol in the kabi tree. \n\
     -s symbol   - Prints to stdout every exported function that is implicitly \n\
-                  or explicitly affected by the symbol. In verbose mode, the \n\
+                  or explicitly affected by the symbol. In default mode, the \n\
                   chain from the exported function to the symbol is printed.\n\
                   It is advisable to use \"-c symbol\" first. \n\
+                  The -q switch can be used to suppress output between the \n\
+                  symbol and its ancestral function or agrument.\n\
     -e symbol   - Specific to EXPORTED functions. Prints the function, \n\
-                  and its argument list. With the -v verbose switch, it \n\
-                  will print all the descendants of nonscalar arguments. \n\
+                  and its argument list as well as all the descendants of \n\
+                  any of its nonscalar arguments. \n\
     -d symbol   - Seeks a data structure and prints its members to stdout. \n\
-                  The -v switch prints descendants of nonscalar members. \n\
+                  Without the -q switch, descendants of nonscalar members \n\
+                  will also be printed.\n\
     -q          - \"Quiet\" option limits the amount of output. \n\
+                  Default is verbose.\n\
     -w          - whole words only, default is \"match any and all\" \n\
     -f filelist - Optional list of data files that were created by kabi-parser. \n\
                   The default list created by running kabi-data.sh is \n\
 		  \"./redhat/kabi/parser/kabi-files.list\" relative to the \n\
                   top of the kernel tree. \n\
-    --no-dups   - A structure can appear more than once in the nest of an \n\
-                  exported function, for example a pointer back to itself as\n\
-                  parent to one of its descendants. This switch limits the \n\
-                  appearance of a symbol\'s tree to just once. \n\
-    -h  this help message.\n";
+    -u subdir   - Limit the search to a specific kernel subdirectory. \n\
+    -h          - this help message.\n";
 }
 
 lookup::lookup(int argc, char **argv)
@@ -97,6 +98,10 @@ int lookup::run()
 	}
 
 	while (getline(ifs, m_datafile)) {
+
+		if ((m_flags & KB_SUBDIR) &&
+		    (m_datafile.find(m_subdir) == string::npos))
+			continue;
 
 		if (!(m_flags & KB_COUNT)) {
 			cout << m_datafile << "\r";
@@ -152,7 +157,8 @@ int lookup::process_args(int argc, char **argv)
 		return EXE_ARG2SML;
 
 	m_flags = KB_VERBOSE;
-	m_flags |= m_opts.get_options(&argindex, &argv[0], m_declstr, m_filelist);
+	m_flags |= m_opts.get_options(&argindex, &argv[0],
+					m_declstr, m_filelist, m_subdir);
 
 	if (m_flags < 0 || !check_flags())
 		return EXE_BADFORM;
