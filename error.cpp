@@ -19,7 +19,7 @@ void error::init(int argc, char **argv)
 	errstr[EXE_2MANY]    = "Too many items match \"%s\" in database %s."
 			       " Be more specific.\n";
 	errstr[EXE_NOTFOUND_SIMPLE] = "\"%s\" cannot be found in any of the"
-				"files listed in: %s\n";
+				" files listed in: %s\n";
 }
 
 void error::print_cmdline()
