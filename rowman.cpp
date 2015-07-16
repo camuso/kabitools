@@ -162,21 +162,29 @@ void rowman::put_rows_from_front(bool quiet)
 void rowman::put_rows_from_back_normalized(bool quiet)
 {
 	cout << "\33[2K\r";
+	qrow r;
 
 	for (auto it : rows) {
-		qrow& r = rows.back();
+		r = rows.back();
 		print_row_normalized(r, quiet);
 		rows.pop_back();
 	}
+	m_normalized = false;
+	r.level = 0;
 	cout << endl;
 }
 
 void rowman::put_rows_from_front_normalized(bool quiet)
 {
 	cout << "\33[2K\r";
+	qrow r;
 
-	for (auto it : rows)
+	for (auto it : rows) {
+		r = it;
 		print_row_normalized(it, quiet);
+	}
 
+	m_normalized = false;
+	r.level = 0;
 	cout << endl;
 }
