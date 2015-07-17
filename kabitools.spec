@@ -30,19 +30,21 @@ kabi-lookup - given the symbol name of an exported symbol, determines
 make %{?_smp_mflags}
 
 %install
-cp %{_topdir}/BUILD/%{name}-%{version}/kabi-parser  $RPM_BUILD_ROOT/.
-cp %{_topdir}/BUILD/%{name}-%{version}/kabi-dump    $RPM_BUILD_ROOT/.
-cp %{_topdir}/BUILD/%{name}-%{version}/kabi-lookup  $RPM_BUILD_ROOT/.
-cp %{_topdir}/BUILD/%{name}-%{version}/kabi-data.sh $RPM_BUILD_ROOT/.
-cp %{_topdir}/BUILD/%{name}-%{version}/makei.sh     $RPM_BUILD_ROOT/.
+mkdir -p $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}-%{version}/kabi-parser  $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}-%{version}/kabi-dump    $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}-%{version}/kabi-lookup  $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}-%{version}/kabi-data.sh $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}-%{version}/makei.sh     $RPM_BUILD_ROOT%{_sbindir}
 
 %files
 %defattr(-,root,root)
-/kabi-parser
-/kabi-dump
-/kabi-lookup
-/kabi-data.sh
-/makei.sh
+%{_sbindir}/kabi-parser
+%{_sbindir}/kabi-dump
+%{_sbindir}/kabi-lookup
+%{_sbindir}/kabi-data.sh
+%{_sbindir}/makei.sh
+
 %doc
 
 %changelog
