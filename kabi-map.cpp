@@ -323,12 +323,16 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 	// If we've seen this dnode before, use the cnodepair to lookup
 	// the original dnode instance and insert the cnode of the new
 	// dnode into the sibling cnodemap of the original instance.
-	// If thisis the first instance of this dnode instance, then its
-	// cnode will be the first in its siblings cnodemap.
+	// If this is the first instance of this dnode, then its cnode
+	// will be the first in its siblings cnodemap.
 	sib = lookup_dnode(sp->crc);
 	sib = sib ? sib : &dnp;
 	cnp = insert_cnode(sib->second.siblings, make_pair(sp->order, *cn));
 	sp->cnode = (void *)&cnp->second;
+
+	// Insert the order/crc pair of this cnode into its parent's
+	// children cnodemap.
+	insert_node(pdn->children, make_pair(sp->order, sp->crc));
 
 	// If this dnode is a dup or a backpointer, then return without
 	// inserting the dnode into the public_dnodemap, because there's
@@ -338,7 +342,6 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 	if (sp->flags & CTL_ISDUP)
 		return;
 
-	insert_node(pdn->children, make_pair(sp->order, sp->crc));
 	sib = insert_dnode(public_dnodemap, dnp);
 	sp->dnode = (void *)&sib->second;
 }
