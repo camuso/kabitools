@@ -6,28 +6,26 @@
 usagestr=$(
 cat <<EOF
 
-$0 -d <directory> -o <textfile> [-s subdir -b datafile -e errfile -v -h]
+$0 -d <directory> -d directory [-s subdir -f filelist -e errfile ] [-h]
 
-  - Creates a SQLite database and a text file listing all exported
-    functions, their arguments, their return values, and any data
-    structures explicitly or implicitly used by them.
-
-    This script uses the kabi-parser executable and expects it to be in
-    the redhat/kabi/ directory.
+  - Given a directory tree, calls kabi-parser to create a graph file
+    from each .i file in the tree. The graph is a representation of all
+    exported symbols and all their dependencies, and all instances of
+    those dependencies in each graph.
 
   -d directory - Required. Directory at top of tree to be parsed.
   -s subdir    - Optional directory from which to start parsing, relative
                  to the top of the tree defined by the required "directory"
                  argument above.
                  Default is from the top of the kernel tree.
-  -b database  - Optional. Default is ../kabi-data.dat relative to
-                 the top of the kernel tree. This file will contain the
-                 parser output of the hierarchical kabi data graph.
+  -f filelist  - Optional. Default is redhat/kabi/parser/kabi-files.list
+                 relative to the top of the kernel tree. This file will
+		 contain a list of graph files that were created from .i
+		 filese generated previously by the preprocessor.
                  If it already exists, this file will be destroyed and
                  rebuilt.
   -e errfile   - Optional error file. By default, errors are sent
                  to /dev/null
-  -v           - Verbose output
   -h           - This help message
 
 \0
@@ -106,7 +104,7 @@ START=$(date +%s)
 
 find $subdir -name \*.i -exec sh -c \
 	'echo $1; \
-	redhat/kabi/kabi-parser -xf ${1%.*}.kb_dat $1 2>$2; \
+	kabi-parser -xf ${1%.*}.kb_dat $1 2>$2; \
 	echo "${1%.*}.kb_dat" >> $3;' \
 	sh '{}' $errfile $filelist \;
 echo
