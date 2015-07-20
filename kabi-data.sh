@@ -85,7 +85,7 @@ done
 
 [ "$directory" ] || nodir
 
-[ -e "$directory/redhat/kabi/kabi-parser" ] || noparser
+# [ -e "$directory/redhat/kabi/kabi-parser" ] || noparser
 [ -d "$directory" ] || noexistdir $directory
 
 cd $directory
@@ -104,6 +104,8 @@ START=$(date +%s)
 
 find $subdir -name \*.i -exec sh -c \
 	'echo $1; \
+        grep -qm1 ksymtab $1; \
+        [ $? -eq 0 ] || exit; \
 	kabi-parser -xf ${1%.*}.kb_dat $1 2>$2; \
 	echo "${1%.*}.kb_dat" >> $3;' \
 	sh '{}' $errfile $filelist \;
