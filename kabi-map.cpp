@@ -194,8 +194,13 @@ void kb_init_crc(const char *decl, struct sparm *sp, struct sparm *parent)
 {
 	sp->crc = raw_crc32(decl);
 
-	if (parent->flags & (CTL_ARG | CTL_RETURN))
-		sp->argument = parent->crc;
+#ifndef NDEBUG
+	if ((sp->crc == 2674120813))// || (parent->crc == 410729264))
+		puts(decl);
+#endif
+
+	if (sp->flags & (CTL_ARG | CTL_RETURN))
+		sp->argument = sp->crc;
 	else
 		sp->argument = parent->argument;
 
