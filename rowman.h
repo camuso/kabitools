@@ -41,10 +41,10 @@ public:
 	void put_rows_from_front(bool quiet = false);
 	void put_rows_from_back_normalized(bool quiet = false);
 	void put_rows_from_front_normalized(bool quiet = false);
+	void print_row(qrow& r, bool quiet = false);
 
 private:
 	std::string &indent(int padsize);
-	void print_row(qrow& r, bool quiet = false);
 	void print_row_normalized(qrow& r, bool quiet = false);
 	bool set_dup(qrow& row);
 	bool is_dup(qrow& row);
