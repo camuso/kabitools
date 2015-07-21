@@ -59,6 +59,7 @@ bool rowman::is_dup(qrow &row)
 void rowman::fill_row(const dnode &dn, const cnode &cn)
 {
 	qrow r;
+	r.crc = cn.sibling.second;
 	r.level = cn.level;
 	r.flags = cn.flags;
 	r.name = cn.name;
