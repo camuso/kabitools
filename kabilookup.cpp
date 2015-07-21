@@ -32,7 +32,7 @@
 using namespace std;
 using boost::format;
 
-//#define NDEBUG
+#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -222,7 +222,8 @@ bool lookup::find_decl(dnode &dnr, string decl)
  * cnode passed as an arg.
  *
  * Traverse the parent's siblings map looking for the first one having
- * the same ancestry as the cnode that was passed as an argument.
+ * the same ancestry as the cnode that was passed as an argument and is
+ * one level up from the cnode passed as an argument.
  *
  * Do this recursively, until we either run out of siblings or we've
  * reached the top of the hierarchy, so that the crc is zero.
@@ -243,10 +244,20 @@ int lookup::get_parents(cnode& cn)
 		[cn](cnpair& lcnp) {
 			cnode lcn = lcnp.second;
 			int nextlevelup = cn.level - 1;
-			return ((lcn.level < 3) ||
-				((lcn.level == nextlevelup) &&
-				 (lcn.argument == cn.argument) &&
-				 (lcn.function == cn.function)));
+
+			switch (cn.level) {
+			case LVL_FILE :
+				return true;
+			case LVL_EXPORTED :
+				return (lcn.level == nextlevelup);
+			case LVL_ARG  :
+				return ((lcn.level == nextlevelup) &&
+					(lcn.function == cn.function));
+			default :
+				return ((lcn.level == nextlevelup) &&
+					(lcn.argument == cn.argument) &&
+					(lcn.function == cn.function));
+			}
 		});
 
 	if (cnit == siblings.end())
@@ -272,54 +283,11 @@ int lookup::get_parents(cnode& cn)
  */
 int lookup::get_siblings_up(dnode& dn)
 {
-	crc_t prevarg = 0;
-	crc_t prevfunc = 0;
-
-	vector<cnodemap> siblings;
-	cnodemap cnmap;
-	bool firstpass = true;
-
-	// Create a vector of cnodemap divided according to their ancestry,
-	// and with each cnodemap indexed by level in the hierarchy in which
-	// each cnode was instantiated.
 	for (auto it : dn.siblings) {
 		cnode cn = it.second;
-
-		if (!firstpass &&
-		   ((prevarg != cn.argument) || (prevfunc != cn.function))) {
-			siblings.insert(siblings.begin(), cnmap);
-			cnmap.clear();
-		}
-
-		cnmap.insert(cnmap.begin(), make_pair(cn.level, cn));
-		prevarg = cn.argument;
-		prevfunc = cn.function;
-		firstpass = false;
-	}
-
-	// Catch the ones that only have one ancestry. The above loop would
-	// not capture that case, since it only detects when the ancestry
-	// has changed.
-	if ((siblings.size() == 0) && (cnmap.size() > 0))
-		siblings.insert(siblings.begin(), cnmap);
-
-	// Get the the deepest level at which this dnode is instantiated
-	// by using the reverse-begin iterator (rbegin). No need to traverse
-	// other siblings with the same ancestors, since we have already
-	// done that from the deepest point. That means we'll skip some
-	// instances of this symbol in the same hierarchy, but that much
-	// redundancy would be too noisy, imho. I can revisit this if we
-	// want all that detail later.
-	for (auto sibit : siblings) {
-		cnodemap cnmap = sibit;
-		cnpair cnp = *cnmap.rbegin();
-		cnode cn = cnp.second;
-
-		m_rowman.rows.reserve(cn.level);
 		m_rowman.fill_row(dn, cn);
 		get_parents(cn);
 	}
-
 	return EXE_OK;
 }
 
