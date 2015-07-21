@@ -78,6 +78,10 @@ kabi-lookup -[qw] -c|d|e|s symbol [-f file-list]\n\
     -h          - this help message.\n";
 }
 
+/*****************************************************************************
+ * lookup::lookup - constructor
+ *
+ */
 lookup::lookup(int argc, char **argv)
 {
 	m_err.init(argc, argv);
@@ -88,6 +92,8 @@ lookup::lookup(int argc, char **argv)
 	}
 }
 
+/*****************************************************************************
+ */
 int lookup::run()
 {
 	ifstream ifs(m_filelist.c_str());
@@ -130,6 +136,9 @@ int lookup::run()
 	return(m_errindex);
 }
 
+/*****************************************************************************
+ * lookup::count_bits(unsigned mask) - count number of bits set in the mask
+ */
 int lookup::count_bits(unsigned mask)
 {
 	int count = 0;
@@ -141,7 +150,9 @@ int lookup::count_bits(unsigned mask)
 	return count;
 }
 
-// Check for mutually exclusive flags.
+/*****************************************************************************
+ * lookup::check_flags() - Check for mutually exclusive flags.
+ */
 bool lookup::check_flags()
 {
 	if (m_flags & KB_QUIET)
@@ -150,6 +161,9 @@ bool lookup::check_flags()
 	return !(count_bits(m_flags & m_exemask) > 1);
 }
 
+/*****************************************************************************
+ * lookup::process_args(int argc, char **argv)
+ */
 int lookup::process_args(int argc, char **argv)
 {
 	int argindex = 0;
@@ -170,6 +184,9 @@ int lookup::process_args(int argc, char **argv)
 	return EXE_OK;
 }
 
+/*****************************************************************************
+ * lookup::execute(string datafile)
+ */
 int lookup::execute(string datafile)
 {
 	if(kb_read_dnodemap(datafile, m_dnmap) != 0)
@@ -184,6 +201,13 @@ int lookup::execute(string datafile)
 	return 0;
 }
 
+/*****************************************************************************
+ * lookup::exe_count() - count the appearances of the symbol in provided scope
+ *
+ * Scope can be limited using the -u switch to isolate a subdirectory or
+ * even a file.
+ *
+ */
 int lookup::exe_count()
 {
 	if (m_opts.kb_flags & KB_WHOLE_WORD) {
@@ -201,18 +225,6 @@ int lookup::exe_count()
 	cout << m_count << "\r";
 	cout.flush();
 	return m_count !=0 ? EXE_OK : EXE_NOTFOUND;
-}
-
-bool lookup::find_decl(dnode &dnr, string decl)
-{
-	m_crc = ::raw_crc32(decl.c_str());
-	dnode* dn = kb_lookup_dnode(m_crc);
-
-	if (dn) {
-		dnr = *dn;
-		return true;
-	}
-	return false;
 }
 
 /*****************************************************************************
@@ -263,7 +275,7 @@ int lookup::get_parents(cnode& cn)
 	if (cnit == siblings.end())
 		return EXE_OK;
 
-	cnode parentcn = (*cnit).second;
+	cnode parentcn = cnit->second;
 	m_rowman.fill_row(parentdn, parentcn);
 	this->get_parents(parentcn);
 	return EXE_OK;
@@ -276,16 +288,13 @@ int lookup::get_parents(cnode& cn)
  * Walk the siblings cnodemap in the dnode to access each instance of the
  * symbol characterized by the dnode.
  *
- * First we need to divide the list by ancestry.
- * Then we order each of the unique ancestries by level, which is the depth
- * at which a given instance of a symbol (dnode) was instantiated.
- *
  */
 int lookup::get_siblings_up(dnode& dn)
 {
 	for (auto it : dn.siblings) {
 		cnode cn = it.second;
 		m_rowman.fill_row(dn, cn);
+		DBG(m_rowman.print_row(m_rowman.rows.back());)
 		get_parents(cn);
 	}
 	return EXE_OK;
@@ -309,8 +318,9 @@ int lookup::get_children(dnode& dn)
 		cnode cn = siblings[order];
 
 		m_rowman.fill_row(dn, cn);
+		DBG(m_rowman.print_row(m_rowman.rows.back());)
 
-		if (cn.flags & CTL_BACKPTR)
+		if (cn.flags & (CTL_BACKPTR | CTL_ISDUP))
 			continue;
 
 		get_children(dn);
@@ -330,10 +340,38 @@ int lookup::get_siblings(dnode& dn)
 	for (auto it : dn.siblings) {
 		cnode cn = it.second;
 		m_rowman.fill_row(dn, cn);
+		DBG(m_rowman.print_row(m_rowman.rows.back());)
 		get_children(dn);
 	}
 	return EXE_OK;
 }
+
+
+/*****************************************************************************
+ * lookup::get_file_of_export(dnode &dn)
+ *
+ * Gets the name of the file that has the exported function characterized
+ * by the dnode argument.
+ *
+ */
+int lookup::get_file_of_export(dnode &dn)
+{
+	auto it = dn.siblings.cbegin();
+	cnode cn = it->second;
+	crc_t crc = cn.parent.second;
+
+	if (!crc)
+		return EXE_NOTFOUND_SIMPLE;
+
+	dnode parentdn = *kb_lookup_dnode(crc);
+	it = parentdn.siblings.begin();
+	cnode parentcn = it->second;
+	m_rowman.fill_row(parentdn, parentcn);
+	DBG(m_rowman.print_row(m_rowman.rows.back());)
+
+	return EXE_OK;
+}
+
 
 /*****************************************************************************
  * lookup::exe_struct()
@@ -404,6 +442,7 @@ int lookup::exe_exports()
 
 		m_isfound = true;
 		m_rowman.rows.clear();
+		get_file_of_export(*dn);
 		get_siblings(*dn);
 		m_rowman.put_rows_from_front(quiet);
 
@@ -426,6 +465,7 @@ int lookup::exe_exports()
 
 			m_isfound = true;
 			m_rowman.rows.clear();
+			get_file_of_export(dn);
 			get_siblings(dn);
 			m_rowman.put_rows_from_front(quiet);
 		}
@@ -434,6 +474,15 @@ int lookup::exe_exports()
 	return m_isfound ? EXE_OK : EXE_NOTFOUND_SIMPLE;
 }
 
+/*****************************************************************************
+ * lookout::exe_decl()
+ *
+ * Search for the first instance of the data structure characterized by the
+ * declaration passed to the program and stored in m_declstr. All the
+ * members of the data structure are printed to the screen, and the
+ * program exits.
+ *
+ */
 int lookup::exe_decl()
 {
 	bool quiet = m_flags & KB_QUIET;

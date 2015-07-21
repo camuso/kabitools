@@ -54,6 +54,7 @@ private:
 	int exe_struct();
 	int exe_exports();
 	int exe_decl();
+	int get_file_of_export(dnode& dn);
 
 	// member classes
 	dnodemap& m_dnmap = kb_get_public_dnodemap();
