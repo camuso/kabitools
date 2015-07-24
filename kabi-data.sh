@@ -21,7 +21,7 @@ $0 -d <directory> -d directory [-s subdir -f filelist -e errfile ] [-h]
   -f filelist  - Optional. Default is redhat/kabi/parser/kabi-files.list
                  relative to the top of the kernel tree. This file will
 		 contain a list of graph files that were created from .i
-		 filese generated previously by the preprocessor.
+		 files generated previously by the preprocessor.
                  If it already exists, this file will be destroyed and
                  rebuilt.
   -e errfile   - Optional error file. By default, errors are sent
