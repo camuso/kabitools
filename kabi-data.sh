@@ -8,20 +8,19 @@ cat <<EOF
 
 $0 -d <directory> -d directory [-s subdir -f filelist -e errfile ] [-h]
 
-  - Given a directory tree, calls kabi-parser to create a graph file
-    from each .i file in the tree. The graph is a representation of all
-    exported symbols and all their dependencies, and all instances of
-    those dependencies in each graph.
+  - Given a path to the top of the kernel tree, this script calls the
+    kabi-parser tool to create a kb_dat graph file from each .i file in
+    the tree. Each kb_dat graph file contains an abstract of all exported
+    symbols and all their dependencies. A list of kb_dat files is compiled
+    for use by the kabi-lookup tool.
 
-  -d directory - Required. Directory at top of tree to be parsed.
+  -d directory - Required. Path to the topmost directory of the kernel tree.
   -s subdir    - Optional directory from which to start parsing, relative
-                 to the top of the tree defined by the required "directory"
-                 argument above.
-                 Default is from the top of the kernel tree.
+                 to the top of the kernel tree.
   -f filelist  - Optional. Default is redhat/kabi/parser/kabi-files.list
                  relative to the top of the kernel tree. This file will
-		 contain a list of graph files that were created from .i
-		 files generated previously by the preprocessor.
+		 contain a list of kb_dat graph files that were created from
+                 .i files generated previously by the preprocessor.
                  If it already exists, this file will be destroyed and
                  rebuilt.
   -e errfile   - Optional error file. By default, errors are sent
