@@ -14,11 +14,10 @@ enum kbflags {
 	KB_STRUCT	= 1 << 3,
 	KB_VERBOSE	= 1 << 4,
 	KB_WHOLE_WORD	= 1 << 5,
-	KB_DATABASE	= 1 << 6,
-	KB_NODUPS	= 1 << 7,
-	KB_ARGS		= 1 << 8,
-	KB_QUIET	= 1 << 9,
-	KB_SUBDIR	= 1 << 10,
+	KB_NODUPS	= 1 << 6,
+	KB_ARGS		= 1 << 7,
+	KB_QUIET	= 1 << 8,
+	KB_MASKSTR	= 1 << 9,
 };
 
 class options
@@ -27,10 +26,10 @@ public:
 	options();
 	int get_options(int *idx, char **argv,
 			std::string &declstr, std::string &datafile,
-			std::string &subdir);
+			std::string &maskstr);
 	bool parse_opt(char opt, char ***argv,
 		       std::string &declstr, std::string &datafile,
-		       std::string &subdir);
+		       std::string &maskstr);
 	bool parse_long_opt(char *argstr);
 	int kb_flags;
 

@@ -34,7 +34,7 @@ bool options::parse_long_opt(char *argstr)
 }
 
 int options::get_options(int *idx, char **argv,
-			 string &declstr, string &datafile, string &subdir)
+			 string &declstr, string &datafile, string &maskstr)
 {
 	int index = 0;
 	char *argstr;
@@ -51,7 +51,7 @@ int options::get_options(int *idx, char **argv,
 
 		for (i = 0; argstr[i]; ++i)
 			if (!parse_opt(argstr[i], &argv,
-				       declstr, datafile, subdir))
+				       declstr, datafile, maskstr))
 				return -1;
 		if (!*argv)
 			break;
@@ -62,7 +62,7 @@ int options::get_options(int *idx, char **argv,
 }
 
 bool options::parse_opt(char opt, char ***argv,
-			string &declstr, string &datafile, string& subdir)
+			string &declstr, string &datafile, string& maskstr)
 {
 	switch (opt) {
 	case 'f' : datafile = *((*argv)++);
@@ -81,8 +81,8 @@ bool options::parse_opt(char opt, char ***argv,
 		   break;
 	case 'q' : kb_flags |= KB_QUIET;
 		   break;
-	case 'u' : kb_flags |= KB_SUBDIR;
-		   subdir = *((*argv)++);
+	case 'm' : kb_flags |= KB_MASKSTR;
+		   maskstr = *((*argv)++);
 		   break;
 	case 'v' : kb_flags |= KB_VERBOSE;
 		   break;
