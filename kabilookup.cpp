@@ -50,31 +50,35 @@ string lookup::get_helptext()
 {
 	return "\
 \n\
-kabi-lookup -[qw] -c|d|e|s symbol [-f file-list]\n\
+kabi-lookup [-q|w] [-m mask] -e|s|c|d symbol [-f file-list]\n\
     Searches a kabi database for symbols. The results of the search \n\
     are printed to stdout and indented hierarchically.\n\
+    Switches e,s,c,d are mutually exlusive. Only one can be selected. \n\
+    Switches q,w,m, and f are non-conflicting and may be used congruently.\n\
 \n\
+    -e symbol   - Find the EXPORTED function defined by symbol. Print the \n\
+                  function and its argument list as well descendants of \n\
+                  any of its nonscalar arguments or returns. \n\
+    -s symbol   - Search for the symbol and print every exported function \n\
+                  that depends on the symbol. The hierachical position of \n\
+                  the symbol is displayed as indented by the level at which\n\
+                  it was discovered. \n\
+                  With the -w switch, the string must contain the compound \n\
+                  type enclosed in quotes, e.g.\'struct foo\', \'union bar\'\n\
+                  'enum int foo_states\' \n\
     -c symbol   - Counts the instances of the symbol in the kabi tree. \n\
-    -s symbol   - Prints to stdout every exported function that is implicitly \n\
-                  or explicitly affected by the symbol. In default mode, the \n\
-                  chain from the exported function to the symbol is printed.\n\
-                  It is advisable to use \"-c symbol\" first. \n\
-                  The -q switch can be used to suppress output between the \n\
-                  symbol and its ancestral function or agrument.\n\
-    -e symbol   - Specific to EXPORTED functions. Prints the function, \n\
-                  and its argument list as well as all the descendants of \n\
-                  any of its nonscalar arguments. \n\
     -d symbol   - Seeks a data structure and prints its members to stdout. \n\
                   Without the -q switch, descendants of nonscalar members \n\
                   will also be printed.\n\
     -q          - \"Quiet\" option limits the amount of output. \n\
                   Default is verbose.\n\
     -w          - whole words only, default is \"match any and all\" \n\
-    -f filelist - Optional list of data files that were created by kabi-parser. \n\
+    -f filelist - Optional. List of data files that were created by kabi-parser.\n\
                   The default list created by running kabi-data.sh is \n\
 		  \"./redhat/kabi/parser/kabi-files.list\" relative to the \n\
                   top of the kernel tree. \n\
-    -u subdir   - Limit the search to a specific kernel subdirectory. \n\
+    -m mask     - Optional. Limits the search to a directories and files \n\
+                  containing the mask string. \n\
     -h          - this help message.\n";
 }
 
@@ -105,27 +109,26 @@ int lookup::run()
 
 	while (getline(ifs, m_datafile)) {
 
-		if ((m_flags & KB_SUBDIR) &&
-		    (m_datafile.find(m_subdir) == string::npos))
+		if ((m_flags & KB_MASKSTR) &&
+		    (m_datafile.find(m_maskstr) == string::npos))
 			continue;
 
 		if (!(m_flags & KB_COUNT)) {
-			cout << m_datafile << "\r";
-			cout.flush();
+			cerr << "\33[2K\r";
+			cerr << m_datafile;
+			cerr.flush();
 		}
 
 		m_errindex = execute(m_datafile);
-
-		if (!(m_flags & KB_COUNT)) {
-			cout << "\33[2K\r";
-			cout.flush();
-		}
 
 		if (m_isfound && (m_flags & KB_WHOLE_WORD)
 			      && ((m_flags & KB_EXPORTS)
 			      ||  (m_flags & KB_DECL)))
 			break;
 	}
+
+	if (m_flags & KB_COUNT)
+		cout << "\33[2K\r" << m_count;
 
 	cout << endl;
 
@@ -176,7 +179,7 @@ int lookup::process_args(int argc, char **argv)
 
 	m_flags = KB_VERBOSE;
 	m_flags |= m_opts.get_options(&argindex, &argv[0],
-					m_declstr, m_filelist, m_subdir);
+					m_declstr, m_filelist, m_maskstr);
 
 	if (m_flags < 0 || !check_flags())
 		return EXE_BADFORM;
@@ -204,8 +207,8 @@ int lookup::execute(string datafile)
 /*****************************************************************************
  * lookup::exe_count() - count the appearances of the symbol in provided scope
  *
- * Scope can be limited using the -u switch to isolate a subdirectory or
- * even a file.
+ * Scope can be limited using the -u switch to limit the search to directories
+ * and files containing the mask string passed with the -u option.
  *
  */
 int lookup::exe_count()
@@ -222,8 +225,9 @@ int lookup::exe_count()
 		}
 	}
 
-	cout << m_count << "\r";
-	cout.flush();
+	cerr << "\33[2K\r";
+	cerr << m_count;
+	cerr.flush();
 	return m_count !=0 ? EXE_OK : EXE_NOTFOUND;
 }
 
