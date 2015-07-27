@@ -5,34 +5,40 @@ This is a toolkit comprised of the following utilities.
 
 makei.sh    - Uses the kernel make to compile preprocessor .i files.
               To save time, only files that have EXPORT_SYMBOL in them
-	      are processsed.
+	      are processed.
 
 kabi-parser - Parses preprocessor .i files for exported symbols and the
               compound data types on which they depend. The results for
-	      each .i file serialized into a data file ending with .kb_dat.
-	      Exported symbols and their entire dependency trees are
-	      recorded.
+	      each .i file are serialized into a data file. Exported
+              symbols and their entire dependency trees are recorded.
 
 	      The data files have the same name stem and reside in the
 	      same directory as their .i sources. The data is organized as
-	      as a graph using a symbol's crc and its place in the
-	      hierarchy of its dependent exported symbol as the "edges"
-	      between each vertex.
+	      as a map using a symbol's crc and its place in the hierarchy
+	      of its dependent exported symbol.
 
-	      Data is filtered to minimize data file size and maximize
-	      performance. Compound data types will include their
-	      backpointers, which introduces a bit of redundancy, but
-	      maximizes the information in the database.
+	      Compound data types will include their backpointers, which
+              introduces a bit of redundancy, but maximizes the data.
+              Backpointers are followed to only one level below to avoid
+              infinite recursion. Nested duplicates are also detected and
+              limited for the same reason, but all their members will be
+              recorded.
 
 kabi-data.sh - A shell script wrapper for kabi-parser that invokes it for
                each .i file in the kernel tree. This shell script creates
 	       a list of files processed to be used by kabi-lookup tool.
 
-kabi-dump    - Dumps the contents of a serialized .kb_dat file to make it
+kabi-dump    - Dumps the contents of a serialized data file to make it
                humanly readable. It is really only a debugging tool.
 
-kabi-lookup  - Utility that traverses the .kb_dat files looking for symbols
+kabi-lookup  - Utility that traverses the data files looking for symbols
                on which exported symbols depend. The searches are as follows.
+
+               -e <string> - searches for an exported symbol. Partial strings
+	                     that omit the -w switch will generate output
+			     from any and all symbols that match the partial
+			     pattern, but will take a little longer to
+			     perform.
 
 	       -s <string> - searches for the symbol of a compound data type
 	                     that matches the string. Adding the -w "whole
@@ -46,12 +52,6 @@ kabi-lookup  - Utility that traverses the .kb_dat files looking for symbols
 
 			     kabi-lookup -sw "struct pci_dev"
 
-	       -e <string> - searches for an exported symbol. Partial strings
-	                     that omit the -w switch will generate output
-			     from any and all symbols that match the partial
-			     pattern, but will take a little longer to
-			     perform.
-
 	       -d <string> - searches for the declaration of a compound data
 	                     type and prints its tree to the screen.
 
@@ -63,9 +63,8 @@ kabi-lookup  - Utility that traverses the .kb_dat files looking for symbols
 			     tree from the argument level to the level
 			     at which the string is located.
 
-               -u <subdir>   The <subdir> string limits the search to
-	                     subdirectories that match the <subdir>
-			     string.
+               -m <mask>     The mask string limits the search to files and
+	                     subdirectories containing the mask string.
 
 To install from the rpm
 -----------------------
@@ -167,7 +166,7 @@ Will search only for exactly "struct pci_dev" and will do so faster.
 Exact matches for compound data types must include the "struct" or
 "union" declaration.
 
-$ kabi-lookup -u pci -s pci_bus
+$ kabi-lookup -m pci -s pci_bus
 
 Searches for all instances of the string "pci_bus" in any and all
 subdirectories and files that have "pci" in their name.
@@ -188,4 +187,3 @@ There is also a -q option for a quiet "less verbose" output.
 
 To see all the options for kabi-lookup, simply invoke it without
 arguments.
-
