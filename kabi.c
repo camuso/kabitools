@@ -85,7 +85,7 @@ do { \
 
 static const char *helptext ="\
 \n\
-kabi [options] files \n\
+kabi-parser [options] files \n\
 \n\
     Parses \".i\" (intermediate, c-preprocessed) files for exported \n\
     symbols and symbols of structs and unions that are used by the \n\
