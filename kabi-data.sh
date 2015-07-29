@@ -3,6 +3,9 @@
 # kabilist
 #
 
+toolkitversion="3.3"
+fileversion="-1"
+
 attr_bold="\033[1m"
 attr_under="\033[4m"
 attr_OFF="\033[0m"
@@ -10,7 +13,7 @@ attr_OFF="\033[0m"
 usagestr=$(
 cat <<EOF
 
-$0 -d directory [-s subdir -f filelist -e errfile ] [-h]
+$ $(basename $0) -d directory [-s subdir -f filelist -e errfile -V -h]
 
   - Given a path to the top of the kernel tree, this script calls the
     kabi-parser tool to create a kb_dat graph file from each .i file in
@@ -23,12 +26,13 @@ $0 -d directory [-s subdir -f filelist -e errfile ] [-h]
                  to the top of the kernel tree.
   -f filelist  - Optional. Default is redhat/kabi/kabi-datafiles.list
                  relative to the top of the kernel tree. This file will
-		 contain a list of kb_dat graph files that were created from
+                 contain a list of kb_dat graph files that were created from
                  .i files generated previously by the preprocessor.
                  If it already exists, this file will be destroyed and
                  rebuilt.
   -e errfile   - Optional error file. By default, errors are sent
                  to /dev/null
+  -V           - Version of this file.
   -h           - This help message
 
 \0
@@ -36,7 +40,6 @@ EOF
 )
 
 currentdir=$PWD
-verbose=false
 directory=""
 subdir=""
 datafile="kabi-data.dat"
@@ -48,40 +51,41 @@ usage() {
 }
 
 nodir() {
-        echo -e $attr_bold
-	echo -e "\n\tPlease specify the directory at the top of the kernel tree."
-        echo -e $attr_OFF
+	echo -e $attr_bold
+	echo -e "\tPlease specify the directory at the top of the kernel tree."
+	echo -en $attr_OFF
 	usage
 }
 
 noparser() {
-        echo -e $attr_bold
+	echo -e $attr_bold
 	echo -e "\n\t\$directory/kabi-parser does not exist."
-        echo -e $attr_OFF
+	echo -en $attr_OFF
 	exit 1
 }
 
 noexistdir() {
-        echo -e $attr_bold
+	echo -e $attr_bold
 	echo -e "\n\tDirectory $1 does not exist"
-        echo -e $attr_OFF
+	echo -en $attr_OFF
 	usage
 }
 
-while getopts "vhd:s:f:e:" OPTION; do
+while getopts "Vhd:s:f:e:" OPTION; do
     case "$OPTION" in
 
 	d )	directory="$OPTARG"
 		[ -d "$directory" ] || noexistdir $directory
 		;;
 	s )	subdir="$OPTARG"
-                [ -d "$directory/$subdir" ] || noexistdir "$directory/$subdir"
+		[ -d "$directory/$subdir" ] || noexistdir "$directory/$subdir"
 		;;
 	f )	filelist="$OPTARG"
 		;;
 	e )	errfile="$OPTARG"
 		;;
-	v )	verbose=true
+	V )	echo "Version : $toolkitversion$fileversion"
+		exit
 		;;
 	h )	usage
 		;;
@@ -103,14 +107,15 @@ rm -vf $filelist
 
 [ -d "$outdir" ] || mkdir -p $outdir
 
-echo "executing from $PWD"
-
 START=$(date +%s)
 
 find $directory/$subdir -name \*.i -exec sh -c \
-	'echo $1; \
-	kabi-parser -xf ${1%.*}.kb_dat $1 2>$2; \
-	echo "${1%.*}.kb_dat" >> $3;' \
+        'datafile="${1%.*}.kb_dat"; \
+	kabi-parser -xf "$datafile" $1 2>$2; \
+	if [ -f "$datafile" ]; then \
+                echo "$datafile" >> $3; \
+                echo ${1%.*}; \
+        fi;' \
 	sh '{}' $errfile $filelist \;
 
 END=$(date +%s)
