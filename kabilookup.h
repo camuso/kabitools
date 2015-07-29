@@ -70,7 +70,7 @@ private:
 
 	std::vector<errpair> m_errors;
 	std::string m_datafile = "../kabi-data.dat";
-	std::string m_filelist = "./redhat/kabi/parser/kabi-files.list";
+	std::string m_filelist = "./redhat/kabi/kabi-datafiles.list";
 	std::string m_declstr;
 	std::string m_maskstr;
 

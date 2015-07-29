@@ -75,7 +75,7 @@ kabi-lookup [-q|w] [-m mask] -e|s|c|d symbol [-f file-list]\n\
     -w          - whole words only, default is \"match any and all\" \n\
     -f filelist - Optional. List of data files that were created by kabi-parser.\n\
                   The default list created by running kabi-data.sh is \n\
-		  \"./redhat/kabi/parser/kabi-files.list\" relative to the \n\
+		  \"./redhat/kabi/kabi-datafiles.list\" relative to the \n\
                   top of the kernel tree. \n\
     -m mask     - Optional. Limits the search to a directories and files \n\
                   containing the mask string. \n\
