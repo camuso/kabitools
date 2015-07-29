@@ -8,9 +8,10 @@ cmdline=makei
 usagestr=$(
 cat <<EOF
 
-makei.sh <directory>
+$ $(basename $0) directory
 
-\tCreate .i files from all the c files in a directory tree.
+\tCreate .i files from all the c files in the kernel tree.
+\t - This must be executed from the top of the kernel tree.
 \0
 EOF
 )
@@ -90,5 +91,3 @@ seconds=$(( $DIFF % 60 ))
 echo
 echo "Total running time: $minutes minutes and $seconds seconds."
 echo
-
-
