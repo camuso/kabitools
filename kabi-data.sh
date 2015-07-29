@@ -3,10 +3,14 @@
 # kabilist
 #
 
+attr_bold="\033[1m"
+attr_under="\033[4m"
+attr_OFF="\033[0m"
+
 usagestr=$(
 cat <<EOF
 
-$0 -d <directory> -d directory [-s subdir -f filelist -e errfile ] [-h]
+$0 -d directory [-s subdir -f filelist -e errfile ] [-h]
 
   - Given a path to the top of the kernel tree, this script calls the
     kabi-parser tool to create a kb_dat graph file from each .i file in
@@ -15,9 +19,9 @@ $0 -d <directory> -d directory [-s subdir -f filelist -e errfile ] [-h]
     for use by the kabi-lookup tool.
 
   -d directory - Required. Path to the topmost directory of the kernel tree.
-  -s subdir    - Optional directory from which to start parsing, relative
+  -s subdir    - Optional. Limit parsing to a sub directory relative
                  to the top of the kernel tree.
-  -f filelist  - Optional. Default is redhat/kabi/parser/kabi-files.list
+  -f filelist  - Optional. Default is redhat/kabi/kabi-datafiles.list
                  relative to the top of the kernel tree. This file will
 		 contain a list of kb_dat graph files that were created from
                  .i files generated previously by the preprocessor.
@@ -34,38 +38,44 @@ EOF
 currentdir=$PWD
 verbose=false
 directory=""
-subdir="./"
+subdir=""
 datafile="kabi-data.dat"
 errfile="/dev/null"
 
 usage() {
 	echo -e "$usagestr"
-	cd $currentdir
 	exit 1
 }
 
 nodir() {
-	echo -e "\n\tPlease specify a directory in the kernel tree."
+        echo -e $attr_bold
+	echo -e "\n\tPlease specify the directory at the top of the kernel tree."
+        echo -e $attr_OFF
 	usage
 }
 
 noparser() {
-	echo -e "\n\t\$directory/kabi-parser does not exist.\n\n"
+        echo -e $attr_bold
+	echo -e "\n\t\$directory/kabi-parser does not exist."
+        echo -e $attr_OFF
 	exit 1
 }
 
 noexistdir() {
-	echo -e "\n\tDirectory $1 does not exist\n\n"
-	nodir
+        echo -e $attr_bold
+	echo -e "\n\tDirectory $1 does not exist"
+        echo -e $attr_OFF
+	usage
 }
 
 while getopts "vhd:s:f:e:" OPTION; do
     case "$OPTION" in
 
 	d )	directory="$OPTARG"
-		[ "$directory" ] || nodir
+		[ -d "$directory" ] || noexistdir $directory
 		;;
 	s )	subdir="$OPTARG"
+                [ -d "$directory/$subdir" ] || noexistdir "$directory/$subdir"
 		;;
 	f )	filelist="$OPTARG"
 		;;
@@ -83,34 +93,26 @@ while getopts "vhd:s:f:e:" OPTION; do
 done
 
 [ "$directory" ] || nodir
+which kabi-parser
+[ $? -eq 0 ] || noparser
 
-# [ -e "$directory/redhat/kabi/kabi-parser" ] || noparser
-[ -d "$directory" ] || noexistdir $directory
+outdir=$directory/"redhat/kabi"
+filelist=$outdir/"kabi-datafiles.list"
+echo "kabi file list: $filelist"
+rm -vf $filelist
 
-cd $directory
-echo "executing from $PWD"
-
-outdir=$PWD/"redhat/kabi/parser"
-filelist=$outdir/"kabi-files.list"
 [ -d "$outdir" ] || mkdir -p $outdir
 
-rm -vf $filelist
-[ -d "$subdir" ] || noexistdir $subdir
-
-echo "kabi file list: $filelist"
+echo "executing from $PWD"
 
 START=$(date +%s)
 
-find $subdir -name \*.i -exec sh -c \
+find $directory/$subdir -name \*.i -exec sh -c \
 	'echo $1; \
-        grep -qm1 ksymtab $1; \
-        [ $? -eq 0 ] || exit; \
 	kabi-parser -xf ${1%.*}.kb_dat $1 2>$2; \
 	echo "${1%.*}.kb_dat" >> $3;' \
 	sh '{}' $errfile $filelist \;
-echo
-cd -
-echo "returned to $PWD"
+
 END=$(date +%s)
 DIFF=$(( $END - $START ))
 
