@@ -75,6 +75,11 @@ string &rowman::indent(int padsize)
 	return out;
 }
 
+string rowman::get_name(qrow &row)
+{
+	return row.flags & CTL_POINTER ? "*" + row.name : row.name;
+}
+
 void rowman::print_row(qrow& r, bool quiet)
 {
 	if (is_dup(r))
@@ -90,14 +95,14 @@ void rowman::print_row(qrow& r, bool quiet)
 		clear_dups(r);
 		if (set_dup(r))
 			cout << " EXPORTED: " << r.decl << " "
-			     << r.name << endl;
+			     << get_name(r) << endl;
 		break;
 	case LVL_ARG:
 		clear_dups(r);
 		if (set_dup(r)) {
 			cout << ((r.flags & CTL_RETURN) ?
 					 "  RETURN: " : "  ARG: ");
-			cout << r.decl << " " << r.name << endl;
+			cout << r.decl << " " << get_name(r) << endl;
 		}
 		break;
 	default:
@@ -107,7 +112,7 @@ void rowman::print_row(qrow& r, bool quiet)
 
 		if (set_dup(r) && !quiet)
 			cout << indent(r.level) << r.decl << " "
-			     << r.name << endl;
+			     << get_name(r) << endl;
 		break;
 	}
 }
@@ -130,7 +135,7 @@ void rowman::print_row_normalized(qrow& r, bool quiet)
 	if (set_dup(r)) {
 		cout << indent(current_level) << r.decl;
 		if ((current_level) > 0)
-			cout << " " << r.name;
+			cout << " " << get_name(r);
 		cout << endl;
 	}
 }
