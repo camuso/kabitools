@@ -1,32 +1,28 @@
 diff --git a/.gitignore b/.gitignore
-index f73f35f..4983756 100644
+index f73f35f..13a3e04 100644
 --- a/.gitignore
 +++ b/.gitignore
-@@ -100,6 +100,8 @@ x509.genkey
+@@ -100,6 +100,7 @@ x509.genkey
  #
  configs/*.config
  localversion
-+redhat/kabi/kabi-datafiles.list
 +*.kb_dat
  
  # configuration file for rh- targets
  .rhel7git.mk
 diff --git a/Makefile b/Makefile
-index fc7a8cd..3ba0340 100644
+index fc7a8cd..3ceb050 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -345,6 +345,10 @@ INSTALLKERNEL  := installkernel
+@@ -345,6 +345,7 @@ INSTALLKERNEL  := installkernel
  DEPMOD		= /sbin/depmod
  PERL		= perl
  CHECK		= sparse
-+KABIPARSER	= /usr/sbin/kabi-parser
-+
-+KABIDATADIR	= redhat/kabi
-+KABIDATAFILE	= $(KABIDATADIR)/kabi-datafiles.list
++KABIPARSER 	= $(shell if [ -x "/usr/sbin/kabi-parser" ]; then echo kabi-parser; fi)
  
  CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
  		  -Wbitwise -Wno-return-void $(CF)
-@@ -408,7 +412,7 @@ KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(S
+@@ -408,7 +409,7 @@ KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(S
  export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION
  export ARCH SRCARCH CONFIG_SHELL HOSTCC HOSTCFLAGS CROSS_COMPILE AS LD CC
  export CPP AR NM STRIP OBJCOPY OBJDUMP
@@ -35,41 +31,44 @@ index fc7a8cd..3ba0340 100644
  export HOSTCXX HOSTCXXFLAGS LDFLAGS_MODULE CHECK CHECKFLAGS
  
  export KBUILD_CPPFLAGS NOSTDINC_FLAGS LINUXINCLUDE OBJCOPYFLAGS LDFLAGS
-diff --git a/redhat/Makefile b/redhat/Makefile
-index 07783d8..a7dac25 100644
---- a/redhat/Makefile
-+++ b/redhat/Makefile
-@@ -57,6 +57,10 @@ rh-configs-prep: rh-configs
- rh-configs-arch-prep:
- 	cd $(REDHAT)/configs; ./build_configs.sh $(MACH)
+@@ -1318,6 +1319,7 @@ clean: $(clean-dirs)
+ 		-o -name '.*.d' -o -name '.*.tmp' -o -name '*.mod.c' \
+ 		-o -name '*.symtypes' -o -name 'modules.order' \
+ 		-o -name modules.builtin -o -name '.tmp_*.o.*' \
++		-o -name '*.i' -o -name '*.kb_dat' -o -name 'kabi-datafiles.*' \
+ 		-o -name '*.gcno' \) -type f -print | xargs rm -f
  
-+rh-clean-kabi:
-+	rm -f $(REDHAT)/kabi/kabi-datafiles.list
-+	find $(TOPDIR) \( -iname '*.kb_dat' -or -iname '*.i' \) -type f | xargs rm -f
-+
- rh-clean-configs:
- 	cd $(REDHAT)/configs; rm -f kernel-*.config
- 
-@@ -71,7 +75,7 @@ rh-clean-rpmdirs:
- 		rm -rf $$i; \
- 	done;
- 
--rh-clean: rh-clean-sources rh-clean-configs rh-clean-rpmdirs
-+rh-clean: rh-clean-sources rh-clean-configs rh-clean-rpmdirs rh-clean-kabi
- 
- rh-stub-key:
- 	@echo "Copying pre-generated keys";
+ # Generate tags for editors
+diff --git a/redhat/.gitignore b/redhat/.gitignore
+index 6ea87b3..11f12d2 100644
+--- a/redhat/.gitignore
++++ b/redhat/.gitignore
+@@ -9,3 +9,4 @@ kabi/Module.kabi_x86_64
+ kabi/kabi-current
+ kabi/kabi-rhel7?
+ kabi/kabi-rhel7?/*
++kabi/kabi-datafiles.list
 diff --git a/scripts/Makefile.build b/scripts/Makefile.build
-index d5d859c..1a4db5e 100644
+index d5d859c..3e719d4 100644
 --- a/scripts/Makefile.build
 +++ b/scripts/Makefile.build
-@@ -209,6 +209,18 @@ cmd_cc_i_c       = $(CPP) $(c_flags)   -o $@ $<
+@@ -30,6 +30,9 @@ ldflags-y  :=
+ subdir-asflags-y :=
+ subdir-ccflags-y :=
+ 
++KABIDATADIR	= redhat/kabi
++KABIDATAFILE	= $(KABIDATADIR)/kabi-datafiles.list
++
+ # Read auto.conf if it exists, otherwise ignore
+ -include include/config/auto.conf
+ 
+@@ -209,6 +212,18 @@ cmd_cc_i_c       = $(CPP) $(c_flags)   -o $@ $<
  $(obj)/%.i: $(src)/%.c FORCE
  	$(call if_changed_dep,cc_i_c)
  
 +cmd_kabiparser = 					\
 +    $(CPP) $(c_flags) -o $(1) $<;			\
-+    echo $(2) >> redhat/kabi/kabi-datafiles.list;	\
++    echo $(2) >> $(KABIDATAFILE);			\
 +    $(KABIPARSER) -xf $(2) $(1);
 +
 +quiet_cmd_cc_kabiparser_c = KABI $@
@@ -82,11 +81,13 @@ index d5d859c..1a4db5e 100644
  cmd_gensymtypes =                                                           \
      $(CPP) -D__GENKSYMS__ $(c_flags) $< |                                   \
      $(GENKSYMS) $(if $(1), -T $(2))                                         \
-@@ -253,6 +265,8 @@ cmd_modversions =								\
+@@ -253,6 +268,10 @@ cmd_modversions =								\
  		$(call cmd_gensymtypes,$(KBUILD_SYMTYPES),$(@:.o=.symtypes))	\
  		    > $(@D)/.tmp_$(@F:.o=.ver);					\
  										\
-+		$(call cmd_kabiparser,$(@:.o=.i),$(@:.o=.kb_dat))		\
++		if [ "$(KABIPARSER)" ]; then					\
++			$(call cmd_kabiparser,$(@:.o=.i),$(@:.o=.kb_dat))	\
++		fi;								\
 +										\
  		$(LD) $(LDFLAGS) -r -o $@ $(@D)/.tmp_$(@F) 			\
  			-T $(@D)/.tmp_$(@F:.o=.ver);				\
