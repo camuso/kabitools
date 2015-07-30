@@ -25,6 +25,7 @@ kabi-lookup - given the symbol name of an exported symbol, determines
 
 %prep
 %autosetup
+mkdir -p $RPM_BUILD_ROOT%{_datadir}
 
 %build
 make %{?_smp_mflags}
@@ -36,7 +37,7 @@ cp %{_topdir}/BUILD/%{name}-%{version}/kabi-dump    $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/kabi-lookup  $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/kabi-data.sh $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/makei.sh     $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}-%{version}/kernel-make.patch $HOME/.
+cp %{_topdir}/BUILD/%{name}-%{version}/kernel-make.patch $RPM_BUILD_ROOT%{_sbindir}
 
 %files
 %defattr(-,root,root)
@@ -45,6 +46,7 @@ cp %{_topdir}/BUILD/%{name}-%{version}/kernel-make.patch $HOME/.
 %{_sbindir}/kabi-lookup
 %{_sbindir}/kabi-data.sh
 %{_sbindir}/makei.sh
+%{_sbindir}/kernel-make.patch
 
 %doc
 
