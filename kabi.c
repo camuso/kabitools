@@ -520,6 +520,8 @@ int main(int argc, char **argv)
 	int argindex = 0;
 	char *file;
 	struct string_list *filelist = NULL;
+	static char *sparse_argv[] = { "sparse", "-Wall_off", NULL, NULL };
+	static int sparse_argc = sizeof(sparse_argv) / sizeof(char *) - 1;
 
 	DBG(setbuf(stdout, NULL);)
 
@@ -532,13 +534,14 @@ int main(int argc, char **argv)
 	argv[argindex] = argv[0];
 	argv += argindex;
 	argc -= argindex;
+	sparse_argv[2] = argv[1];
 
 	if (cumulative) {
 		kb_restore_dnodemap(datafilename);
 		remove(datafilename);
 	}
 
-	symlist = sparse_initialize(argc, argv, &filelist);
+	symlist = sparse_initialize(sparse_argc, sparse_argv, &filelist);
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		struct sparm *sp = kb_new_firstsparm(file);
