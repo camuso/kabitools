@@ -120,6 +120,17 @@ static void insert_node(Tmap& xnodemap, Tpair xpair)
 	xnodemap.insert(xnodemap.end(), xpair);
 }
 
+static inline bool is_child(crcnodemap& children, crc_t childcrc)
+{
+	crciterator it = find_if(children.begin(), children.end(),
+		[childcrc](crcpair lcrcpair)
+		{
+			crc_t lcrc = lcrcpair.second;
+			return lcrc == childcrc;
+		});
+	return it != children.end();
+}
+
 /******************************************************************************
  * alloc_sparm
  *
@@ -335,9 +346,11 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 	cnp = insert_cnode(sib->second.siblings, make_pair(sp->order, *cn));
 	sp->cnode = (void *)&cnp->second;
 
-	// Insert the order/crc pair of this cnode into its parent's
+	// If this is the first time we've encountered this child, then
+	// insert the order/crc pair of this cnode into its parent's
 	// children cnodemap.
-	insert_node(pdn->children, make_pair(sp->order, sp->crc));
+	if (!is_child(pdn->children, sp->crc))
+		insert_node(pdn->children, make_pair(sp->order, sp->crc));
 
 	// If this dnode is a dup or a backpointer, then return without
 	// inserting the dnode into the public_dnodemap, because there's
