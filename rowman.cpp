@@ -124,12 +124,12 @@ void rowman::print_row_normalized(qrow& r, bool quiet)
 		m_normalized_level = r.level;
 	}
 
-	int current_level = r.level - m_normalized_level;
+	int current_level = max((r.level - m_normalized_level), 0);
 
 	if (quiet && (current_level > 1))
 		return;
 
-	if (is_dup(r))
+	if (quiet && is_dup(r))
 		return;
 
 	if (set_dup(r)) {
