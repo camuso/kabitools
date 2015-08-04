@@ -35,6 +35,7 @@ enum ctlflags {
 	CTL_FILE	= 1 << 9,
 	CTL_HASLIST	= 1 << 10,
 	CTL_ISDUP	= 1 << 11,
+	CTL_EXPSTRUCT	= 1 << 12,
 };
 
 enum levels {

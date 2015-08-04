@@ -280,6 +280,17 @@ static void process_return(struct symbol *basetype, struct sparm *parent)
 		proc_symlist(sp, (struct symbol_list *)sp->symlist, CTL_NESTED);
 }
 
+static void process_exported_struct(struct sparm *sp, struct sparm *parent)
+{
+	const char *decl = kb_get_decl(sp);
+	sp->flags |= CTL_EXPSTRUCT;
+	kb_init_crc(decl, sp, parent);
+	kb_update_nodes(sp, parent);
+
+	if (sp->flags & CTL_HASLIST)
+		proc_symlist(sp, (struct symbol_list *)sp->symlist, CTL_NESTED);
+}
+
 static void build_branch(char *symname, struct sparm *parent)
 {
 	struct symbol *sym;
@@ -289,15 +300,24 @@ static void build_branch(char *symname, struct sparm *parent)
 		struct symbol *basetype = sym->ctype.base_type;
 		struct sparm *sp = kb_new_sparm(parent, CTL_EXPORTED);
 #ifndef NDEBUG
-		if (strstr(symname, "ipmi_smi_add_proc_entry") != NULL)
+		if (strstr(symname, "bio_set") != NULL)
 			puts(symname);
 #endif
 		sp->name = symname;
 		kabiflag = true;
 		get_declist(sp, sym);
-		DBG(decl = kb_cstrcat(kb_get_decl(sp), sp->name);)
-		kb_init_crc(sp->name, sp, parent);
+
+		// If this is an exported struct or union, we need the decl
+		// to correctly calculate the crc.
+		DBG(decl = kb_get_decl(sp);)
 		prdbg(" EXPORTED: %s\n", decl);
+
+		if (sp->flags & CTL_STRUCT) {
+			process_exported_struct(sp, parent);
+			return;
+		}
+
+		kb_init_crc(sp->name, sp, parent);
 		kb_update_nodes(sp, parent);
 
 		if (sp->flags & CTL_HASLIST)
