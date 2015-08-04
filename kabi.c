@@ -301,7 +301,7 @@ static void build_branch(char *symname, struct sparm *parent)
 		struct sparm *sp = kb_new_sparm(parent, CTL_EXPORTED);
 #ifndef NDEBUG
 		if (strstr(symname, "bio_set") != NULL)
-			puts(symname);
+			printf("symbolname: %s\n", symname);
 #endif
 		sp->name = symname;
 		kabiflag = true;
@@ -310,9 +310,13 @@ static void build_branch(char *symname, struct sparm *parent)
 		// If this is an exported struct or union, we need the decl
 		// to correctly calculate the crc.
 		DBG(decl = kb_get_decl(sp);)
-		prdbg(" EXPORTED: %s\n", decl);
+		prdbg(" EXPORTED: %s %s\n", decl, sp->name);
 
-		if (sp->flags & CTL_STRUCT) {
+#ifndef NDEBUG
+		if (strstr(decl, "bio_set") != NULL)
+			printf("%s %s\n", decl, sp->name);
+#endif
+		if (!(sp->flags & CTL_FUNCTION)) {
 			process_exported_struct(sp, parent);
 			return;
 		}
