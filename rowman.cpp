@@ -80,6 +80,7 @@ string rowman::get_name(qrow &row)
 	return row.flags & CTL_POINTER ? "*" + row.name : row.name;
 }
 
+#include <stdio.h>
 void rowman::print_row(qrow& r, bool quiet)
 {
 	if (is_dup(r))
@@ -96,12 +97,19 @@ void rowman::print_row(qrow& r, bool quiet)
 		if (set_dup(r))
 			cout << " EXPORTED: " << r.decl << " "
 			     << get_name(r) << endl;
+		m_isexpstruct = (r.flags & CTL_EXPSTRUCT) ? true : false;
+
 		break;
 	case LVL_ARG:
 		clear_dups(r);
 		if (set_dup(r)) {
-			cout << ((r.flags & CTL_RETURN) ?
+
+			if (!m_isexpstruct)
+				cout << ((r.flags & CTL_RETURN) ?
 					 "  RETURN: " : "  ARG: ");
+			else
+				cout << "  ";
+
 			cout << r.decl << " " << get_name(r) << endl;
 		}
 		break;

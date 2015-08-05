@@ -55,6 +55,7 @@ private:
 	rowvec_t dups;
 	bool m_normalized = false;
 	int m_normalized_level;
+	bool m_isexpstruct = false;
 };
 
 
