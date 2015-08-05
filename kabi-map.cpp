@@ -43,7 +43,11 @@ static int order = 0;
 void cnode::operator = (const cnode& cn)
 {
 	function = cn.function;
+	argument = cn.argument;
 	level = cn.level;
+	order = cn.order;
+	flags = cn.flags;
+	name = cn.name;
 }
 
 bool cnode::operator ==(const cnode& cn) const
@@ -411,7 +415,7 @@ bool kb_is_dup(struct sparm *sp)
 {
 	dnodemap& dnmap = public_dnodemap;
 
-	if (sp->level < LVL_ARG)
+	if (sp->level <= LVL_ARG)
 		return false;
 
 	dniterator dnit = dnmap.find(sp->crc);
