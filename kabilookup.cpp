@@ -54,7 +54,7 @@ kabi-lookup [-q|w] [-m mask] -e|s|c|d symbol [-f file-list]\n\
     Searches a kabi database for symbols. The results of the search \n\
     are printed to stdout and indented hierarchically.\n\
     Switches e,s,c,d are mutually exlusive. Only one can be selected. \n\
-    Switches q,w,m, and f are non-conflicting and may be used congruently.\n\
+    Switches q,w,m, and f do not conflict and may be used concurrently.\n\
 \n\
     -e symbol   - Find the EXPORTED function defined by symbol. Print the \n\
                   function and its argument list as well descendants of \n\
@@ -130,6 +130,10 @@ int lookup::run()
 	if (m_flags & KB_COUNT)
 		cout << "\33[2K\r" << m_count;
 
+	if (!(m_flags & KB_COUNT))
+		cerr << "\33[2K\r";
+
+	cerr.flush();
 	cout << endl;
 
 	if (m_isfound)
@@ -305,29 +309,98 @@ int lookup::get_siblings_up(dnode& dn)
 }
 
 /*****************************************************************************
- * lookup::get_children(dnode& dn)
+ * lookup::get_child_sibling(cnode &parent, cnodemap &child_sibmap)
  *
- * Given references to a dnode and a cnode instance of it, walk the dnode's
- * children crcmap and gather the info on the children.
- * This is done reursively, until we've parsed all the children and all
- * their descendants.
+ * parent - the cnode of the parent
+ * child_sibmap - the map of the child's sibling cnodes
+ *
+ * Search the sibling map for the cnode that has the parent's level + 1 and
+ * the same ancestry as the parent.
  */
-int lookup::get_children(dnode& dn)
+bool lookup::get_child_sibling(cnode& parent, cnodemap& sibmap, cnode &sib)
 {
-	for (auto i : dn.children) {
-		int order = i.first;
-		crc_t crc = i.second;
-		dnode dn = *kb_lookup_dnode(crc);
-		cnodemap siblings = dn.siblings;
-		cnode cn = siblings[order];
+	cniterator cnit;
 
-		m_rowman.fill_row(dn, cn);
+	cnit = find_if (sibmap.begin(), sibmap.end(),
+		[parent](cnpair lcnp)
+		{
+			cnode lcn = lcnp.second;
+			int nextlevel = parent.level + 1;
+
+			switch (parent.level) {
+			case LVL_FILE :
+				return true;
+			case LVL_EXPORTED :
+				return (lcn.level == nextlevel);
+			case LVL_ARG  :
+				return ((lcn.level == nextlevel) &&
+					(lcn.function == parent.function));
+			default :
+				return ((lcn.level == nextlevel) &&
+					(lcn.argument == parent.argument) &&
+					(lcn.function == parent.function));
+			}
+		});
+
+	if (cnit != sibmap.end()) {
+		sib = cnit->second;
+		return true;
+	}
+
+	return false;
+}
+
+
+/*****************************************************************************
+ * lookup::is_dup(crc_t crc)
+ *
+ * Check the m_dups vector for this crc. Return true if we've seen it before.
+ */
+bool lookup::is_dup(crc_t crc)
+{
+	vector<crc_t>::iterator it;
+
+	it = find_if (m_dups.begin(), m_dups.end(),
+
+		[crc](crc_t lcrc)
+		{
+			return lcrc == crc;
+		});
+
+	return (it == m_dups.end()) ? false : true;
+}
+
+/*****************************************************************************
+ * lookup::get_children(dnode& pdn, cnode& pcn)
+ *
+ * pdn - parent dnode
+ * pcn - parent cnode
+ *
+ * Given a reference to a dnode, walk the dnode's children crcmap and gather
+ * the info on the children. This is done reursively, until we've parsed all
+ * the children and all their descendants.
+ */
+int lookup::get_children(dnode& pdn, cnode& pcn)
+{
+	for (auto i : pdn.children) {
+		crc_t crc = i.second;
+		dnode cdn = *kb_lookup_dnode(crc);	// child dnode
+		cnodemap siblings = cdn.siblings;
+		cnode ccn;
+		if (!(get_child_sibling(pcn, siblings, ccn)))
+			return EXE_NOTFOUND_SIMPLE;
+
+		if (ccn.level <= LVL_ARG)
+			m_dups.clear();
+
+		m_rowman.fill_row(cdn, ccn);
 		DBG(m_rowman.print_row(m_rowman.rows.back());)
 
-		if (cn.flags & (CTL_BACKPTR | CTL_ISDUP))
+		if ((is_dup(crc)) || ccn.flags & (CTL_BACKPTR))
 			continue;
 
-		get_children(dn);
+		m_dups.push_back(crc);
+		get_children(cdn, ccn);
 	}
 	return EXE_OK;
 }
@@ -345,11 +418,34 @@ int lookup::get_siblings(dnode& dn)
 		cnode cn = it.second;
 		m_rowman.fill_row(dn, cn);
 		DBG(m_rowman.print_row(m_rowman.rows.back());)
-		get_children(dn);
+		get_children(dn, cn);
 	}
 	return EXE_OK;
 }
 
+/*****************************************************************************
+ * lookup::get_siblings_exported(dnode& dn)
+ * dn - reference to a dnode
+ *
+ * Walk the siblings cnodemap in the dnode to access each instance of the
+ * symbol characterized by the dnode.
+ */
+int lookup::get_siblings_exported(dnode& dn)
+{
+	bool found = false;
+	for (auto it : dn.siblings) {
+		cnode cn = it.second;
+
+		if (!(cn.flags & CTL_EXPORTED))
+			continue;
+
+		m_rowman.fill_row(dn, cn);
+		DBG(m_rowman.print_row(m_rowman.rows.back());)
+		get_children(dn, cn);
+		found = true;
+	}
+	return found ? EXE_OK : EXE_NOTFOUND_SIMPLE;
+}
 
 /*****************************************************************************
  * lookup::get_file_of_export(dnode &dn)
@@ -430,6 +526,7 @@ int lookup::exe_struct()
 int lookup::exe_exports()
 {
 	bool quiet = m_flags & KB_QUIET;
+	int status = EXE_OK;
 
 	if (m_opts.kb_flags & KB_WHOLE_WORD) {
 		unsigned long crc = raw_crc32(m_declstr.c_str());
@@ -438,40 +535,33 @@ int lookup::exe_exports()
 		if (!dn)
 			return EXE_NOTFOUND_SIMPLE;
 
-		// If there is not exactly one sibling, then this is not an
-		// exported symbol. Exports all exist in the same name space
-		// and must be unique; there can only be one.
-		if (dn->siblings.size() != 1)
-			return EXE_NOTFOUND_SIMPLE;
-
 		m_isfound = true;
 		m_rowman.rows.clear();
 		get_file_of_export(*dn);
-		get_siblings(*dn);
-		m_rowman.put_rows_from_front(quiet);
+		status = get_siblings_exported(*dn);
+
+		if (status == EXE_OK)
+			m_rowman.put_rows_from_front(quiet);
 
 	} else {
 
 		for (auto it : m_dnmap) {
 			dnode& dn = it.second;
 
-			if (dn.siblings.size() != 1)
-				continue;
-
 			cniterator cnit = dn.siblings.begin();
 			cnode cn = cnit->second;
 
-			if (!(cn.flags & CTL_EXPORTED))
-				continue;
-
-			if (cn.name.find(m_declstr) == string::npos)
+			if ((cn.level != LVL_EXPORTED) ||
+			    (cn.name.find(m_declstr) == string::npos))
 				continue;
 
 			m_isfound = true;
 			m_rowman.rows.clear();
 			get_file_of_export(dn);
-			get_siblings(dn);
-			m_rowman.put_rows_from_front(quiet);
+			status = get_siblings_exported(dn);
+
+			if (status == EXE_OK)
+				m_rowman.put_rows_from_front(quiet);
 		}
 	}
 
@@ -504,7 +594,7 @@ int lookup::exe_decl()
 		m_rowman.rows.clear();
 		m_rowman.fill_row(*dn, cn);
 
-		get_children(*dn);
+		get_children(*dn, cn);
 		m_rowman.put_rows_from_front_normalized(quiet);
 
 	} else {
@@ -521,7 +611,7 @@ int lookup::exe_decl()
 			m_rowman.rows.clear();
 			m_rowman.fill_row(dn, cn);
 
-			get_children(dn);
+			get_children(dn, cn);
 			m_rowman.put_rows_from_front_normalized(quiet);
 		}
 	}

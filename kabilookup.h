@@ -40,21 +40,19 @@ private:
 	int process_args(int argc, char **argv);
 	bool check_flags();
 	int count_bits(unsigned mask);
-	std::string &pad_out(int padsize);
-	bool find_decl(dnode& dnr, std::string decl);
-	dnode* find_qnode_nextlevel(dnode* dn, long unsigned crc, int level);
-	int get_decl_list(std::vector<dnode>& retlist);
-	void show_spinner(int& count);
 	int get_parents(cnode &cn);
-	int get_children(dnode& dn);
+	int get_children(dnode& pdn, cnode &pcn);
 	int get_siblings(dnode& dn);
 	int get_siblings_up(dnode& dn);
+	int get_siblings_exported(dnode& dn);
 	int execute(std::string datafile);
 	int exe_count();
 	int exe_struct();
 	int exe_exports();
 	int exe_decl();
 	int get_file_of_export(dnode& dn);
+	bool is_dup(crc_t crc);
+	bool get_child_sibling(cnode& parent, cnodemap& sibmap, cnode &sib);
 
 	// member classes
 	dnodemap& m_dnmap = kb_get_public_dnodemap();
@@ -69,6 +67,7 @@ private:
 	typedef std::pair<int, std::string> errpair;
 
 	std::vector<errpair> m_errors;
+	std::vector<crc_t> m_dups;
 	std::string m_datafile = "../kabi-data.dat";
 	std::string m_filelist = "./redhat/kabi/kabi-datafiles.list";
 	std::string m_declstr;
