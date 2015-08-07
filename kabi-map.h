@@ -47,11 +47,9 @@ enum levels {
 	LVL_COUNT
 };
 
-// Seek directions for qnode searches
-//
 enum seekdir {
-	SK_UP = +1,
-	SK_DN = -1
+	SK_PARENT = -1,
+	SK_CHILD = 1
 };
 
 typedef unsigned long crc_t;
@@ -301,6 +299,7 @@ public:
 extern dnodemap& kb_get_public_dnodemap();
 extern int kb_read_dnodemap(std::string filename, dnodemap& dnmap);
 extern dnode* kb_lookup_dnode(crc_t crc);
+extern bool kb_is_adjacent(cnode& ref, cnode &dyn, seekdir step);
 
 extern "C"
 {

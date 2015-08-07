@@ -48,6 +48,8 @@ void cnode::operator = (const cnode& cn)
 	order = cn.order;
 	flags = cn.flags;
 	name = cn.name;
+	parent = cn.parent;
+	sibling = cn.sibling;
 }
 
 bool cnode::operator ==(const cnode& cn) const
@@ -124,17 +126,6 @@ static void insert_node(Tmap& xnodemap, Tpair xpair)
 	xnodemap.insert(xnodemap.end(), xpair);
 }
 
-static inline bool is_child(crcnodemap& children, crc_t childcrc)
-{
-	crciterator it = find_if(children.begin(), children.end(),
-		[childcrc](crcpair lcrcpair)
-		{
-			crc_t lcrc = lcrcpair.second;
-			return lcrc == childcrc;
-		});
-	return it != children.end();
-}
-
 /******************************************************************************
  * alloc_sparm
  *
@@ -174,6 +165,47 @@ sparm* init_sparm(sparm* parent, sparm *sp, enum ctlflags flags)
 /***********************************
 **  Global functions
 ***********************************/
+
+/******************************************************************************
+ * kb_is_adjacent(cnode &ref, cnode &dyn, int step)
+ *
+ * ref - cnode that is the point of reference
+ * dyn - cnode that has been selected to be compared, usually from a cnodemap
+ *       in a loop.
+ * step - the direction of the comparison.
+ *
+ * Determine whether the ref cnode has the same ancestry and is the correct
+ * level up or down (parent or child) from the dyn cnode.
+ *
+ * Seeking a parent
+ *	ref <- child cnode
+ *	dyn <- parent cnode
+ *	step <- SK_PARENT
+ *
+ * Seeking a child
+ *	ref <- parent cnode
+ *	dyn <- child cnode
+ *	step <- SK_CHILD
+ */
+bool kb_is_adjacent(cnode& ref, cnode& dyn, seekdir step)
+{
+	int nextlevel = ref.level + step;
+
+	switch (ref.level) {
+	case LVL_FILE :
+		return true;
+	case LVL_EXPORTED :
+		return (dyn.level == nextlevel);
+	case LVL_ARG :
+		return ((dyn.level == nextlevel) &&
+			(dyn.function == ref.function));
+	default :
+		return ((dyn.level == nextlevel) &&
+			(dyn.function == ref.function) &&
+			(dyn.argument == ref.argument));
+	}
+	return false;
+}
 
 /******************************************************************************
  * init_crc(const char *decl, qnode *qn, qnode *parent)
@@ -280,6 +312,10 @@ struct sparm *kb_new_firstsparm(char *file)
 /****************************************************************************
  * kb_update_nodes
  *
+ * This is the heart of the graph and establishes the edges (cnodes and
+ * crcnodes) to each vertex (dnode). Consequently, there's a lot of
+ * 'splainin' to do.
+ *
  * Given the sparm of the newly processed node and its parent, update the
  * corresponding dnode and cnode with data collected by kabi::get_symbols
  * and kabi::get_declist.
@@ -293,7 +329,7 @@ struct sparm *kb_new_firstsparm(char *file)
  * NOTE:
  *	make_pair creates a pair on the stack, so it is not persistent.
  *
- * Create a new cnode for this dnode.
+ * Create a new cnode (edge) for this dnode (vertex).
  *	func
  *	arg
  *	level
@@ -302,7 +338,7 @@ struct sparm *kb_new_firstsparm(char *file)
  *	name
  *
  * Into the new cnode ...
- *	Put the order/crc pair of the parent dnode the new cnode parent field
+ *	Put the order/crc pair of the parent dnode in the new cnode parent field
  *	Put the order/crc pair of the sibling dnode in the new cnode sibling
  *	field
  *		Must first determine where the sibling dnode is. Do a lookup
@@ -314,21 +350,23 @@ struct sparm *kb_new_firstsparm(char *file)
  * Into the sibling dnode
  *	Put this new cnode into the sibling dnode's siblings cnodemap
  * Into the parent dnode
- *	Put the order/crc pair of this dnode into its parent's children dnodemap
+ *	Put the order/crc pair of this dnode into its parent's crcnodemap
+ *	of its children.
  */
 void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 {
 	// Varibles we can assign now
-	dnode* dn = (dnode *)sp->dnode;		// this dnode
-	dnpair dnp = make_pair(sp->crc, *dn);	// this dnode pair
-	dnode* pdn = (dnode *)parent->dnode;	// parent dnode
-	crc_t func = sp->function;
-	crc_t arg = sp->argument;
+	dnode* dn = (dnode *)sp->dnode;		// ptr to this dnode
+	dnpair dnp = make_pair(sp->crc, *dn);	// this dnode pair <crc,dnode>
+	dnode* pdn = (dnode *)parent->dnode;	// ptr to parent dnode
+	crc_t func = sp->function;		// ancestry crc's
+	crc_t arg = sp->argument;		// :
 
 	// Variables we must assign later.
-	cnode* cn;	// cnode pointer for this dnode
-	cnpair* cnp;
-	dnpair* sib;	// sibling dnode pair
+	cnode* cn;	// ptr to cnode for this dnode
+	cnpair* cnp;	// ptr to cnode pair <order,cnode> for this dnode
+	dnpair* sib;	// ptr to first sibling dnode pair <crc,dnode>
+	cnode* sibcn;	// ptr to first sibling cnode in dnode's cnodemap
 
 	// Extract the declaration string from the one stored in the dnode
 	// by kabi.c::get_declist and store it in the sparm.decl field to
@@ -338,22 +376,33 @@ void kb_update_nodes(struct sparm *sp, struct sparm *parent)
 	// Create a cnode for this declaration.
 	cn = alloc_cnode(func, arg, sp->level, sp->order, sp->flags, sp->name);
 	cn->parent = make_pair(parent->order, parent->crc);
-	cn->sibling = make_pair(sp->order, sp->crc);
 
 	// If we've seen this dnode before, use the cnodepair to lookup
 	// the original dnode instance and insert the cnode of the new
 	// dnode into the sibling cnodemap of the original instance.
 	// If this is the first instance of this dnode, then its cnode
 	// will be the first in its siblings cnodemap.
+	// Either way, its sibling field will point to the first sibling
+	// in the sibling cnodemap, which is the sibling belonging to the
+	// original instance of this declaration/symbol.
 	sib = lookup_dnode(sp->crc);
 	sib = sib ? sib : &dnp;
+
+	// If we haven't created the dnode's siblings cnodemap yet, it's
+	// because this is the first of its kind. Therefore, the first
+	// sib in the dnode's siblings cnodemap will be this dnode's cnode.
+	sibcn = sib->second.siblings.size() > 0 ?
+		&(sib->second.siblings.begin()->second) : cn;
+
+	cn->sibling = make_pair(sibcn->order, sib->first);
 	cnp = insert_cnode(sib->second.siblings, make_pair(sp->order, *cn));
 	sp->cnode = (void *)&cnp->second;
 
-	// If this is the first time we've encountered this child, then
-	// insert the order/crc pair of this cnode into its parent's
-	// children cnodemap.
-	if (!is_child(pdn->children, sp->crc))
+	// If this cnode is one level up from its parent's cnode, and shares
+	// the same ancestry as the parent's cnode, then we can insert it
+	// into the parent's children cnodemap. Parent's cnode is the first
+	// one in the parent dnode's sibling cnodemap.
+	if (kb_is_adjacent(pdn->siblings.begin()->second, *cn, SK_CHILD))
 		insert_node(pdn->children, make_pair(sp->order, sp->crc));
 
 	// If this dnode is a dup or a backpointer, then return without
@@ -495,11 +544,11 @@ void static inline dump_cnmap(cnodemap& cnmap, const char* field)
 
 	cout << format("\n\t%s: %3d\n") % field % cnmap.size();
 
+	// func arg level order flags par_order par_crc sib_order sib_crc name
 	for (auto i : cnmap) {
 		int order = i.first;
 		cnode& cn = i.second;
 
-		// crc level order flags func_crc arg_crc name
 		cout << format("\t%12lu %12lu %3d %5d %04X %5d %12lu %5d %12lu ")
 			% cn.function % cn.argument
 			% cn.level % order % cn.flags
