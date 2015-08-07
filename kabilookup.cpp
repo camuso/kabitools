@@ -263,21 +263,8 @@ int lookup::get_parents(cnode& cn)
 	cnit = find_if(siblings.begin(), siblings.end(),
 		[cn](cnpair& lcnp) {
 			cnode lcn = lcnp.second;
-			int nextlevelup = cn.level - 1;
-
-			switch (cn.level) {
-			case LVL_FILE :
-				return true;
-			case LVL_EXPORTED :
-				return (lcn.level == nextlevelup);
-			case LVL_ARG  :
-				return ((lcn.level == nextlevelup) &&
-					(lcn.function == cn.function));
-			default :
-				return ((lcn.level == nextlevelup) &&
-					(lcn.argument == cn.argument) &&
-					(lcn.function == cn.function));
-			}
+			cnode ccn = cn;
+			return kb_is_adjacent(ccn, lcn, SK_PARENT);
 		});
 
 	if (cnit == siblings.end())
@@ -308,48 +295,6 @@ int lookup::get_siblings_up(dnode& dn)
 	return EXE_OK;
 }
 
-/*****************************************************************************
- * lookup::get_child_sibling(cnode &parent, cnodemap &child_sibmap)
- *
- * parent - the cnode of the parent
- * child_sibmap - the map of the child's sibling cnodes
- *
- * Search the sibling map for the cnode that has the parent's level + 1 and
- * the same ancestry as the parent.
- */
-bool lookup::get_child_sibling(cnode& parent, cnodemap& sibmap, cnode &sib)
-{
-	cniterator cnit;
-
-	cnit = find_if (sibmap.begin(), sibmap.end(),
-		[parent](cnpair lcnp)
-		{
-			cnode lcn = lcnp.second;
-			int nextlevel = parent.level + 1;
-
-			switch (parent.level) {
-			case LVL_FILE :
-				return true;
-			case LVL_EXPORTED :
-				return (lcn.level == nextlevel);
-			case LVL_ARG  :
-				return ((lcn.level == nextlevel) &&
-					(lcn.function == parent.function));
-			default :
-				return ((lcn.level == nextlevel) &&
-					(lcn.argument == parent.argument) &&
-					(lcn.function == parent.function));
-			}
-		});
-
-	if (cnit != sibmap.end()) {
-		sib = cnit->second;
-		return true;
-	}
-
-	return false;
-}
-
 
 /*****************************************************************************
  * lookup::is_dup(crc_t crc)
@@ -361,7 +306,6 @@ bool lookup::is_dup(crc_t crc)
 	vector<crc_t>::iterator it;
 
 	it = find_if (m_dups.begin(), m_dups.end(),
-
 		[crc](crc_t lcrc)
 		{
 			return lcrc == crc;
@@ -383,12 +327,18 @@ bool lookup::is_dup(crc_t crc)
 int lookup::get_children(dnode& pdn, cnode& pcn)
 {
 	for (auto i : pdn.children) {
+		int order = i.first;
 		crc_t crc = i.second;
 		dnode cdn = *kb_lookup_dnode(crc);	// child dnode
 		cnodemap siblings = cdn.siblings;
-		cnode ccn;
-		if (!(get_child_sibling(pcn, siblings, ccn)))
-			return EXE_NOTFOUND_SIMPLE;
+		cnode ccn = siblings[order];
+
+		// Backpointers and dups are "virtualized", that is, there
+		// is only one cnode for all. In those cases, the level
+		// field can be incorrect, since it was recorded only for
+		// the first one encountered. To assure that we have the
+		// correct level, simply set it to parent cnode level + 1.
+		ccn.level = pcn.level + 1;
 
 		if (ccn.level <= LVL_ARG)
 			m_dups.clear();
@@ -396,7 +346,7 @@ int lookup::get_children(dnode& pdn, cnode& pcn)
 		m_rowman.fill_row(cdn, ccn);
 		DBG(m_rowman.print_row(m_rowman.rows.back());)
 
-		if ((is_dup(crc)) || ccn.flags & (CTL_BACKPTR))
+		if ((is_dup(crc)) || (ccn.flags & CTL_BACKPTR))
 			continue;
 
 		m_dups.push_back(crc);

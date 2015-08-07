@@ -52,7 +52,6 @@ private:
 	int exe_decl();
 	int get_file_of_export(dnode& dn);
 	bool is_dup(crc_t crc);
-	bool get_child_sibling(cnode& parent, cnodemap& sibmap, cnode &sib);
 
 	// member classes
 	dnodemap& m_dnmap = kb_get_public_dnodemap();
