@@ -288,6 +288,7 @@ static void process_return(struct symbol *basetype, struct sparm *parent)
 static void process_exported_struct(struct sparm *sp, struct sparm *parent)
 {
 	sp->flags |= CTL_EXPSTRUCT;
+	sp->decl = kb_get_decl(sp);
 	kb_init_crc(sp->decl, sp, parent);
 	kb_update_nodes(sp, parent);
 
