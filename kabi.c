@@ -217,44 +217,50 @@ static void get_symbols	(struct sparm *parent,
 	struct symbol *sym;
 
 	FOR_EACH_PTR(list, sym) {
-		const char *decl = "";
+		//const char *decl = "";
 		struct sparm *sp = kb_new_sparm(parent, flags);
 
 		get_declist(sp, sym);
-		decl = kb_get_decl(sp);
+		sp->decl = kb_get_decl(sp);
 
 		// We are only interested in grouping identical compound
 		// data types, so we will only create a crc for their type,
 		// e.g. "struct foo". For base types and functions, we must
 		// include the name (identifier) in the crc as well, or
 		// there will be no distinction among them.
+		// If there is no identifier, and it's a struct, then set
+		// the anonymous flag and recalculate the parent crc using
+		// this declaration and its name.
 		//
 		if (sym->ident) {
 			sp->name = sym->ident->name;
 			if (!(sp->flags & CTL_STRUCT))
-				decl = kb_cstrcat(decl, sp->name);
-		}
+				sp->decl = kb_cstrcat(sp->decl, sp->name);
+		} else if (sp->flags & CTL_STRUCT)
+			sp->flags |= CTL_ANON;
 
 		// If it's not a struct or union, then we are not interested
 		// in its symbol list.
 		if (!(sp->flags & CTL_STRUCT))
 			sp->flags &= ~CTL_HASLIST;
 
-		kb_init_crc(decl, sp, parent);
+		kb_init_crc(sp->decl, sp, parent);
 #ifndef NDEBUG
 		//if (qn->name && ((strstr(qn->name, "st_shndx") != NULL)))
-		if ((sp->crc == 1622272652))// || (parent->crc == 410729264))
-			puts(decl);
+		// if ((sp->crc == 1622272652))// || (parent->crc == 410729264))
+		if (sp->name && ((strstr(sp->name, "d_name") != NULL)))
+			puts(sp->decl);
 #endif
 		if (parent->crc == sp->crc)
 			sp->flags |= CTL_BACKPTR;
 
-		else if ((sp->flags & CTL_HASLIST) && (kb_is_dup(sp))) {
+		else if (!(sp->flags & CTL_ANON) &&
+			 ((sp->flags & CTL_HASLIST) && (kb_is_dup(sp)))) {
 			 sp->flags &= ~CTL_HASLIST;
 			 sp->flags |= CTL_ISDUP;
 		}
 
-		prdbg("%s%s", pad_out(sp->level, '|'), decl);
+		prdbg("%s%s", pad_out(sp->level, '|'), sp->decl);
 		prdbg(" %s\n", sp->name ? sp->name : "");
 		kb_update_nodes(sp, parent);
 
@@ -268,12 +274,11 @@ static void get_symbols	(struct sparm *parent,
 static void process_return(struct symbol *basetype, struct sparm *parent)
 {
 	struct sparm *sp = kb_new_sparm(parent, CTL_RETURN);
-	const char *decl;
 
 	get_declist(sp, basetype);
-	decl = kb_get_decl(sp);
-	kb_init_crc(decl, sp, parent);
-	prdbg(" RETURN: %s\n", decl);
+	sp->decl = kb_get_decl(sp);
+	kb_init_crc(sp->decl, sp, parent);
+	prdbg(" RETURN: %s\n", sp->decl);
 	kb_update_nodes(sp, parent);
 
 	if (sp->flags & CTL_HASLIST)
@@ -282,9 +287,8 @@ static void process_return(struct symbol *basetype, struct sparm *parent)
 
 static void process_exported_struct(struct sparm *sp, struct sparm *parent)
 {
-	const char *decl = kb_get_decl(sp);
 	sp->flags |= CTL_EXPSTRUCT;
-	kb_init_crc(decl, sp, parent);
+	kb_init_crc(sp->decl, sp, parent);
 	kb_update_nodes(sp, parent);
 
 	if (sp->flags & CTL_HASLIST)
@@ -310,11 +314,11 @@ static void build_branch(char *symname, struct sparm *parent)
 		// If this is an exported struct or union, we need the decl
 		// to correctly calculate the crc.
 		DBG(decl = kb_get_decl(sp);)
-		prdbg(" EXPORTED: %s %s\n", decl, sp->name);
+		prdbg(" EXPORTED: %s %s\n", sp->decl, sp->name);
 
 #ifndef NDEBUG
 		if (strstr(decl, "bio_set") != NULL)
-			printf("%s %s\n", decl, sp->name);
+			printf("%s %s\n", sp->decl, sp->name);
 #endif
 		if (!(sp->flags & CTL_FUNCTION)) {
 			process_exported_struct(sp, parent);

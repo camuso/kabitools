@@ -208,7 +208,7 @@ bool kb_is_adjacent(cnode& ref, cnode& dyn, seekdir step)
 }
 
 /******************************************************************************
- * init_crc(const char *decl, qnode *qn, qnode *parent)
+ * kb_init_crc(const char *decl, qnode *qn, qnode *parent)
  *
  * decl   - declaration of type to be converted to crc
  * sp     - struct sparm containing the details of this instance of this symbol
@@ -237,9 +237,14 @@ bool kb_is_adjacent(cnode& ref, cnode& dyn, seekdir step)
  * level of the hierarchy.
  *
  */
-void kb_init_crc(const char *decl, struct sparm *sp, struct sparm *parent)
+void kb_init_crc(const char* string, struct sparm *sp, struct sparm *parent)
 {
-	sp->crc = raw_crc32(decl);
+	sp->crc = raw_crc32(string);
+
+	if (sp->flags & CTL_ANON) {
+		std::string anon = to_string(sp->order);
+		sp->crc = crc32(anon.c_str(), parent->crc);
+	}
 
 #ifndef NDEBUG
 	if ((sp->crc == 2674120813))// || (parent->crc == 410729264))
@@ -619,47 +624,3 @@ int kb_dump_dnodemap(char *filename)
 	}
 	return 0;
 }
-
-#if 0
-/******************************************************************************
- * bool has_same_ancestry(dnode& dn, cnode& cn)
- *
- * dn - dnode (declaration node) that abstracts the cnode's data type
- * cn - the specific instance of this data type
- *
- * Returns true if dnode has parents that share the same ancestry as
- * the cnode.
- *
- * Look into the parents map of a dnode to see if any of the parents
- * there share the same ancestry as the cn parameter.
- */
-Need to rethink how to do this.
-static bool has_same_ancestry(dnode& dn, cnode& cn)
-{
-	cnodemap& parents = dn.parents;
-	cniterator cnit = find_if(parents.begin(), parents.end(),
-		[&cn](cnpair lcnp)
-		{
-			cnode& lcn = lcnp.second;
-			return (lcn.function == cn.function);
-		});
-
-	return (cnit != parents.end());
-}
-
-bool kb_is_dup(struct sparm *sp)
-{
-	dnodemap& dnmap = public_dnodemap;
-	dnitpair range = dnmap.equal_range(sp->crc);
-	int count = distance(range.first, range.second);
-
-	if ((sp->level < LVL_NESTED) || (count == 0))
-		return false;
-
-	if (count > 0)
-		return true;
-
-	return false;
-}
-
-#endif

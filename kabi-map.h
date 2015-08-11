@@ -36,6 +36,7 @@ enum ctlflags {
 	CTL_HASLIST	= 1 << 10,
 	CTL_ISDUP	= 1 << 11,
 	CTL_EXPSTRUCT	= 1 << 12,
+	CTL_ANON	= 1 << 13,
 };
 
 enum levels {
@@ -307,7 +308,7 @@ extern "C"
 
 extern struct sparm *kb_new_sparm(struct sparm *parent, enum ctlflags flags);
 extern struct sparm *kb_new_firstsparm(char *file);
-extern void kb_init_crc(const char *decl, struct sparm *sp, struct sparm *parent);
+extern void kb_init_crc(const char *string, struct sparm *sp, struct sparm *parent);
 extern void kb_update_nodes(struct sparm *qn, struct sparm *parent);
 extern void kb_insert_nodes(struct sparm *qn);
 extern void kb_add_to_decl(struct sparm *qn, char *decl);
