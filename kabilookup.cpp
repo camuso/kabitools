@@ -50,7 +50,7 @@ string lookup::get_helptext()
 {
 	return "\
 \n\
-kabi-lookup [-q|w] [-m mask] -e|s|c|d symbol [-f file-list]\n\
+kabi-lookup [-q|w] -e|s|c|d symbol [-f file-list] [-m mask] \n\
     Searches a kabi database for symbols. The results of the search \n\
     are printed to stdout and indented hierarchically.\n\
     Switches e,s,c,d are mutually exlusive. Only one can be selected. \n\
@@ -335,9 +335,9 @@ int lookup::get_children(dnode& pdn, cnode& pcn)
 
 		// Backpointers and dups are "virtualized", that is, there
 		// is only one cnode for all. In those cases, the level
-		// field can be incorrect, since it was recorded only for
-		// the first one encountered. To assure that we have the
-		// correct level, simply set it to parent cnode level + 1.
+		// field is only correct for the first one encountered.
+		// To assure that we have the correct level, simply set
+		// it to parent cnode level + 1.
 		ccn.level = pcn.level + 1;
 
 		if (ccn.level <= LVL_ARG)
