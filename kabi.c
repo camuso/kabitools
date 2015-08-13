@@ -101,12 +101,13 @@ Options:\n\
     -h        This help message.\n\
 \n";
 
-static const char *ksymprefix = "__ksymtab_";
 static bool kp_rmfiles = false;
 static bool cumulative = false;
 static struct symbol_list *symlist = NULL;
 static bool kabiflag = false;
 static char *datafilename = "../kabi-data.dat";
+static FILE *inputfile;
+
 
 /*****************************************************
 ** sparse wrappers
@@ -148,7 +149,7 @@ static char *pad_out(int padsize, char padchar)
 //----------------------------------------------------
 // Forward Declarations
 //----------------------------------------------------
-static struct symbol *find_internal_exported(struct symbol_list *, char *);
+static bool is_exported(char *symname);
 static const char *get_modstr(unsigned long mod);
 static void get_declist(struct sparm *sp, struct symbol *sym);
 static void get_symbols(struct sparm *parent,
@@ -217,11 +218,9 @@ static void get_symbols	(struct sparm *parent,
 	struct symbol *sym;
 
 	FOR_EACH_PTR(list, sym) {
-		//const char *decl = "";
-		struct sparm *sp = kb_new_sparm(parent, flags);
 
+		struct sparm *sp = kb_new_sparm(parent, flags);
 		get_declist(sp, sym);
-		sp->decl = kb_get_decl(sp);
 
 		// We are only interested in grouping identical compound
 		// data types, so we will only create a crc for their type,
@@ -276,7 +275,6 @@ static void process_return(struct symbol *basetype, struct sparm *parent)
 	struct sparm *sp = kb_new_sparm(parent, CTL_RETURN);
 
 	get_declist(sp, basetype);
-	sp->decl = kb_get_decl(sp);
 	kb_init_crc(sp->decl, sp, parent);
 	prdbg(" RETURN: %s\n", sp->decl);
 	kb_update_nodes(sp, parent);
@@ -288,7 +286,6 @@ static void process_return(struct symbol *basetype, struct sparm *parent)
 static void process_exported_struct(struct sparm *sp, struct sparm *parent)
 {
 	sp->flags |= CTL_EXPSTRUCT;
-	sp->decl = kb_get_decl(sp);
 	kb_init_crc(sp->decl, sp, parent);
 	kb_update_nodes(sp, parent);
 
@@ -296,50 +293,60 @@ static void process_exported_struct(struct sparm *sp, struct sparm *parent)
 		proc_symlist(sp, (struct symbol_list *)sp->symlist, CTL_NESTED);
 }
 
-static void build_branch(char *symname, struct sparm *parent)
+static void build_branch(struct symbol *sym, struct sparm *parent)
 {
-	struct symbol *sym;
-
-	if ((sym = find_internal_exported(symlist, symname))) {
-		DBG(const char *decl;)
-		struct symbol *basetype = sym->ctype.base_type;
-		struct sparm *sp = kb_new_sparm(parent, CTL_EXPORTED);
+	DBG(const char *decl;)
+	struct symbol *basetype = sym->ctype.base_type;
+	struct sparm *sp = kb_new_sparm(parent, CTL_EXPORTED);
 #ifndef NDEBUG
-		if (strstr(symname, "bio_set") != NULL)
-			printf("symbolname: %s\n", symname);
+	char *symname = sym->ident->name;
+	if (strstr(symname, "bio_set") != NULL)
+		printf("symbolname: %s\n", symname);
 #endif
-		sp->name = symname;
-		kabiflag = true;
-		get_declist(sp, sym);
+	sp->name = sym->ident->name;
+	kabiflag = true;
+	get_declist(sp, sym);
 
-		// If this is an exported struct or union, we need the decl
-		// to correctly calculate the crc.
-		DBG(decl = kb_get_decl(sp);)
-		prdbg(" EXPORTED: %s %s\n", sp->decl, sp->name);
+	// If this is an exported struct or union, we need the decl
+	// to correctly calculate the crc.
+	DBG(decl = kb_get_decl(sp);)
+	prdbg(" EXPORTED: %s %s\n", sp->decl, sp->name);
 
 #ifndef NDEBUG
-		if (strstr(decl, "bio_set") != NULL)
-			printf("%s %s\n", sp->decl, sp->name);
+	if (strstr(decl, "bio_set") != NULL)
+		printf("%s %s\n", sp->decl, sp->name);
 #endif
-		if (!(sp->flags & CTL_FUNCTION)) {
-			process_exported_struct(sp, parent);
-			return;
-		}
-
-		kb_init_crc(sp->name, sp, parent);
-		kb_update_nodes(sp, parent);
-
-		if (sp->flags & CTL_HASLIST)
-			process_return(basetype, sp);
-
-		if (basetype->arguments)
-			get_symbols(sp, basetype->arguments, CTL_ARG);
+	if (!(sp->flags & CTL_FUNCTION)) {
+		process_exported_struct(sp, parent);
+		return;
 	}
+
+	kb_init_crc(sp->name, sp, parent);
+	kb_update_nodes(sp, parent);
+
+	if (sp->flags & CTL_HASLIST)
+		process_return(basetype, sp);
+
+	if (basetype->arguments)
+		get_symbols(sp, basetype->arguments, CTL_ARG);
 }
 
-static inline bool begins_with(const char *a, const char *b)
+static bool is_exported(char *symname)
 {
-	return (strncmp(a, b, strlen(b)) == 0);
+	bool found = false;
+
+	while (!feof(inputfile)) {
+		char line[512];
+		fgets(line, 512, inputfile);
+
+		if (strstr(line, symname) && strstr(line, "EXPORT")) {
+			found = true;
+			break;
+		}
+	}
+
+	rewind(inputfile);
+	return found;
 }
 
 static void build_tree(struct symbol_list *symlist, struct sparm *parent)
@@ -348,12 +355,8 @@ static void build_tree(struct symbol_list *symlist, struct sparm *parent)
 
 	FOR_EACH_PTR(symlist, sym) {
 
-		if (sym->ident &&
-		    begins_with(sym->ident->name, ksymprefix)) {
-			int offset = strlen(ksymprefix);
-			char *symname = &sym->ident->name[offset];
-			build_branch(symname, parent);
-		}
+		if (sym->ident && is_exported(sym->ident->name))
+			build_branch(sym, parent);
 
 	} END_FOR_EACH_PTR(sym);
 }
@@ -450,46 +453,6 @@ static const char *get_modstr(unsigned long mod)
 	return buffer;
 }
 
-// find_internal_exported (symbol_list* symlist, char *symname)
-//
-// Finds the internal declaration of an exported symbol in the symlist.
-// The symname parameter must have the "__ksymtab_" prefix stripped from
-// the exported symbol name.
-//
-// symlist - pointer to a list of symbols
-//
-// symname - the ident->name string of the exported symbol
-//
-// Returns a pointer to the symbol that corresponds to the exported one.
-//
-static struct symbol *find_internal_exported (struct symbol_list *symlist,
-					      char *symname)
-{
-	struct symbol *sym = NULL;
-
-	FOR_EACH_PTR(symlist, sym) {
-
-		if (!(sym && sym->ident))
-			continue;
-
-		if (! strcmp(sym->ident->name, symname)) {
-			switch (sym->ctype.base_type->type) {
-			case SYM_BASETYPE:
-			case SYM_PTR:
-			case SYM_FN:
-			case SYM_ARRAY:
-			case SYM_STRUCT:
-			case SYM_UNION:
-				goto fie_foundit;
-			default: continue;
-			}
-		}
-	} END_FOR_EACH_PTR(sym);
-
-fie_foundit:
-	return sym;
-}
-
 /*****************************************************
 ** Command line option parsing
 ******************************************************/
@@ -576,7 +539,9 @@ int main(int argc, char **argv)
 		struct sparm *sp = kb_new_firstsparm(file);
 		prdbg("sparse file: %s\n", file);
 		symlist = __sparse(file);
+		inputfile = fopen(file, "r");
 		build_tree(symlist, sp);
+		fclose(inputfile);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
 	if (! kabiflag)

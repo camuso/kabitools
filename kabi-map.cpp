@@ -443,6 +443,7 @@ void kb_add_to_decl(struct sparm *sp, char *decl)
 	if (dn->decl.size() != 0)
 		dn->decl += " ";
 	dn->decl += string(decl);
+	sp->decl = dn->decl.c_str();
 }
 
 void kb_trim_decl(struct sparm *sp)
