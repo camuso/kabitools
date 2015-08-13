@@ -65,7 +65,7 @@
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-#define NDEBUG
+//#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -98,9 +98,26 @@ Options:\n\
     -f file   optional filename for data file containing the kabi graph. \n\
               The default is \"../kabi-data.dat\". \n\
     -x        Delete the data file before starting. \n\
+    -p        prefix, \"tab\" or \"gen\". Default is \"tab\".\n\
     -h        This help message.\n\
 \n";
 
+enum pfxindex {
+	PFX_KSYMTAB,
+	PFX_GENKSYM,
+	PFX_SIZE,
+};
+
+struct pfxentry {
+	const char *key;
+	const char *pfx;
+}
+pfxtab[] = {	{"tab", "__ksymtab_"},
+		{"gen", "EXPORT_"},
+};
+
+static enum pfxindex pfxidx = PFX_GENKSYM;
+static const char *ksymprefix;
 static bool kp_rmfiles = false;
 static bool cumulative = false;
 static struct symbol_list *symlist = NULL;
@@ -331,22 +348,39 @@ static void build_branch(struct symbol *sym, struct sparm *parent)
 		get_symbols(sp, basetype->arguments, CTL_ARG);
 }
 
+static inline bool begins_with(const char *a, const char *b)
+{
+	return (strncmp(a, b, strlen(b)) == 0);
+}
+
 static bool is_exported(char *symname)
 {
-	bool found = false;
+	switch (pfxidx) {
+	case PFX_KSYMTAB:
+		goto ksymtab;
+		break;
+	case PFX_GENKSYM:
+		goto genksym;
+		break;
+	default:
+		return false;
+	}
 
+genksym:
+	rewind(inputfile);
 	while (!feof(inputfile)) {
 		char line[512];
 		fgets(line, 512, inputfile);
 
-		if (strstr(line, symname) && strstr(line, "EXPORT")) {
-			found = true;
-			break;
-		}
+		if (strstr(line, symname) && strstr(line, "EXPORT"))
+			return true;
 	}
 
-	rewind(inputfile);
-	return found;
+ksymtab:
+	if (begins_with(symname, ksymprefix))
+		return true;
+
+	return false;
 }
 
 static void build_tree(struct symbol_list *symlist, struct sparm *parent)
@@ -457,6 +491,19 @@ static const char *get_modstr(unsigned long mod)
 ** Command line option parsing
 ******************************************************/
 
+static bool set_pfx(const char *key)
+{
+	int index;
+	for (index = 0; index < PFX_SIZE; ++index) {
+		if (!(strcmp(key, pfxtab[index].key))) {
+			pfxidx = index;
+			ksymprefix = pfxtab[index].pfx;
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool parse_opt(char opt, char ***argv, int *index)
 {
 	int optstatus = true;
@@ -471,6 +518,9 @@ static bool parse_opt(char opt, char ***argv, int *index)
 		   break;
 	case 'h' : puts(helptext);
 		   exit(0);
+	case 'p' : if (!set_pfx(*((*argv)++)))
+			optstatus = false;
+		   break;
 	default  : optstatus = false;
 		   break;
 	}
@@ -491,7 +541,7 @@ static int get_options(char **argv)
 
 		for (i = 0; argstr[i]; ++i) {
 			if (!parse_opt(argstr[i], &argv, &index)) {
-				printf ("invalid option: %c\n", argstr[i]);
+				printf ("invalid option: -%c\n", argstr[i]);
 				return index;
 			}
 		}
@@ -522,6 +572,7 @@ int main(int argc, char **argv)
 		exit(0);
 	}
 
+	ksymprefix = pfxtab[pfxidx].pfx;
 	argindex = get_options(&argv[1]);
 	argv[argindex] = argv[0];
 	argv += argindex;
