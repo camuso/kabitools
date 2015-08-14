@@ -64,6 +64,7 @@
 
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
+#define MAX_SPARSE_ARGS 16
 
 #define NDEBUG
 #if !defined(NDEBUG)
@@ -85,7 +86,7 @@ do { \
 
 static const char *helptext ="\
 \n\
-kabi-parser [options] files \n\
+kabi-parser [options] -f filespec \n\
 \n\
     Parses \".i\" (intermediate, c-preprocessed) files for exported \n\
     symbols and symbols of structs and unions that are used by the \n\
@@ -95,10 +96,13 @@ kabi-parser [options] files \n\
               Must be last in the argument list. \n\
 \n\
 Options:\n\
-    -f file   optional filename for data file containing the kabi graph. \n\
+    -f filespec - Required. Specification of .i files to be processed.\n\
+                  Wildcard characters are allowed.\n\
+    -o file   Optional. Filename for output data file. \n\
               The default is \"../kabi-data.dat\". \n\
     -x        Delete the data file before starting. \n\
     -p        prefix, \"tab\" or \"gen\". Default is \"tab\".\n\
+    -S        Switch to pass to sparse semantic parser.\n\
     -h        This help message.\n\
 \n";
 
@@ -123,8 +127,11 @@ static bool cumulative = false;
 static struct symbol_list *symlist = NULL;
 static bool kabiflag = false;
 static char *datafilename = "../kabi-data.dat";
+static char *infilespec;
 static FILE *inputfile;
-
+static char *sparseargv[MAX_SPARSE_ARGS];
+static char **spargvp = &sparseargv[0];
+static int sparseargc = 1;
 
 /*****************************************************
 ** sparse wrappers
@@ -509,7 +516,10 @@ static bool parse_opt(char opt, char ***argv, int *index)
 	int optstatus = true;
 
 	switch (opt) {
-	case 'f' : datafilename = *((*argv)++);
+	case 'o' : datafilename = *((*argv)++);
+		   ++(*index);
+		   break;
+	case 'f' : infilespec = *((*argv)++);
 		   ++(*index);
 		   break;
 	case 'c' : cumulative = true;
@@ -522,6 +532,10 @@ static bool parse_opt(char opt, char ***argv, int *index)
 			optstatus = false;
 		   ++(*index);
 		   break;
+	case 'S' : *(++spargvp) = *((*argv)++);
+		   ++(*index);
+		   ++sparseargc;
+	           break;
 	default  : optstatus = false;
 		   break;
 	}
@@ -563,8 +577,6 @@ int main(int argc, char **argv)
 	int argindex = 0;
 	char *file;
 	struct string_list *filelist = NULL;
-	static char *sparse_argv[] = { "sparse", "-Wall_off", NULL, NULL };
-	static int sparse_argc = sizeof(sparse_argv) / sizeof(char *) - 1;
 
 	DBG(setbuf(stdout, NULL);)
 
@@ -574,18 +586,21 @@ int main(int argc, char **argv)
 	}
 
 	ksymprefix = pfxtab[pfxidx].pfx;
+	memset((void*)sparseargv, 0, MAX_SPARSE_ARGS * sizeof(char*));
+	sparseargv[0] = "sparse_initialize";
 	argindex = get_options(&argv[1]);
 	argv[argindex] = argv[0];
 	argv += argindex;
 	argc -= argindex;
-	sparse_argv[sparse_argc - 1] = argv[1];
+	sparseargv[sparseargc] = infilespec;
+	++sparseargc;
 
 	if (cumulative) {
 		kb_restore_dnodemap(datafilename);
 		remove(datafilename);
 	}
 
-	symlist = sparse_initialize(sparse_argc, sparse_argv, &filelist);
+	symlist = sparse_initialize(sparseargc, sparseargv, &filelist);
 
 	FOR_EACH_PTR_NOTAG(filelist, file) {
 		struct sparm *sp = kb_new_firstsparm(file);
