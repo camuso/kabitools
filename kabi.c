@@ -92,18 +92,28 @@ kabi-parser [options] -f filespec \n\
     symbols and symbols of structs and unions that are used by the \n\
     exported symbols. \n\
 \n\
-    files   - File or files (wildcards ok) to be processed\n\
-              Must be last in the argument list. \n\
-\n\
-Options:\n\
+Command line arguments:\n\
     -f filespec - Required. Specification of .i files to be processed.\n\
-                  Wildcard characters are allowed.\n\
-    -o file   Optional. Filename for output data file. \n\
-              The default is \"../kabi-data.dat\". \n\
-    -x        Delete the data file before starting. \n\
-    -p        prefix, \"tab\" or \"gen\". Default is \"tab\".\n\
-    -S        Switch to pass to sparse semantic parser.\n\
-    -h        This help message.\n\
+                  Full path and wildcard characters are allowed.\n\
+    -o outfile  - Optional. Filename for output data file. \n\
+                  The default is \"../kabi-data.dat\". \n\
+    -x    Optional. Delete the data file before starting. \n\
+    -p    Optional. Parser environment, \"tab\" or \"gen\". \n\
+          Default is \"tab\", or normal kernel build.\n\
+          \"gen\" is for kernels built with __GENKSYMS__ defined.\n\
+    -r    Optional. Report status. Minor problems can interrupt a build.\n\
+    -S    Optional. Command line arguments for the sparse semantic parser.\n\
+    -h    This help message.\n\
+\n\
+Example: \n\
+\n\
+    kabi-parser -p gen -xo ../foo.dat -f foo.i -S -Wall_off \n\
+\n\
+    * Parser for kernel built with __GENKSYMS__ defined.\n\
+    * Sets output file path to ../foo.dat and deletes it first if it already\n\
+      exists.\n\
+    * Sets the input file path to ./foo.i\n\
+    * Sends the \"-Wall_off\" option to the sparse semantic parser.\n\
 \n";
 
 enum pfxindex {
@@ -120,7 +130,7 @@ pfxtab[] = {	{"tab", "__ksymtab_"},
 		{"gen", "EXPORT_"},
 };
 
-static enum pfxindex pfxidx = PFX_GENKSYM;
+static enum pfxindex pfxidx = PFX_KSYMTAB;
 static const char *ksymprefix;
 static bool kp_rmfiles = false;
 static bool cumulative = false;
@@ -132,6 +142,7 @@ static FILE *inputfile;
 static char *sparseargv[MAX_SPARSE_ARGS];
 static char **spargvp = &sparseargv[0];
 static int sparseargc = 1;
+static bool report = false;
 
 /*****************************************************
 ** sparse wrappers
@@ -173,9 +184,11 @@ static char *pad_out(int padsize, char padchar)
 //----------------------------------------------------
 // Forward Declarations
 //----------------------------------------------------
-static bool is_exported(char *symname);
+static bool is_exported(struct symbol *sym);
 static const char *get_modstr(unsigned long mod);
 static void get_declist(struct sparm *sp, struct symbol *sym);
+static struct symbol *find_internal_exported (struct symbol_list *symlist,
+					      char *symname);
 static void get_symbols(struct sparm *parent,
 			struct symbol_list *list,
 			enum ctlflags flags);
@@ -360,21 +373,52 @@ static inline bool begins_with(const char *a, const char *b)
 	return (strncmp(a, b, strlen(b)) == 0);
 }
 
-static bool is_exported(char *symname)
+// find_internal_exported (symbol_list* symlist, char *symname)
+//
+// Finds the internal declaration of an exported symbol in the symlist.
+// The symname parameter must have the "__ksymtab_" prefix stripped from
+// the exported symbol name.
+//
+// symlist - pointer to a list of symbols
+//
+// symname - the ident->name string of the exported symbol
+//
+// Returns a pointer to the symbol that corresponds to the exported one.
+//
+static struct symbol *find_internal_exported (struct symbol_list *symlist,
+					      char *symname)
 {
-	switch (pfxidx) {
-	case PFX_KSYMTAB:
-		goto ksymtab;
-		break;
-	case PFX_GENKSYM:
-		goto genksym;
-		break;
-	default:
-		return false;
-	}
+	struct symbol *sym = NULL;
 
-genksym:
+	FOR_EACH_PTR(symlist, sym) {
+
+		if (!(sym && sym->ident))
+			continue;
+
+		if (! strcmp(sym->ident->name, symname)) {
+			switch (sym->ctype.base_type->type) {
+			case SYM_BASETYPE:
+			case SYM_PTR:
+			case SYM_FN:
+			case SYM_ARRAY:
+			case SYM_STRUCT:
+			case SYM_UNION:
+				goto fie_foundit;
+			default: continue;
+			}
+		}
+	} END_FOR_EACH_PTR(sym);
+
+fie_foundit:
+	return sym;
+}
+
+static bool is_exported(struct symbol *sym)
+{
+	char *symname = sym->ident->name;
+
 	rewind(inputfile);
+
 	while (!feof(inputfile)) {
 		char line[512];
 		fgets(line, 512, inputfile);
@@ -383,11 +427,16 @@ genksym:
 			return true;
 	}
 
-ksymtab:
-	if (begins_with(symname, ksymprefix))
-		return true;
-
 	return false;
+}
+
+static inline void process_symname(struct symbol *sym, struct sparm *parent)
+{
+	int offset = strlen(ksymprefix);
+	char *symname = &sym->ident->name[offset];
+	struct symbol *lsym;
+	if ((lsym = find_internal_exported(symlist, symname)))
+		build_branch(lsym, parent);
 }
 
 static void build_tree(struct symbol_list *symlist, struct sparm *parent)
@@ -396,8 +445,21 @@ static void build_tree(struct symbol_list *symlist, struct sparm *parent)
 
 	FOR_EACH_PTR(symlist, sym) {
 
-		if (sym->ident && is_exported(sym->ident->name))
-			build_branch(sym, parent);
+		switch (pfxidx) {
+		case PFX_KSYMTAB:
+			if (sym->ident &&
+			    begins_with(sym->ident->name, ksymprefix))
+				process_symname(sym, parent);
+			break;
+
+		case PFX_GENKSYM:
+			if (sym->ident && is_exported(sym)) {
+				build_branch(sym, parent);
+			}
+			break;
+		default:
+			return;
+		}
 
 	} END_FOR_EACH_PTR(sym);
 }
@@ -532,6 +594,8 @@ static bool parse_opt(char opt, char ***argv, int *index)
 			optstatus = false;
 		   ++(*index);
 		   break;
+	case 'r' : report = true;
+		   break;
 	case 'S' : *(++spargvp) = *((*argv)++);
 		   ++(*index);
 		   ++sparseargc;
@@ -611,7 +675,7 @@ int main(int argc, char **argv)
 		fclose(inputfile);
 	} END_FOR_EACH_PTR_NOTAG(file);
 
-	if (! kabiflag)
+	if (report && !kabiflag)
 		return 1;
 
 	if (kp_rmfiles)
