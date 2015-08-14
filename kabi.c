@@ -65,7 +65,7 @@
 #define STD_SIGNED(mask, bit) (mask == (MOD_SIGNED | bit))
 #define STRBUFSIZ 256
 
-//#define NDEBUG
+#define NDEBUG
 #if !defined(NDEBUG)
 #define DBG(x) x
 #define RUN(x)
@@ -520,6 +520,7 @@ static bool parse_opt(char opt, char ***argv, int *index)
 		   exit(0);
 	case 'p' : if (!set_pfx(*((*argv)++)))
 			optstatus = false;
+		   ++(*index);
 		   break;
 	default  : optstatus = false;
 		   break;
@@ -577,7 +578,7 @@ int main(int argc, char **argv)
 	argv[argindex] = argv[0];
 	argv += argindex;
 	argc -= argindex;
-	sparse_argv[2] = argv[1];
+	sparse_argv[sparse_argc - 1] = argv[1];
 
 	if (cumulative) {
 		kb_restore_dnodemap(datafilename);
