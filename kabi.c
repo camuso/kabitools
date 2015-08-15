@@ -373,18 +373,30 @@ static inline bool begins_with(const char *a, const char *b)
 	return (strncmp(a, b, strlen(b)) == 0);
 }
 
-// find_internal_exported (symbol_list* symlist, char *symname)
-//
-// Finds the internal declaration of an exported symbol in the symlist.
-// The symname parameter must have the "__ksymtab_" prefix stripped from
-// the exported symbol name.
-//
-// symlist - pointer to a list of symbols
-//
-// symname - the ident->name string of the exported symbol
-//
-// Returns a pointer to the symbol that corresponds to the exported one.
-//
+static inline bool is_valid_basetype(struct symbol *sym)
+{
+	switch (sym->type) {
+	case SYM_BASETYPE:
+	case SYM_PTR:
+	case SYM_FN:
+	case SYM_ARRAY:
+	case SYM_STRUCT:
+	case SYM_UNION:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/******************************************************************************
+ * PFX_KSYMTAB:
+ * find_internal_exported (symbol_list* symlist, char *symname)
+ *
+ * Search the symbol_list for a symbol->ident->name that matches the
+ * symname argument. Once its found and we know it's a valid base_type,
+ * return the symbol pointer, else return NULL.
+ *
+ */
 static struct symbol *find_internal_exported (struct symbol_list *symlist,
 					      char *symname)
 {
@@ -392,30 +404,70 @@ static struct symbol *find_internal_exported (struct symbol_list *symlist,
 
 	FOR_EACH_PTR(symlist, sym) {
 
-		if (!(sym && sym->ident))
-			continue;
+		if (sym && sym->ident &&
+		    !(strcmp(sym->ident->name, symname)) &&
+		    is_valid_basetype(sym->ctype.base_type))
+			return sym;
 
-		if (! strcmp(sym->ident->name, symname)) {
-			switch (sym->ctype.base_type->type) {
-			case SYM_BASETYPE:
-			case SYM_PTR:
-			case SYM_FN:
-			case SYM_ARRAY:
-			case SYM_STRUCT:
-			case SYM_UNION:
-				goto fie_foundit;
-			default: continue;
-			}
-		}
 	} END_FOR_EACH_PTR(sym);
 
-fie_foundit:
-	return sym;
+	return NULL;
 }
 
+/******************************************************************************
+ * PFX_KSYMTAB:
+ * process_symname(symbol *sym, sparm *parent)
+ *
+ * For __ksymtab_ processing, exported symbols are identified by the leading
+ * "__ksymtab_" string. However, these symbols are the results of the expansion
+ * of the EXPORT_SYMBOL macro and contain no other useful information. The
+ * "__ksymtab_" string must be stripped off to create the name of the symbol
+ * in the symbol list that has the iformation we really want.
+ */
+static inline void process_symname(struct symbol *sym, struct sparm *parent)
+{
+	int offset = strlen(ksymprefix);
+	char *symname = &sym->ident->name[offset];
+	struct symbol *lsym;
+	if ((lsym = find_internal_exported(symlist, symname)))
+		build_branch(lsym, parent);
+}
+
+/******************************************************************************
+ * PFX_KSYMTAB:
+ * build_tree_ksymtabs(symbol_list *symlist, sparm *parent)
+ *
+ * Search the symbol_list for symbols that begin with "__ksymtab_", which
+ * identifies them as exported. If found, start the processing.
+ */
+static void build_tree_ksymtabs(struct symbol_list *symlist,
+				struct sparm *parent)
+{
+	struct symbol *sym;
+
+	FOR_EACH_PTR(symlist, sym) {
+
+		if (sym->ident &&
+		    begins_with(sym->ident->name, ksymprefix))
+			process_symname(sym, parent);
+
+	} END_FOR_EACH_PTR(sym);
+}
+
+/******************************************************************************
+ * PFX_GENKSYM:
+ * is_exported(symbol *sym)
+ *
+ * If the symbol has a valid basetpe, then search the input file for an
+ * EXPORT_SYMBOL line that contains the symbol name.
+ *
+ */
 static bool is_exported(struct symbol *sym)
 {
 	char *symname = sym->ident->name;
+
+	if (!sym->ident->name || !(is_valid_basetype(sym->ctype.base_type)))
+		return false;
 
 	rewind(inputfile);
 
@@ -430,38 +482,29 @@ static bool is_exported(struct symbol *sym)
 	return false;
 }
 
-static inline void process_symname(struct symbol *sym, struct sparm *parent)
-{
-	int offset = strlen(ksymprefix);
-	char *symname = &sym->ident->name[offset];
-	struct symbol *lsym;
-	if ((lsym = find_internal_exported(symlist, symname)))
-		build_branch(lsym, parent);
-}
-
-static void build_tree(struct symbol_list *symlist, struct sparm *parent)
+/******************************************************************************
+ * PFX_GENKSYM:
+ * build_tree_genksyms(char *file, symbol_list *symlist, sparm *parent)
+ *
+ * Search the symbol_list for exported symbols identified by being contained
+ * in a line having "EXPORT_SYMBOL". When found, start the processing.
+ */
+static void build_tree_genksyms(char *file,
+				struct symbol_list *symlist,
+			        struct sparm *parent)
 {
 	struct symbol *sym;
 
+	inputfile = fopen(file, "r");
+
 	FOR_EACH_PTR(symlist, sym) {
 
-		switch (pfxidx) {
-		case PFX_KSYMTAB:
-			if (sym->ident &&
-			    begins_with(sym->ident->name, ksymprefix))
-				process_symname(sym, parent);
-			break;
-
-		case PFX_GENKSYM:
-			if (sym->ident && is_exported(sym)) {
-				build_branch(sym, parent);
-			}
-			break;
-		default:
-			return;
-		}
+		if (sym->ident && is_exported(sym))
+			build_branch(sym, parent);
 
 	} END_FOR_EACH_PTR(sym);
+
+	fclose(inputfile);
 }
 
 static const char *get_modstr(unsigned long mod)
@@ -670,9 +713,12 @@ int main(int argc, char **argv)
 		struct sparm *sp = kb_new_firstsparm(file);
 		prdbg("sparse file: %s\n", file);
 		symlist = __sparse(file);
-		inputfile = fopen(file, "r");
-		build_tree(symlist, sp);
-		fclose(inputfile);
+
+		if (pfxidx == PFX_KSYMTAB)
+			build_tree_ksymtabs(symlist, sp);
+		else
+			build_tree_genksyms(file, symlist, sp);
+
 	} END_FOR_EACH_PTR_NOTAG(file);
 
 	if (report && !kabiflag)
