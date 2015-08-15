@@ -169,10 +169,8 @@ int lookup::run()
 {
 	ifstream ifs(m_filelist.c_str());
 
-	if(!ifs.is_open()) {
-		cout << "Cannot open file: " << m_filelist << endl;
-		exit(EXE_NOFILE);
-	}
+	if(!ifs.is_open())
+		report_nopath(m_filelist.c_str(), "file");
 
 	while (getline(ifs, m_datafile)) {
 
