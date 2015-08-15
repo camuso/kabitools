@@ -187,7 +187,7 @@ sparm* init_sparm(sparm* parent, sparm *sp, enum ctlflags flags)
  *	dyn <- child cnode
  *	step <- SK_CHILD
  */
-bool kb_is_adjacent(cnode& ref, cnode& dyn, seekdir step)
+bool kb_is_adjacent(cnode& ref, cnode& dyn, skdir step)
 {
 	int nextlevel = ref.level + step;
 

@@ -34,7 +34,8 @@ bool options::parse_long_opt(char *argstr)
 }
 
 int options::get_options(int *idx, char **argv,
-			 string &declstr, string &datafile, string &maskstr)
+			 string &declstr, string &datafile,
+			 string &maskstr, string &pathstr)
 {
 	int index = 0;
 	char *argstr;
@@ -50,8 +51,8 @@ int options::get_options(int *idx, char **argv,
 				continue;
 
 		for (i = 0; argstr[i]; ++i)
-			if (!parse_opt(argstr[i], &argv,
-				       declstr, datafile, maskstr))
+			if (!parse_opt(argstr[i], &argv, declstr,
+				       datafile, maskstr, pathstr))
 				return -1;
 		if (!*argv)
 			break;
@@ -62,7 +63,8 @@ int options::get_options(int *idx, char **argv,
 }
 
 bool options::parse_opt(char opt, char ***argv,
-			string &declstr, string &datafile, string& maskstr)
+			string &declstr, string &datafile,
+			string& maskstr, std::string &pathstr)
 {
 	switch (opt) {
 	case 'f' : datafile = *((*argv)++);
@@ -76,13 +78,19 @@ bool options::parse_opt(char opt, char ***argv,
 	case 'e' : kb_flags |= KB_EXPORTS;
 		   declstr = *((*argv)++);
 		   break;
-	case 's' : kb_flags |= KB_STRUCT;
-		   declstr = *((*argv)++);
-		   break;
-	case 'q' : kb_flags |= KB_QUIET;
+	case 'l' : kb_flags |= KB_WHITE_LIST;
 		   break;
 	case 'm' : kb_flags |= KB_MASKSTR;
 		   maskstr = *((*argv)++);
+		   break;
+	case 'p' : kb_flags |= KB_PATHSTR;
+		   pathstr = *((*argv)++);
+		   break;
+	case 'q' : kb_flags |= KB_QUIET;
+		   bump_qietlvl();
+		   break;
+	case 's' : kb_flags |= KB_STRUCT;
+		   declstr = *((*argv)++);
 		   break;
 	case 'v' : kb_flags |= KB_VERBOSE;
 		   break;

@@ -23,7 +23,10 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <dirent.h>
 #include <boost/format.hpp>
+#include <boost/foreach.hpp>
+#include <boost/tokenizer.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 
 #include "checksum.h"
@@ -31,6 +34,7 @@
 
 using namespace std;
 using boost::format;
+using boost::tokenizer;
 
 #define NDEBUG
 #if !defined(NDEBUG)
@@ -53,8 +57,12 @@ string lookup::get_helptext()
 kabi-lookup [-q|w] -e|s|c|d symbol [-f file-list] [-m mask] \n\
     Searches a kabi database for symbols. The results of the search \n\
     are printed to stdout and indented hierarchically.\n\
-    Switches e,s,c,d are mutually exlusive. Only one can be selected. \n\
-    Switches q,w,m, and f do not conflict and may be used concurrently.\n\
+\n\
+    Switches e,s,c,d are required, but mutually exlusive. \n\
+    Only one can be selected. \n\
+\n\
+    Switches q,w,l,m,p, and f are optional and do not conflict.\n\
+    They may be used concurrently.\n\
 \n\
     -e symbol   - Find the EXPORTED function defined by symbol. Print the \n\
                   function and its argument list as well descendants of \n\
@@ -66,19 +74,24 @@ kabi-lookup [-q|w] -e|s|c|d symbol [-f file-list] [-m mask] \n\
                   With the -w switch, the string must contain the compound \n\
                   type enclosed in quotes, e.g.\'struct foo\', \'union bar\'\n\
                   'enum int foo_states\' \n\
-    -c symbol   - Counts the instances of the symbol in the kabi tree. \n\
+    -c symbol   - Counts the instances of the symbol in the kernel tree. \n\
     -d symbol   - Seeks a data structure and prints its members to stdout. \n\
                   Without the -q switch, descendants of nonscalar members \n\
                   will also be printed.\n\
+    -l          - White listed symbols only. Limits search to \n\
+	          symbols in the kabi white list, if it has been built.\n\
+    -m mask     - Limits the search to a directories and files \n\
+	          containing the mask string. \n\
     -q          - \"Quiet\" option limits the amount of output. \n\
+                  More \'q\', more quiet, e.g. -qq\n\
                   Default is verbose.\n\
-    -w          - whole words only, default is \"match any and all\" \n\
-    -f filelist - Optional. List of data files that were created by kabi-parser.\n\
+    -p          - Path to top of kernel tree, if operating in a different\n\
+                  directory.\n\
+    -w          - Whole words only, default is \"match any and all\" \n\
+    -f filelist - List of data files that were created by kabi-parser.\n\
                   The default list created by running kabi-data.sh is \n\
 		  \"./redhat/kabi/kabi-datafiles.list\" relative to the \n\
                   top of the kernel tree. \n\
-    -m mask     - Optional. Limits the search to a directories and files \n\
-                  containing the mask string. \n\
     -h          - this help message.\n";
 }
 
@@ -98,6 +111,60 @@ lookup::lookup(int argc, char **argv)
 
 /*****************************************************************************
  */
+void lookup::report_nopath(const char* name, const char* path)
+{
+	cout << "Cannot open " << path << ": " << name << endl;
+	exit(EXE_NOFILE);
+}
+
+/*****************************************************************************
+ */
+bool lookup::is_ksym_in_line(string& line, string& ksym)
+{
+	tokenizer<> tok(line);
+
+	BOOST_FOREACH(string str, tok) {
+		if (str == ksym)
+			return true;
+	}
+
+	return false;
+}
+
+/*****************************************************************************
+ */
+bool lookup::is_whitelisted(string& ksym)
+{
+	DIR *dir;
+	struct dirent *ent;
+
+	string dirname = m_flags & KB_PATHSTR ?
+				m_pathstr + m_kabidir : m_kabidir;
+
+	if ((dir = opendir(dirname.c_str())) == NULL)
+		report_nopath(dirname.c_str(), "directory");
+
+	while ((ent = readdir(dir)) != NULL) {
+
+		ifstream ifs(ent->d_name);
+		string line;
+
+		if (!strstr(ent->d_name, "Module.kabi"))
+			continue;
+
+		if (!ifs.is_open())
+			report_nopath(ent->d_name, "file");
+
+		while (getline(ifs, line))
+			if (is_ksym_in_line(line, ksym))
+				return true;
+	}
+	return false;
+}
+
+
+/*****************************************************************************
+ */
 int lookup::run()
 {
 	ifstream ifs(m_filelist.c_str());
@@ -112,6 +179,11 @@ int lookup::run()
 		if ((m_flags & KB_MASKSTR) &&
 		    (m_datafile.find(m_maskstr) == string::npos))
 			continue;
+
+		if ((m_flags & KB_EXPORTS) && (m_flags & KB_WHITE_LIST))
+		{
+
+		}
 
 		if (!(m_flags & KB_COUNT)) {
 			cerr << "\33[2K\r";
@@ -182,8 +254,8 @@ int lookup::process_args(int argc, char **argv)
 		return EXE_ARG2SML;
 
 	m_flags = KB_VERBOSE;
-	m_flags |= m_opts.get_options(&argindex, &argv[0],
-					m_declstr, m_filelist, m_maskstr);
+	m_flags |= m_opts.get_options(&argindex, &argv[0], m_declstr,
+				      m_filelist, m_maskstr, m_pathstr);
 
 	if (m_flags < 0 || !check_flags())
 		return EXE_BADFORM;

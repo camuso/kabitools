@@ -48,7 +48,7 @@ enum levels {
 	LVL_COUNT
 };
 
-enum seekdir {
+enum skdir {
 	SK_PARENT = -1,
 	SK_CHILD = 1
 };
@@ -300,7 +300,7 @@ public:
 extern dnodemap& kb_get_public_dnodemap();
 extern int kb_read_dnodemap(std::string filename, dnodemap& dnmap);
 extern dnode* kb_lookup_dnode(crc_t crc);
-extern bool kb_is_adjacent(cnode& ref, cnode &dyn, seekdir step);
+extern bool kb_is_adjacent(cnode& ref, cnode &dyn, skdir step);
 
 extern "C"
 {
