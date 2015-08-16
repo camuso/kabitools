@@ -105,7 +105,9 @@ lookup::lookup(int argc, char **argv)
 	m_err.init(argc, argv);
 
 	if ((m_errindex = process_args(argc, argv))) {
-		m_err.print_cmd_errmsg(m_errindex, m_declstr, m_datafile);
+		m_errvec.push_back(m_declstr);
+		m_errvec.push_back(m_datafile);
+		m_err.print_errmsg(m_errindex, m_errvec);
 		exit(m_errindex);
 	}
 }
@@ -160,8 +162,7 @@ bool lookup::is_whitelisted(string& ksym)
 
 		while (getline(ifs, line))
 			if ((found = is_ksym_in_line(line, ksym)))
-				break;
-	}
+				break;	}
 	return found;
 }
 
@@ -208,7 +209,8 @@ int lookup::run()
 	if (m_isfound)
 		m_errindex = EXE_OK;
 
-	m_err.print_cmd_errmsg(m_errindex, m_declstr, m_filelist);
+	m_errvec.push_back(m_declstr);
+	m_err.print_errmsg(m_errindex, m_errvec);
 	return(m_errindex);
 }
 
@@ -234,7 +236,10 @@ bool lookup::check_flags()
 	if (m_flags & KB_QUIET)
 		m_flags &= ~KB_VERBOSE;
 
-	return !(count_bits(m_flags & m_exemask) > 1);
+	if ((m_flags & KB_WHITE_LIST) && !(m_flags & KB_WHOLE_WORD))
+		return false;
+
+	return (count_bits(m_flags & m_exemask) == 1);
 }
 
 /*****************************************************************************
@@ -481,7 +486,7 @@ int lookup::get_siblings_exported(dnode& dn)
 		get_children(dn, cn);
 		found = true;
 	}
-	return found ? EXE_OK : EXE_NOTFOUND_SIMPLE;
+	return found ? EXE_OK : EXE_NOTFOUND;
 }
 
 /*****************************************************************************
@@ -498,7 +503,7 @@ int lookup::get_file_of_export(dnode &dn)
 	crc_t crc = cn.parent.second;
 
 	if (!crc)
-		return EXE_NOTFOUND_SIMPLE;
+		return EXE_NOTFOUND;
 
 	dnode parentdn = *kb_lookup_dnode(crc);
 	it = parentdn.siblings.begin();
@@ -526,7 +531,7 @@ int lookup::exe_struct()
 		dnode* dn = kb_lookup_dnode(crc);
 
 		if (!dn)
-			return EXE_NOTFOUND_SIMPLE;
+			return EXE_NOTFOUND;
 
 		m_isfound = true;
 		m_rowman.rows.clear();
@@ -548,7 +553,7 @@ int lookup::exe_struct()
 		}
 	}
 
-	return m_isfound ? EXE_OK : EXE_NOTFOUND_SIMPLE;
+	return m_isfound ? EXE_OK : EXE_NOTFOUND;
 }
 
 /*****************************************************************************
@@ -570,10 +575,10 @@ int lookup::exe_exports()
 		dnode* dn = kb_lookup_dnode(crc);
 
 		if (!dn)
-			return EXE_NOTFOUND_SIMPLE;
+			return EXE_NOTFOUND;
 
 		if ((m_flags & KB_WHITE_LIST) && !(is_whitelisted(m_declstr)))
-			return EXE_NOT_WHITELISTED;
+			return EXE_NOTWHITE;
 
 		m_isfound = true;
 		m_rowman.rows.clear();
@@ -605,7 +610,7 @@ int lookup::exe_exports()
 		}
 	}
 
-	return m_isfound ? EXE_OK : EXE_NOTFOUND_SIMPLE;
+	return m_isfound ? EXE_OK : EXE_NOTFOUND;
 }
 
 /*****************************************************************************
@@ -626,7 +631,7 @@ int lookup::exe_decl()
 		dnode* dn = kb_lookup_dnode(crc);
 
 		if (!dn)
-			return EXE_NOTFOUND_SIMPLE;
+			return EXE_NOTFOUND;
 
 		cniterator cnit = dn->siblings.begin();
 		cnode cn = cnit->second;
@@ -656,7 +661,7 @@ int lookup::exe_decl()
 		}
 	}
 
-	return m_isfound ? EXE_OK : EXE_NOTFOUND_SIMPLE;
+	return m_isfound ? EXE_OK : EXE_NOTFOUND;
 }
 
 /************************************************

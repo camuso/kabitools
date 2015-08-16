@@ -84,6 +84,7 @@ private:
 	int m_flags;
 	int m_errindex = 0;
 	int m_exemask  = KB_COUNT | KB_DECL | KB_EXPORTS | KB_STRUCT;
+	std::vector<std::string> m_errvec;
 
 };
 
