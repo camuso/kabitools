@@ -73,24 +73,25 @@ kabi-lookup [-q|w] -e|s|c|d symbol [-f file-list] [-m mask] \n\
                   it was discovered. \n\
                   With the -w switch, the string must contain the compound \n\
                   type enclosed in quotes, e.g.\'struct foo\', \'union bar\'\n\
-                  'enum int foo_states\' \n\
+                  \'enum int foo_states\' \n\
     -c symbol   - Counts the instances of the symbol in the kernel tree. \n\
     -d symbol   - Seeks a data structure and prints its members to stdout. \n\
                   Without the -q switch, descendants of nonscalar members \n\
                   will also be printed.\n\
-    -l          - White listed symbols only. Limits search to \n\
-	          symbols in the kabi white list, if it has been built.\n\
-    -m mask     - Limits the search to a directories and files \n\
-	          containing the mask string. \n\
+    -l          - White listed symbols only. Limits search to symbols in the\n\
+                  kabi white list, if it exists.\n\
+                  Whole word searches only (-w). \n\
+    -m mask     - Limits the search to directories and files containing the\n\
+                  mask string. \n\
     -q          - \"Quiet\" option limits the amount of output. \n\
                   More \'q\', more quiet, e.g. -qq\n\
                   Default is verbose.\n\
     -p          - Path to top of kernel tree, if operating in a different\n\
                   directory.\n\
-    -w          - Whole words only, default is \"match any and all\" \n\
+    -w          - Whole word search, default is \"match any and all\" \n\
     -f filelist - List of data files that were created by kabi-parser.\n\
                   The default list created by running kabi-data.sh is \n\
-		  \"./redhat/kabi/kabi-datafiles.list\" relative to the \n\
+                  \"./redhat/kabi/kabi-datafiles.list\" relative to the \n\
                   top of the kernel tree. \n\
     -h          - this help message.\n";
 }
@@ -121,12 +122,12 @@ void lookup::report_nopath(const char* name, const char* path)
  */
 bool lookup::is_ksym_in_line(string& line, string& ksym)
 {
-	tokenizer<> tok(line);
+	boost::char_separator<char> sep(" \t");
+	tokenizer<boost::char_separator<char>> tok(line, sep);
 
-	BOOST_FOREACH(string str, tok) {
+	BOOST_FOREACH(string str, tok)
 		if (str == ksym)
 			return true;
-	}
 
 	return false;
 }
@@ -137,29 +138,31 @@ bool lookup::is_whitelisted(string& ksym)
 {
 	DIR *dir;
 	struct dirent *ent;
+	bool found = false;
 
-	string dirname = m_flags & KB_PATHSTR ?
-				m_pathstr + m_kabidir : m_kabidir;
+	if (m_pathstr.back() != '/') m_pathstr += "/";
+	string dirname = m_pathstr + m_kabidir;
 
 	if ((dir = opendir(dirname.c_str())) == NULL)
 		report_nopath(dirname.c_str(), "directory");
 
-	while ((ent = readdir(dir)) != NULL) {
+	while (!found && (ent = readdir(dir)) != NULL) {
 
-		ifstream ifs(ent->d_name);
 		string line;
+		string path = dirname + string(ent->d_name);
+		ifstream ifs(path);
+
+		if (!ifs.is_open())
+			continue;
 
 		if (!strstr(ent->d_name, "Module.kabi"))
 			continue;
 
-		if (!ifs.is_open())
-			report_nopath(ent->d_name, "file");
-
 		while (getline(ifs, line))
-			if (is_ksym_in_line(line, ksym))
-				return true;
+			if ((found = is_ksym_in_line(line, ksym)))
+				break;
 	}
-	return false;
+	return found;
 }
 
 
@@ -177,11 +180,6 @@ int lookup::run()
 		if ((m_flags & KB_MASKSTR) &&
 		    (m_datafile.find(m_maskstr) == string::npos))
 			continue;
-
-		if ((m_flags & KB_EXPORTS) && (m_flags & KB_WHITE_LIST))
-		{
-
-		}
 
 		if (!(m_flags & KB_COUNT)) {
 			cerr << "\33[2K\r";
@@ -205,6 +203,7 @@ int lookup::run()
 
 	cerr.flush();
 	cout << endl;
+	ifs.close();
 
 	if (m_isfound)
 		m_errindex = EXE_OK;
@@ -306,6 +305,17 @@ int lookup::exe_count()
 }
 
 /*****************************************************************************
+ *
+ *
+ *
+ */
+bool lookup::is_function_whitelisted(cnode& cn)
+{
+	dnode* func = kb_lookup_dnode(cn.function);
+	return is_whitelisted(func->decl);
+}
+
+/*****************************************************************************
  * lookup::get_parents(cnode &cn)
  *
  * Lookup the parent's dnode using the crc from the parent field of the
@@ -351,7 +361,9 @@ int lookup::get_parents(cnode& cn)
  * dn - reference to a dnode
  *
  * Walk the siblings cnodemap in the dnode to access each instance of the
- * symbol characterized by the dnode.
+ * symbol characterized by the dnode. If we're only looking for whitelisted
+ * symbols, and if the topmost symbol in the ancestry (function) is not
+ * whitelisted, then skip it.
  *
  */
 int lookup::get_siblings_up(dnode& dn)
@@ -359,6 +371,11 @@ int lookup::get_siblings_up(dnode& dn)
 	for (auto it : dn.siblings) {
 		cnode cn = it.second;
 		m_rowman.fill_row(dn, cn);
+
+		if ((m_flags & KB_WHITE_LIST) &&
+		   !(is_function_whitelisted(cn)))
+			continue;
+
 		DBG(m_rowman.print_row(m_rowman.rows.back());)
 		get_parents(cn);
 	}
@@ -554,6 +571,9 @@ int lookup::exe_exports()
 
 		if (!dn)
 			return EXE_NOTFOUND_SIMPLE;
+
+		if ((m_flags & KB_WHITE_LIST) && !(is_whitelisted(m_declstr)))
+			return EXE_NOT_WHITELISTED;
 
 		m_isfound = true;
 		m_rowman.rows.clear();

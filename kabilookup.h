@@ -55,7 +55,7 @@ private:
 	bool is_whitelisted(std::string& ksym);
 	void report_nopath(const char *name, const char *path);
 	bool is_ksym_in_line(std::string &line, std::string &ksym);
-
+	bool is_function_whitelisted(cnode& cn);
 
 	// member classes
 	dnodemap& m_dnmap = kb_get_public_dnodemap();
@@ -76,7 +76,7 @@ private:
 	std::string m_declstr;
 	std::string m_maskstr;
 	std::string m_pathstr   = "./";
-	std::string m_kabidir = "./redhat/kabi/";
+	std::string m_kabidir = "redhat/kabi/";
 
 	unsigned long m_crc;
 	bool m_isfound = false;

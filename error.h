@@ -13,7 +13,8 @@ enum exemsg {
 	EXE_NOTFOUND,
 	EXE_NOTFOUND_SIMPLE,
 	EXE_2MANY,
-	EXE_COUNT
+	EXE_COUNT,
+	EXE_NOT_WHITELISTED,
 };
 
 class error
