@@ -11,10 +11,14 @@ enum exemsg {
 	EXE_INVARG,
 	EXE_NOFILE,
 	EXE_NOTFOUND,
-	EXE_NOTFOUND_SIMPLE,
-	EXE_2MANY,
+	EXE_NOTWHITE,
 	EXE_COUNT,
-	EXE_NOT_WHITELISTED,
+};
+
+enum errfmt {
+	EF_0,
+	EF_1,
+	EF_2,
 };
 
 class error
@@ -23,17 +27,21 @@ public:
 	error(){}
 	void init (int argc, char **argv);
 	void print_cmdline();
-	void print_cmd_errmsg(int err,
-			      std::string declstr, std::string datafile);
-	int get_errmask() {return m_errmask;}
-	void set_errmask_bit(int bit) {m_errmask |= bit;}
-	void clr_errmask_bit(int bit) {m_errmask &= ~bit;}
+	void print_cmd_errmsg(int err, std::string& str1, std::string& str2);
+	void print_errmsg(int err, std::vector<std::string> strvec);
+	int get_cmderrmask() {return m_cmderrmask;}
+	void set_cmderrmask_bit(int bit) {m_cmderrmask |= bit;}
+	void clr_cmderrmask_bit(int bit) {m_cmderrmask &= ~bit;}
 
 private:
+	void map_err(int err, std::string str);
 	int m_orig_argc;
 	char **m_orig_argv;
+	std::map <int, std::string> m_errmap;
 	std::string errstr[EXE_COUNT];
-	int m_errmask =	((1 << EXE_ARG2BIG)  |
+
+	int m_cmderrmask =
+			((1 << EXE_ARG2BIG)  |
 			 (1 << EXE_ARG2SML)  |
 			 (1 << EXE_CONFLICT) |
 			 (1 << EXE_BADFORM)  |

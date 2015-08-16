@@ -4,22 +4,24 @@
 
 using namespace std;
 
+void error::map_err(int err, string str)
+{
+	pair<int, string> errpair = make_pair(err, str);
+	m_errmap.insert(errpair);
+}
+
 void error::init(int argc, char **argv)
 {
 	m_orig_argc = argc;
 	m_orig_argv = argv;
-	errstr[EXE_ARG2BIG]  = "Too many arguments";
-	errstr[EXE_ARG2SML]  = "Not enough arguments";
-	errstr[EXE_CONFLICT] = "You entered conflicting switches";
-	errstr[EXE_BADFORM]  = "Badly formed argument list";
-	errstr[EXE_INVARG]   = "Invalid argument.";
-	errstr[EXE_NOFILE]   = "Seeking \"%s\", but cannot open database"
-			       " file %s\n";
-	errstr[EXE_NOTFOUND] = "\"%s\" cannot be found in database file %s\n";
-	errstr[EXE_2MANY]    = "Too many items match \"%s\" in database %s."
-			       " Be more specific.\n";
-	errstr[EXE_NOTFOUND_SIMPLE] = "\"%s\" cannot be found in any of the"
-				" files listed in: %s\n";
+	map_err(EXE_ARG2BIG,  "Too many arguments");
+	map_err(EXE_ARG2SML,  "Not enough arguments");
+	map_err(EXE_CONFLICT, "You entered conflicting switches");
+	map_err(EXE_BADFORM,  "Badly formed argument list");
+	map_err(EXE_INVARG,   "Invalid argument.");
+	map_err(EXE_NOFILE,   "Cannot open %s : %s\n");
+	map_err(EXE_NOTFOUND, "Cannot find symbol %s\n");
+	map_err(EXE_NOTWHITE, "\"%s\" : symbol is not whitelisted.\n");
 }
 
 void error::print_cmdline()
@@ -32,18 +34,31 @@ void error::print_cmdline()
 #include <boost/format.hpp>
 using boost::format;
 
-void error::print_cmd_errmsg(int err, string declstr, string datafile)
+void error::print_errmsg(int err, std::vector<std::string> strvec)
 {
 	if (err == 0) {
 		return;
 	}
-	else if ((1 << err) & m_errmask) {
-		cout << format("\n%s. You typed ...\n  ") % errstr[err];
+	else if ((1 << err) & m_cmderrmask) {
+		cout << format("\n%s. You typed ...\n  ") % m_errmap.at(err);
 		print_cmdline();
 		cout << "\nPlease read the help text below.\n"
 		     << lookup::get_helptext();
-	}
-	else {
-		cerr << format(errstr[err]) % declstr % datafile;
+		return;
+	} else {
+		string& errstr = m_errmap.at(err);
+
+		switch (strvec.size()) {
+		case 0: cout << errstr;
+			break;
+		case 1: cout << format(errstr)	% strvec[0];
+			break;
+		case 2: cout << format(errstr)	% strvec[0] % strvec[1];
+			break;
+		case 3: cout << format(errstr)	% strvec[0] % strvec[1]
+						% strvec[2];
+			break;
+		default : cout << errstr;;
+		}
 	}
 }
