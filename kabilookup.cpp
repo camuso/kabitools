@@ -116,7 +116,7 @@ lookup::lookup(int argc, char **argv)
  */
 void lookup::report_nopath(const char* name, const char* path)
 {
-	cout << "Cannot open " << path << ": " << name << endl;
+	cout << "\nCannot open " << path << ": " << name << endl;
 	exit(EXE_NOFILE);
 }
 
@@ -317,6 +317,7 @@ int lookup::exe_count()
 bool lookup::is_function_whitelisted(cnode& cn)
 {
 	dnode* func = kb_lookup_dnode(cn.function);
+	if (!func) return false;
 	return is_whitelisted(func->decl);
 }
 
@@ -375,11 +376,13 @@ int lookup::get_siblings_up(dnode& dn)
 {
 	for (auto it : dn.siblings) {
 		cnode cn = it.second;
-		m_rowman.fill_row(dn, cn);
 
 		if ((m_flags & KB_WHITE_LIST) &&
 		   !(is_function_whitelisted(cn)))
 			continue;
+
+		m_isfound = true;
+		m_rowman.fill_row(dn, cn);
 
 		DBG(m_rowman.print_row(m_rowman.rows.back());)
 		get_parents(cn);
@@ -533,7 +536,6 @@ int lookup::exe_struct()
 		if (!dn)
 			return EXE_NOTFOUND;
 
-		m_isfound = true;
 		m_rowman.rows.clear();
 		get_siblings_up(*dn);
 		m_rowman.put_rows_from_back(quiet);
