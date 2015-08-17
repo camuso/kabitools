@@ -162,7 +162,8 @@ bool lookup::is_whitelisted(string& ksym)
 
 		while (getline(ifs, line))
 			if ((found = is_ksym_in_line(line, ksym)))
-				break;	}
+				break;
+	}
 	return found;
 }
 
@@ -318,7 +319,8 @@ bool lookup::is_function_whitelisted(cnode& cn)
 {
 	dnode* func = kb_lookup_dnode(cn.function);
 	if (!func) return false;
-	return is_whitelisted(func->decl);
+	cnode& fcn = func->siblings.begin()->second;
+	return is_whitelisted(fcn.name);
 }
 
 /*****************************************************************************
