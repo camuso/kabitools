@@ -11,7 +11,7 @@ index f73f35f..13a3e04 100644
  # configuration file for rh- targets
  .rhel7git.mk
 diff --git a/Makefile b/Makefile
-index fc7a8cd..3ceb050 100644
+index 0673c41..ef92a81 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -345,6 +345,7 @@ INSTALLKERNEL  := installkernel
@@ -49,7 +49,7 @@ index 6ea87b3..11f12d2 100644
  kabi/kabi-rhel7?/*
 +kabi/kabi-datafiles.list
 diff --git a/scripts/Makefile.build b/scripts/Makefile.build
-index d5d859c..3e719d4 100644
+index d5d859c..1f67461 100644
 --- a/scripts/Makefile.build
 +++ b/scripts/Makefile.build
 @@ -30,6 +30,9 @@ ldflags-y  :=
@@ -62,14 +62,15 @@ index d5d859c..3e719d4 100644
  # Read auto.conf if it exists, otherwise ignore
  -include include/config/auto.conf
  
-@@ -209,6 +212,18 @@ cmd_cc_i_c       = $(CPP) $(c_flags)   -o $@ $<
+@@ -209,6 +212,19 @@ cmd_cc_i_c       = $(CPP) $(c_flags)   -o $@ $<
  $(obj)/%.i: $(src)/%.c FORCE
  	$(call if_changed_dep,cc_i_c)
  
 +cmd_kabiparser = 					\
 +    $(CPP) $(c_flags) -o $(1) $<;			\
-+    echo $(2) >> $(KABIDATAFILE);			\
-+    $(KABIPARSER) -xf $(2) $(1);
++    $(KABIPARSER) -xo $(2) -f $(1) -S -Wall_off;	\
++    test -e $(2) && echo $(2) >> $(KABIDATAFILE);	\
++    rm -f $(1);
 +
 +quiet_cmd_cc_kabiparser_c = KABI $@
 +cmd_cc_kabiparser_c = 					\
@@ -81,7 +82,7 @@ index d5d859c..3e719d4 100644
  cmd_gensymtypes =                                                           \
      $(CPP) -D__GENKSYMS__ $(c_flags) $< |                                   \
      $(GENKSYMS) $(if $(1), -T $(2))                                         \
-@@ -253,6 +268,10 @@ cmd_modversions =								\
+@@ -253,6 +269,10 @@ cmd_modversions =								\
  		$(call cmd_gensymtypes,$(KBUILD_SYMTYPES),$(@:.o=.symtypes))	\
  		    > $(@D)/.tmp_$(@F:.o=.ver);					\
  										\
