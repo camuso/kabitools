@@ -72,13 +72,20 @@ kabi-lookup  - Utility that traverses the data files looking for symbols
                -c <string> - counts the number of times the string pattern
                              is encountered in the database.
 
+               -l          - Limits search to symbols in the white lists, if
+                             they exist. Must be used with the -w option.
+                             Run "make rh-kabi" to create the white lists.
+
                -m <mask>     The mask string limits the search to filenames
                              and subdirectories containing the mask string.
 
-               -q            Limits the search to a depth of one. For
-                             struct searches, inhibits printing of the
-                             tree from the argument level to the level
-                             at which the string is located.
+               -p <path>   - Path to the top of the kernel tree, if executing
+                             in a different directory.
+
+               -v          - Verbose output, printing the hierarchy down to
+                             the lowest level.
+
+               -w          - Whole words only. Default is substring match.
 
 To install from the rpm
 -----------------------
@@ -91,7 +98,7 @@ You must install gcc c++ and the boost library first.
 yum install gcc-c++
 yum install boost
 yum install \
-     http://people.redhat.com/tcamuso/kabitools/kabitools-3.3-1.el7.x86_64.rpm
+     http://people.redhat.com/tcamuso/kabitools/kabitools-3.4-2.el7.x86_64.rpm
 
 
 To build from scratch
@@ -173,6 +180,7 @@ $ kabi-lookup -s pci_dev
 Searches for all instances of "pci_dev", including such patterns as
 "struct pci_device_id".
 
+
 $ kabi-lookup -sw "struct pci_dev"
 
 NOTE: Quotes are needed around patterns having spaces.
@@ -180,6 +188,7 @@ NOTE: Quotes are needed around patterns having spaces.
 Will search only for exactly "struct pci_dev" and will do so faster.
 Exact matches for compound data types must include the "struct" or
 "union" declaration.
+
 
 $ kabi-lookup -m pci -s pci_bus
 
@@ -197,8 +206,3 @@ $ kabi-lookup -ew mlx4_cq_modify
 Will find the one and only unique mlx4_cq_modify exported symbol and
 its argument lists and return values.
 
-
-There is also a -q option for a quiet "less verbose" output.
-
-To see all the options for kabi-lookup, simply invoke it without
-arguments.
