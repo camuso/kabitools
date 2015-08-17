@@ -53,15 +53,16 @@ string lookup::get_helptext()
 {
 	return "\
 \n\
-kabi-lookup [-q|w] -e|s|c|d symbol [-f file-list] [-m mask] \n\
+kabi-lookup [-v|w] -e|s|c|d symbol [-f file-list] [-m mask] [-p path] \n\
     Searches a kabi database for symbols. The results of the search \n\
     are printed to stdout and indented hierarchically.\n\
 \n\
     Switches e,s,c,d are required, but mutually exlusive. \n\
     Only one can be selected. \n\
 \n\
-    Switches q,w,l,m,p, and f are optional and do not conflict.\n\
-    They may be used concurrently.\n\
+    Switches v,w,l,m,p, and f are optional. \n\
+    Switch l must be used with switch w, or the program will exit with\n\
+    a message. All may be used concurrently.\n\
 \n\
     -e symbol   - Find the EXPORTED function defined by symbol. Print the \n\
                   function and its argument list as well descendants of \n\
@@ -85,11 +86,10 @@ kabi-lookup [-q|w] -e|s|c|d symbol [-f file-list] [-m mask] \n\
     -p          - Path to top of kernel tree, if operating in a different\n\
                   directory.\n\
     -v          - Verbose output. Default is quiet.\n\
-    -w          - Whole word search, default is \"match any and all\" \n\
-    -f filelist - List of data files that were created by kabi-parser.\n\
-                  The default list created by running kabi-data.sh is \n\
-                  \"./redhat/kabi/kabi-datafiles.list\" relative to the \n\
-                  top of the kernel tree. \n\
+    -w          - Whole word search, default is substring match. \n\
+    -f filelist - List of data files that were created by kabi-parser\n\
+                  during the kernel build, or separately using the \n\
+                  kabi-data.sh script. \n\
     -h          - this help message.\n";
 }
 
@@ -450,8 +450,8 @@ int lookup::exe_decl()
 /*****************************************************************************
  * lookup::exe_count() - count the appearances of the symbol in provided scope
  *
- * Scope can be limited using the -u switch to limit the search to directories
- * and files containing the mask string passed with the -u option.
+ * Scope can be limited using the -m switch to limit the search to directories
+ * and files containing the mask string passed with the -m option.
  *
  */
 int lookup::exe_count()
