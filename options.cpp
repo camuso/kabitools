@@ -87,12 +87,14 @@ bool options::parse_opt(char opt, char ***argv,
 		   pathstr = *((*argv)++);
 		   break;
 	case 'q' : kb_flags |= KB_QUIET;
+		   kb_flags &= ~KB_VERBOSE;
 		   bump_qietlvl();
 		   break;
 	case 's' : kb_flags |= KB_STRUCT;
 		   declstr = *((*argv)++);
 		   break;
 	case 'v' : kb_flags |= KB_VERBOSE;
+		   kb_flags &= ~KB_QUIET;
 		   break;
 	case 'w' : kb_flags |= KB_WHOLE_WORD;
 		   break;
