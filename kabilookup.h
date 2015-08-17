@@ -24,6 +24,7 @@
 
 #include <map>
 #include <vector>
+#include <dirent.h>
 #include "kabi-map.h"
 #include "options.h"
 #include "error.h"
@@ -56,6 +57,7 @@ private:
 	void report_nopath(const char *name, const char *path);
 	bool is_ksym_in_line(std::string &line, std::string &ksym);
 	bool is_function_whitelisted(cnode& cn);
+	void build_whitelist();
 
 	// member classes
 	dnodemap& m_dnmap = kb_get_public_dnodemap();
@@ -71,21 +73,24 @@ private:
 
 	std::vector<errpair> m_errors;
 	std::vector<crc_t> m_dups;
-	std::string m_datafile = "../kabi-data.dat";
-	std::string m_filelist = "./redhat/kabi/kabi-datafiles.list";
+	std::vector<std::string> m_whitelist;
+	std::vector<std::string> m_errvec;
+
 	std::string m_declstr;
 	std::string m_maskstr;
+	std::string m_datafile = "../kabi-data.dat";
+	std::string m_filelist = "./redhat/kabi/kabi-datafiles.list";
+
 	std::string m_pathstr   = "./";
 	std::string m_kabidir = "redhat/kabi/";
+	DIR *m_kbdir;
 
 	unsigned long m_crc;
 	bool m_isfound = false;
 	int m_count = 0;
-	int m_flags;
+	int m_flags = KB_QUIET;
 	int m_errindex = 0;
 	int m_exemask  = KB_COUNT | KB_DECL | KB_EXPORTS | KB_STRUCT;
-	std::vector<std::string> m_errvec;
-
 };
 
 #endif // KABILOOKUP_H

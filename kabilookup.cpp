@@ -23,7 +23,6 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
-#include <dirent.h>
 #include <boost/format.hpp>
 #include <boost/foreach.hpp>
 #include <boost/tokenizer.hpp>
@@ -83,17 +82,24 @@ kabi-lookup [-q|w] -e|s|c|d symbol [-f file-list] [-m mask] \n\
                   Whole word searches only (-w). \n\
     -m mask     - Limits the search to directories and files containing the\n\
                   mask string. \n\
-    -q          - \"Quiet\" option limits the amount of output. \n\
-                  More \'q\', more quiet, e.g. -qq\n\
-                  Default is verbose.\n\
     -p          - Path to top of kernel tree, if operating in a different\n\
                   directory.\n\
+    -v          - Verbose output. Default is quiet.\n\
     -w          - Whole word search, default is \"match any and all\" \n\
     -f filelist - List of data files that were created by kabi-parser.\n\
                   The default list created by running kabi-data.sh is \n\
                   \"./redhat/kabi/kabi-datafiles.list\" relative to the \n\
                   top of the kernel tree. \n\
     -h          - this help message.\n";
+}
+
+/************************************************
+** main()
+************************************************/
+int main(int argc, char *argv[])
+{
+	lookup lu(argc, argv);
+	return lu.run();
 }
 
 /*****************************************************************************
@@ -113,60 +119,57 @@ lookup::lookup(int argc, char **argv)
 }
 
 /*****************************************************************************
+ * lookup::process_args(int argc, char **argv)
  */
-void lookup::report_nopath(const char* name, const char* path)
+int lookup::process_args(int argc, char **argv)
 {
-	cout << "\nCannot open " << path << ": " << name << endl;
-	exit(EXE_NOFILE);
+	int argindex = 0;
+
+	// skip over argv[0], which is the invocation of this app.
+	++argv; --argc;
+
+	if(!argc)
+		return EXE_ARG2SML;
+
+	m_flags |= m_opts.get_options(&argindex, &argv[0], m_declstr,
+				      m_filelist, m_maskstr, m_pathstr);
+
+	if (m_flags & KB_VERBOSE)
+		m_flags &= ~KB_QUIET;
+
+	if (m_flags < 0 || !check_flags())
+		return EXE_BADFORM;
+
+	return EXE_OK;
 }
 
 /*****************************************************************************
+ * lookup::check_flags() - Check for mutually exclusive flags.
  */
-bool lookup::is_ksym_in_line(string& line, string& ksym)
+bool lookup::check_flags()
 {
-	boost::char_separator<char> sep(" \t");
-	tokenizer<boost::char_separator<char>> tok(line, sep);
+	if ((m_flags & KB_VERBOSE) && (m_flags & KB_QUIET))
+		return false;
 
-	BOOST_FOREACH(string str, tok)
-		if (str == ksym)
-			return true;
+	if ((m_flags & KB_WHITE_LIST) && !(m_flags & KB_WHOLE_WORD))
+		return false;
 
-	return false;
+	return (count_bits(m_flags & m_exemask) == 1);
 }
 
 /*****************************************************************************
+ * lookup::count_bits(unsigned mask) - count number of bits set in the mask
  */
-bool lookup::is_whitelisted(string& ksym)
+int lookup::count_bits(unsigned mask)
 {
-	DIR *dir;
-	struct dirent *ent;
-	bool found = false;
+	int count = 0;
 
-	if (m_pathstr.back() != '/') m_pathstr += "/";
-	string dirname = m_pathstr + m_kabidir;
+	do {
+		count += mask & 1;
+	} while (mask >>= 1);
 
-	if ((dir = opendir(dirname.c_str())) == NULL)
-		report_nopath(dirname.c_str(), "directory");
-
-	while (!found && (ent = readdir(dir)) != NULL) {
-
-		string line;
-		string path = dirname + string(ent->d_name);
-		ifstream ifs(path);
-
-		if (!ifs.is_open())
-			continue;
-
-		if (!strstr(ent->d_name, "Module.kabi"))
-			continue;
-
-		while (getline(ifs, line))
-			if ((found = is_ksym_in_line(line, ksym)))
-				break;
-	}
-	return found;
+	return count;
 }
-
 
 /*****************************************************************************
  */
@@ -176,6 +179,9 @@ int lookup::run()
 
 	if(!ifs.is_open())
 		report_nopath(m_filelist.c_str(), "file");
+
+	if (m_flags && KB_WHITE_LIST)
+		build_whitelist();
 
 	while (getline(ifs, m_datafile)) {
 
@@ -216,54 +222,55 @@ int lookup::run()
 }
 
 /*****************************************************************************
- * lookup::count_bits(unsigned mask) - count number of bits set in the mask
+ * lookup::build_whitelist()
+ *
+ * Initialize the m_whitelist vector member with the symbols in the kabi
+ * whitelists.
+ *
  */
-int lookup::count_bits(unsigned mask)
-{
-	int count = 0;
+void lookup::build_whitelist() {
 
-	do {
-		count += mask & 1;
-	} while (mask >>= 1);
+	struct dirent *ent;
 
-	return count;
+	if (m_pathstr.back() != '/')
+		m_pathstr += "/";
+
+	m_kabidir = m_pathstr + m_kabidir;
+
+	if ((m_kbdir = opendir(m_kabidir.c_str())) == NULL)
+		report_nopath(m_kabidir.c_str(), "directory");
+
+	while ((ent = readdir(m_kbdir)) != NULL) {
+		string line;
+		string path = m_kabidir + string(ent->d_name);
+		ifstream ifs(path);
+
+		if ((!ifs.is_open()) || (!strstr(ent->d_name, "Module.kabi")))
+			continue;
+
+		while (getline(ifs, line)) {
+			boost::char_separator<char> sep(" \t");
+			tokenizer<boost::char_separator<char>> tok(line, sep);
+			int index = 0;
+
+			// Second token in the line is the whitelisted symbol
+			BOOST_FOREACH(string str, tok) {
+				if (++index == 2) {
+					m_whitelist.push_back(str);
+					break;
+				}
+			}
+		}
+	}
 }
 
 /*****************************************************************************
- * lookup::check_flags() - Check for mutually exclusive flags.
+ * lookup::report_nopath(const char *name, const char *path)
  */
-bool lookup::check_flags()
+void lookup::report_nopath(const char* name, const char* path)
 {
-	if (m_flags & KB_QUIET)
-		m_flags &= ~KB_VERBOSE;
-
-	if ((m_flags & KB_WHITE_LIST) && !(m_flags & KB_WHOLE_WORD))
-		return false;
-
-	return (count_bits(m_flags & m_exemask) == 1);
-}
-
-/*****************************************************************************
- * lookup::process_args(int argc, char **argv)
- */
-int lookup::process_args(int argc, char **argv)
-{
-	int argindex = 0;
-
-	// skip over argv[0], which is the invocation of this app.
-	++argv; --argc;
-
-	if(!argc)
-		return EXE_ARG2SML;
-
-	m_flags = KB_VERBOSE;
-	m_flags |= m_opts.get_options(&argindex, &argv[0], m_declstr,
-				      m_filelist, m_maskstr, m_pathstr);
-
-	if (m_flags < 0 || !check_flags())
-		return EXE_BADFORM;
-
-	return EXE_OK;
+	cout << "\nCannot open " << path << ": " << name << endl;
+	exit(EXE_NOFILE);
 }
 
 /*****************************************************************************
@@ -275,12 +282,160 @@ int lookup::execute(string datafile)
 		return EXE_NOFILE;
 
 	switch (m_flags & m_exemask) {
-	case KB_COUNT   : return exe_count();
-	case KB_DECL    : return exe_decl();
-	case KB_EXPORTS : return exe_exports();
 	case KB_STRUCT  : return exe_struct();
+	case KB_EXPORTS : return exe_exports();
+	case KB_DECL    : return exe_decl();
+	case KB_COUNT   : return exe_count();
 	}
 	return 0;
+}
+
+/*****************************************************************************
+ * lookup::exe_struct()
+ *
+ * Search the graph for a struct matching the input string in m_declstr and
+ * dump its hierarchy everywhere it's encountered all the way up to the
+ * file level.
+ */
+int lookup::exe_struct()
+{
+	bool quiet = m_flags & KB_QUIET;
+
+	if (m_opts.kb_flags & KB_WHOLE_WORD) {
+		unsigned long crc = raw_crc32(m_declstr.c_str());
+		dnode* dn = kb_lookup_dnode(crc);
+
+		if (!dn)
+			return EXE_NOTFOUND;
+
+		m_rowman.rows.clear();
+		get_siblings_up(*dn);
+		m_rowman.put_rows_from_back(quiet);
+
+	} else {
+
+		for (auto it : m_dnmap) {
+			dnode& dn = it.second;
+
+			if (dn.decl.find(m_declstr) == string::npos)
+				continue;
+
+			m_isfound = true;
+			m_rowman.rows.clear();
+			get_siblings_up(dn);
+			m_rowman.put_rows_from_back(quiet);
+		}
+	}
+
+	return m_isfound ? EXE_OK : EXE_NOTFOUND;
+}
+
+/*****************************************************************************
+ * int lookup::exe_exports()
+ *
+ * Search the graph for exported symbols. If the whole word flag is set, then
+ * the search will look for an exact match. In that case, it will find at most
+ * one matching exported symbol.
+ * If not, the code will search the graph for the string where ever it appears,
+ * even as a substring, but only exported symbols are considered.
+ */
+int lookup::exe_exports()
+{
+	bool quiet = m_flags & KB_QUIET;
+	int status = EXE_OK;
+
+	if (m_opts.kb_flags & KB_WHOLE_WORD) {
+		unsigned long crc = raw_crc32(m_declstr.c_str());
+		dnode* dn = kb_lookup_dnode(crc);
+
+		if (!dn)
+			return EXE_NOTFOUND;
+
+		if ((m_flags & KB_WHITE_LIST) && !(is_whitelisted(m_declstr)))
+			return EXE_NOTWHITE;
+
+		m_isfound = true;
+		m_rowman.rows.clear();
+		get_file_of_export(*dn);
+		status = get_siblings_exported(*dn);
+
+		if (status == EXE_OK)
+			m_rowman.put_rows_from_front(quiet);
+
+	} else {
+
+		for (auto it : m_dnmap) {
+			dnode& dn = it.second;
+
+			cniterator cnit = dn.siblings.begin();
+			cnode cn = cnit->second;
+
+			if ((cn.level != LVL_EXPORTED) ||
+			    (cn.name.find(m_declstr) == string::npos))
+				continue;
+
+			m_isfound = true;
+			m_rowman.rows.clear();
+			get_file_of_export(dn);
+			status = get_siblings_exported(dn);
+
+			if (status == EXE_OK)
+				m_rowman.put_rows_from_front(quiet);
+		}
+	}
+
+	return m_isfound ? EXE_OK : EXE_NOTFOUND;
+}
+
+/*****************************************************************************
+ * lookout::exe_decl()
+ *
+ * Search for the first instance of the data structure characterized by the
+ * declaration passed to the program and stored in m_declstr. All the
+ * members of the data structure are printed to the screen, and the
+ * program exits.
+ *
+ */
+int lookup::exe_decl()
+{
+	bool quiet = m_flags & KB_QUIET;
+
+	if (m_opts.kb_flags & KB_WHOLE_WORD) {
+		unsigned long crc = raw_crc32(m_declstr.c_str());
+		dnode* dn = kb_lookup_dnode(crc);
+
+		if (!dn)
+			return EXE_NOTFOUND;
+
+		cniterator cnit = dn->siblings.begin();
+		cnode cn = cnit->second;
+		m_isfound = true;
+		m_rowman.rows.clear();
+		m_rowman.fill_row(*dn, cn);
+
+		get_children(*dn, cn);
+		m_rowman.put_rows_from_front_normalized(quiet);
+
+	} else {
+
+		for (auto it : m_dnmap) {
+			dnode& dn = it.second;
+			cniterator cnit = dn.siblings.begin();
+			cnode cn = cnit->second;
+
+			if (dn.decl.find(m_declstr) == string::npos)
+				continue;
+
+			m_isfound = true;
+			m_rowman.rows.clear();
+			m_rowman.fill_row(dn, cn);
+
+			get_children(dn, cn);
+			m_rowman.put_rows_from_front_normalized(quiet);
+		}
+	}
+
+	return m_isfound ? EXE_OK : EXE_NOTFOUND;
 }
 
 /*****************************************************************************
@@ -311,8 +466,29 @@ int lookup::exe_count()
 }
 
 /*****************************************************************************
+ * lookup::is_whitelisted(string &ksym)
  *
+ * Search the m_whitelist vector for a matching symbol.
+ */
+bool lookup::is_whitelisted(string& ksym)
+{
+	bool found;
+	vector<string>::iterator vit;
+
+	vit = find_if(m_whitelist.begin(), m_whitelist.end(),
+		[ksym](string& str) {
+			return (str == ksym);
+		});
+
+	found = vit != m_whitelist.end();
+	return found;
+}
+
+/*****************************************************************************
+ * lookup::is_function_whitelisted(cnode &cn)
  *
+ * Find the function at the top of the hierarchy where this cnode was found
+ * and search the whitelist for a match.
  *
  */
 bool lookup::is_function_whitelisted(cnode& cn)
@@ -517,162 +693,4 @@ int lookup::get_file_of_export(dnode &dn)
 	DBG(m_rowman.print_row(m_rowman.rows.back());)
 
 	return EXE_OK;
-}
-
-
-/*****************************************************************************
- * lookup::exe_struct()
- *
- * Search the graph for a struct matching the input string in m_declstr and
- * dump its hierarchy everywhere it's encountered all the way up to the
- * file level.
- */
-int lookup::exe_struct()
-{
-	bool quiet = m_flags & KB_QUIET;
-
-	if (m_opts.kb_flags & KB_WHOLE_WORD) {
-		unsigned long crc = raw_crc32(m_declstr.c_str());
-		dnode* dn = kb_lookup_dnode(crc);
-
-		if (!dn)
-			return EXE_NOTFOUND;
-
-		m_rowman.rows.clear();
-		get_siblings_up(*dn);
-		m_rowman.put_rows_from_back(quiet);
-
-	} else {
-
-		for (auto it : m_dnmap) {
-			dnode& dn = it.second;
-
-			if (dn.decl.find(m_declstr) == string::npos)
-				continue;
-
-			m_isfound = true;
-			m_rowman.rows.clear();
-			get_siblings_up(dn);
-			m_rowman.put_rows_from_back(quiet);
-		}
-	}
-
-	return m_isfound ? EXE_OK : EXE_NOTFOUND;
-}
-
-/*****************************************************************************
- * int lookup::exe_exports()
- *
- * Search the graph for exported symbols. If the whole word flag is set, then
- * the search will look for an exact match. In that case, it will find at most
- * one matching exported symbol.
- * If not, the code will search the graph for the string where ever it appears,
- * even as a substring, but only exported symbols are considered.
- */
-int lookup::exe_exports()
-{
-	bool quiet = m_flags & KB_QUIET;
-	int status = EXE_OK;
-
-	if (m_opts.kb_flags & KB_WHOLE_WORD) {
-		unsigned long crc = raw_crc32(m_declstr.c_str());
-		dnode* dn = kb_lookup_dnode(crc);
-
-		if (!dn)
-			return EXE_NOTFOUND;
-
-		if ((m_flags & KB_WHITE_LIST) && !(is_whitelisted(m_declstr)))
-			return EXE_NOTWHITE;
-
-		m_isfound = true;
-		m_rowman.rows.clear();
-		get_file_of_export(*dn);
-		status = get_siblings_exported(*dn);
-
-		if (status == EXE_OK)
-			m_rowman.put_rows_from_front(quiet);
-
-	} else {
-
-		for (auto it : m_dnmap) {
-			dnode& dn = it.second;
-
-			cniterator cnit = dn.siblings.begin();
-			cnode cn = cnit->second;
-
-			if ((cn.level != LVL_EXPORTED) ||
-			    (cn.name.find(m_declstr) == string::npos))
-				continue;
-
-			m_isfound = true;
-			m_rowman.rows.clear();
-			get_file_of_export(dn);
-			status = get_siblings_exported(dn);
-
-			if (status == EXE_OK)
-				m_rowman.put_rows_from_front(quiet);
-		}
-	}
-
-	return m_isfound ? EXE_OK : EXE_NOTFOUND;
-}
-
-/*****************************************************************************
- * lookout::exe_decl()
- *
- * Search for the first instance of the data structure characterized by the
- * declaration passed to the program and stored in m_declstr. All the
- * members of the data structure are printed to the screen, and the
- * program exits.
- *
- */
-int lookup::exe_decl()
-{
-	bool quiet = m_flags & KB_QUIET;
-
-	if (m_opts.kb_flags & KB_WHOLE_WORD) {
-		unsigned long crc = raw_crc32(m_declstr.c_str());
-		dnode* dn = kb_lookup_dnode(crc);
-
-		if (!dn)
-			return EXE_NOTFOUND;
-
-		cniterator cnit = dn->siblings.begin();
-		cnode cn = cnit->second;
-		m_isfound = true;
-		m_rowman.rows.clear();
-		m_rowman.fill_row(*dn, cn);
-
-		get_children(*dn, cn);
-		m_rowman.put_rows_from_front_normalized(quiet);
-
-	} else {
-
-		for (auto it : m_dnmap) {
-			dnode& dn = it.second;
-			cniterator cnit = dn.siblings.begin();
-			cnode cn = cnit->second;
-
-			if (dn.decl.find(m_declstr) == string::npos)
-				continue;
-
-			m_isfound = true;
-			m_rowman.rows.clear();
-			m_rowman.fill_row(dn, cn);
-
-			get_children(dn, cn);
-			m_rowman.put_rows_from_front_normalized(quiet);
-		}
-	}
-
-	return m_isfound ? EXE_OK : EXE_NOTFOUND;
-}
-
-/************************************************
-** main()
-************************************************/
-int main(int argc, char *argv[])
-{
-	lookup lu(argc, argv);
-	return lu.run();
 }
