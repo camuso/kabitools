@@ -180,8 +180,9 @@ int lookup::run()
 	if(!ifs.is_open())
 		report_nopath(m_filelist.c_str(), "file");
 
-	if (m_flags && KB_WHITE_LIST)
-		build_whitelist();
+	if (m_flags & KB_WHITE_LIST)
+		if (!build_whitelist())
+			goto lookup_error;
 
 	while (getline(ifs, m_datafile)) {
 
@@ -217,6 +218,7 @@ int lookup::run()
 		m_errindex = EXE_OK;
 
 	m_errvec.push_back(m_declstr);
+lookup_error:
 	m_err.print_errmsg(m_errindex, m_errvec);
 	return(m_errindex);
 }
@@ -228,9 +230,10 @@ int lookup::run()
  * whitelists.
  *
  */
-void lookup::build_whitelist() {
+bool lookup::build_whitelist() {
 
 	struct dirent *ent;
+	bool found = false;
 
 	if (m_pathstr.back() != '/')
 		m_pathstr += "/";
@@ -248,6 +251,8 @@ void lookup::build_whitelist() {
 		if ((!ifs.is_open()) || (!strstr(ent->d_name, "Module.kabi")))
 			continue;
 
+		found = true;
+
 		while (getline(ifs, line)) {
 			boost::char_separator<char> sep(" \t");
 			tokenizer<boost::char_separator<char>> tok(line, sep);
@@ -261,7 +266,11 @@ void lookup::build_whitelist() {
 				}
 			}
 		}
+		ifs.close();
 	}
+	closedir(m_kbdir);
+	m_errindex = found ? EXE_OK : EXE_NO_WLIST;
+	return found;
 }
 
 /*****************************************************************************

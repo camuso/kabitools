@@ -57,7 +57,7 @@ private:
 	void report_nopath(const char *name, const char *path);
 	bool is_ksym_in_line(std::string &line, std::string &ksym);
 	bool is_function_whitelisted(cnode& cn);
-	void build_whitelist();
+	bool build_whitelist();
 
 	// member classes
 	dnodemap& m_dnmap = kb_get_public_dnodemap();
