@@ -3,7 +3,7 @@
 # kabilist
 #
 
-toolkitversion="3.3"
+toolkitversion="3.4"
 fileversion="-1"
 
 attr_bold="\033[1m"
@@ -111,7 +111,7 @@ START=$(date +%s)
 
 find $directory/$subdir -name \*.i -exec sh -c \
         'datafile="${1%.*}.kb_dat"; \
-	kabi-parser -xf "$datafile" $1 2>$2; \
+	kabi-parser -xo "$datafile" -f $1 -S -Wall_off 2>$2; \
 	if [ -f "$datafile" ]; then \
                 echo "$datafile" >> $3; \
                 echo ${1%.*}; \
