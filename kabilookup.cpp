@@ -53,7 +53,7 @@ string lookup::get_helptext()
 {
 	return "\
 \n\
-kabi-lookup [-v|w] -e|s|c|d symbol [-f file-list] [-m mask] [-p path] \n\
+kabi-lookup [-v|w|l] -e|s|c|d symbol [-f file-list] [-m mask] [-p path] \n\
     Searches a kabi database for symbols. The results of the search \n\
     are printed to stdout and indented hierarchically.\n\
 \n\
@@ -87,9 +87,10 @@ kabi-lookup [-v|w] -e|s|c|d symbol [-f file-list] [-m mask] [-p path] \n\
                   directory.\n\
     -v          - Verbose output. Default is quiet.\n\
     -w          - Whole word search, default is substring match. \n\
-    -f filelist - List of data files that were created by kabi-parser\n\
-                  during the kernel build, or separately using the \n\
-                  kabi-data.sh script. \n\
+    -f filelist - Optional path to list of data files created by kabi-parser\n\
+                  during the kernel build, or using the kabi-data.sh script.\n\
+                  The default path is redhat/kabi/kabi-datafiles.list \n\
+                  relative to the top of the kernel tree.\n\
     -h          - this help message.\n";
 }
 
