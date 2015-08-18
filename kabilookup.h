@@ -52,10 +52,9 @@ private:
 	int exe_exports();
 	int exe_decl();
 	int get_file_of_export(dnode& dn);
+	void report_nopath(const char *name, const char *path);
 	bool is_dup(crc_t crc);
 	bool is_whitelisted(std::string& ksym);
-	void report_nopath(const char *name, const char *path);
-	bool is_ksym_in_line(std::string &line, std::string &ksym);
 	bool is_function_whitelisted(cnode& cn);
 	bool build_whitelist();
 
@@ -64,14 +63,11 @@ private:
 	rowman m_rowman;
 	options m_opts;
 	error m_err;
-	dnode m_dn;
-	dnode* m_dnp = &m_dn;
-	dnode& m_dnr = m_dn;
 
 	// member basetypes
 	typedef std::pair<int, std::string> errpair;
 
-	std::vector<errpair> m_errors;
+	//std::vector<errpair> m_errors;
 	std::vector<crc_t> m_dups;
 	std::vector<std::string> m_whitelist;
 	std::vector<std::string> m_errvec;
@@ -85,7 +81,7 @@ private:
 	std::string m_kabidir = "redhat/kabi/";
 	DIR *m_kbdir;
 
-	unsigned long m_crc;
+	crc_t m_crc;
 	bool m_isfound = false;
 	int m_count = 0;
 	int m_flags = KB_QUIET;
