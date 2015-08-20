@@ -20,6 +20,7 @@
  *
  */
 
+#include <unistd.h>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -133,7 +134,7 @@ int lookup::process_args(int argc, char **argv)
 		return EXE_ARG2SML;
 
 	m_flags |= m_opts.get_options(&argindex, &argv[0], m_declstr,
-				      m_filelist, m_maskstr, m_pathstr);
+				      m_filelist, m_maskstr, m_userdir);
 
 	if (m_flags & KB_VERBOSE)
 		m_flags &= ~KB_QUIET;
@@ -176,7 +177,13 @@ int lookup::count_bits(unsigned mask)
  */
 int lookup::run()
 {
-	ifstream ifs(m_filelist.c_str());
+	ifstream ifs;
+
+	if (set_working_directory())
+		goto lookup_error;
+
+	m_filelist = m_kabidir + m_filelist;
+	ifs.open(m_filelist);
 
 	if(!ifs.is_open())
 		report_nopath(m_filelist.c_str(), "file");
@@ -221,8 +228,75 @@ int lookup::run()
 	m_errvec.push_back(m_declstr);
 lookup_error:
 	m_err.print_errmsg(m_errindex, m_errvec);
+
+	if (set_start_directory())
+		m_err.print_errmsg(m_errindex, m_errvec);
+
 	return(m_errindex);
 }
+
+/*****************************************************************************
+ * void assure_trailing_slash()
+ *
+ * If the directory specification does not have a trailing slash, give it
+ * one.
+ */
+void inline lookup::assure_trailing_slash(string& dirspec)
+{
+	if (dirspec.back() != '/')
+		dirspec += '/';
+}
+
+/*****************************************************************************
+ * int set_working_directory()
+ *
+ * Saves the current working directory. If the user entered a different
+ * directory using the -p option, then change to thad directory. At the
+ * end of processing, return to the start directory.
+ *
+ */
+int lookup::set_working_directory()
+{
+	if (m_userdir.empty())
+		return (m_errindex = EXE_OK);
+
+	char *pwd = get_current_dir_name();
+
+	m_startdir.assign(pwd);
+	free(pwd);
+	assure_trailing_slash(m_startdir);
+	assure_trailing_slash(m_userdir);
+
+	if (m_userdir == m_startdir)
+		return (m_errindex = EXE_OK);
+
+	if (chdir(m_userdir.c_str())) {
+		m_errvec.push_back(m_userdir);
+		return (m_errindex =  EXE_NODIR);
+	}
+
+	return (m_errindex = EXE_OK);
+}
+
+/*****************************************************************************
+ * int set_start_directory()
+ *
+ * Returns to the directory where we invoked the program.
+ *
+ */
+int lookup::set_start_directory()
+{
+	if (m_userdir == m_startdir)
+		return (m_errindex = EXE_OK);
+
+	if (chdir(m_startdir.c_str())) {
+		m_errvec.push_back(m_startdir);
+		return (m_errindex = EXE_NODIR);
+	}
+
+	return (m_errindex = EXE_OK);
+}
+
 
 /*****************************************************************************
  * lookup::build_whitelist()
@@ -235,11 +309,6 @@ bool lookup::build_whitelist() {
 
 	struct dirent *ent;
 	bool found = false;
-
-	if (m_pathstr.back() != '/')
-		m_pathstr += "/";
-
-	m_kabidir = m_pathstr + m_kabidir;
 
 	if ((m_kbdir = opendir(m_kabidir.c_str())) == NULL)
 		report_nopath(m_kabidir.c_str(), "directory");

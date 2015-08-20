@@ -52,7 +52,10 @@ private:
 	int exe_exports();
 	int exe_decl();
 	int get_file_of_export(dnode& dn);
+	int set_working_directory();
+	int set_start_directory()	;
 	void report_nopath(const char *name, const char *path);
+	void assure_trailing_slash(std::string& dirspec);
 	bool is_dup(crc_t crc);
 	bool is_whitelisted(std::string& ksym);
 	bool is_function_whitelisted(cnode& cn);
@@ -75,9 +78,10 @@ private:
 	std::string m_declstr;
 	std::string m_maskstr;
 	std::string m_datafile = "../kabi-data.dat";
-	std::string m_filelist = "./redhat/kabi/kabi-datafiles.list";
+	std::string m_filelist = "kabi-datafiles.list";
 
-	std::string m_pathstr   = "./";
+	std::string m_startdir;
+	std::string m_userdir;
 	std::string m_kabidir = "redhat/kabi/";
 	DIR *m_kbdir;
 
