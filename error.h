@@ -13,6 +13,7 @@ enum exemsg {
 	EXE_NOTFOUND,
 	EXE_NOTWHITE,
 	EXE_NO_WLIST,
+	EXE_NODIR,
 	EXE_COUNT,
 };
 

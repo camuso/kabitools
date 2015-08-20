@@ -23,6 +23,7 @@ void error::init(int argc, char **argv)
 	map_err(EXE_NOTFOUND, "Cannot find symbol %s\n");
 	map_err(EXE_NOTWHITE, "\"%s\" : symbol is not whitelisted.\n");
 	map_err(EXE_NO_WLIST, "No white list. Run \"make rh-kabi\"\n");
+	map_err(EXE_NODIR,    "Cannot access directory: %s\n");
 }
 
 void error::print_cmdline()
