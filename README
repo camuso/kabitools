@@ -98,7 +98,7 @@ You must install gcc c++ and the boost library first.
 yum install gcc-c++
 yum install boost
 yum install \
-     http://people.redhat.com/tcamuso/kabitools/kabitools-3.4-2.el7.x86_64.rpm
+     http://people.redhat.com/tcamuso/kabitools/kabitools-3.5.el7.x86_64.rpm
 
 
 To build from scratch
