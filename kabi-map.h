@@ -24,19 +24,19 @@
 
 enum ctlflags {
 	CTL_POINTER 	= 1 << 0,
-	CTL_ARRAY	= 1 << 1,
-	CTL_STRUCT	= 1 << 2,
+	CTL_ARRAY       = 1 << 1,
+	CTL_STRUCT      = 1 << 2,
 	CTL_FUNCTION	= 1 << 3,
 	CTL_EXPORTED 	= 1 << 4,
-	CTL_RETURN	= 1 << 5,
-	CTL_ARG		= 1 << 6,
-	CTL_NESTED	= 1 << 7,
-	CTL_BACKPTR	= 1 << 8,
-	CTL_FILE	= 1 << 9,
-	CTL_HASLIST	= 1 << 10,
-	CTL_ISDUP	= 1 << 11,
+	CTL_RETURN      = 1 << 5,
+	CTL_ARG         = 1 << 6,
+	CTL_NESTED      = 1 << 7,
+	CTL_BACKPTR     = 1 << 8,
+	CTL_FILE        = 1 << 9,
+	CTL_HASLIST     = 1 << 10,
+	CTL_ISDUP       = 1 << 11,
 	CTL_EXPSTRUCT	= 1 << 12,
-	CTL_ANON	= 1 << 13,
+	CTL_ANON        = 1 << 13,
 };
 
 enum levels {
@@ -59,16 +59,16 @@ typedef unsigned long crc_t;
 // the database environment. It is not serialized.
 struct sparm
 {
-	crc_t crc;	   // crc of this data type
-	crc_t function;    // crc of the function under which it appears
-	crc_t argument;	   // crc of the arg or ret under which it appears
-	int level;	   // level in the hierarchy
-	int order;	   // order in which sparse discovered it
-	const char *decl;  // declaration from which we derive the crc
-	const char *name;  // identifier
-	void *symlist;	   // for compound data types with descendant symbols
-	void *dnode;	   // pointer to the dnode created for this data type
-	void *cnode;	   // pointer to the cnode for this instance of dnode
+	crc_t crc;          // crc of this data type
+	crc_t function;     // crc of the function under which it appears
+	crc_t argument;     // crc of the arg or ret under which it appears
+	int level;          // level in the hierarchy
+	int order;          // order in which sparse discovered it
+	const char *decl;   // declaration from which we derive the crc
+	const char *name;   // identifier
+	void *symlist;      // for compound data types with descendant symbols
+	void *dnode;        // pointer to the dnode created for this data type
+	void *cnode;        // pointer to the cnode for this instance of dnode
 	enum ctlflags flags;
 };
 

@@ -1,6 +1,6 @@
 Name:           kabitools
-Version:        3.5
-Release:        0%{?dist}
+Version:        3.5.1
+Release:        1%{?dist}
 Summary:        A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
 
@@ -51,4 +51,5 @@ cp %{_topdir}/BUILD/%{name}-%{version}/kernel-make.patch $RPM_BUILD_ROOT%{_sbind
 %doc
 
 %changelog
-
+* Thu May 26 2016 Tony Camuso <tcamuso@redhat.com> - 3.5.1-1
+- Bump to 3.5.1-1 as first major nvr
