@@ -37,6 +37,7 @@ public:
 	lookup(int argc, char **argv);
 	int run();
 	static std::string get_helptext();
+	static std::string get_version();
 private:
 	int process_args(int argc, char **argv);
 	bool check_flags();

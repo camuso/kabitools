@@ -98,7 +98,10 @@ bool options::parse_opt(char opt, char ***argv,
 		   break;
 	case 'w' : kb_flags |= KB_WHOLE_WORD;
 		   break;
-	case 'h' : cout << lookup::get_helptext();
+	case 'h' : cout << lookup::get_version();
+		   cout << lookup::get_helptext();
+		   exit(0);
+	case 'V' : cout << lookup::get_version();
 		   exit(0);
 	default  : return false;
 	}

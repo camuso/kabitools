@@ -20,6 +20,7 @@ enum kbflags {
 	KB_MASKSTR	= 1 << 9,
 	KB_PATHSTR	= 1 << 10,
 	KB_WHITE_LIST	= 1 << 11,
+	KB_VERSION	= 1 << 12,
 };
 
 enum quietlvl {

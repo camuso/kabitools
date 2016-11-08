@@ -50,11 +50,18 @@ do { \
 #define prdbg(fmt, ...)
 #endif
 
-string lookup::get_helptext()
+string lookup::get_version()
 {
 	return "\
 \n\
-kabi-lookup [-v|w|l] -e|s|c|d symbol [-f file-list] [-m mask] [-p path] \n\
+kabi-lookup Version 3.5.3\n\
+\n";
+}
+
+string lookup::get_helptext()
+{
+	return "\
+kabi-lookup [-vwl] -e|s|c|d symbol [-f file-list] [-m mask] [-p path] \n\
     Searches a kabi database for symbols. The results of the search \n\
     are printed to stdout and indented hierarchically.\n\
 \n\
@@ -66,8 +73,10 @@ kabi-lookup [-v|w|l] -e|s|c|d symbol [-f file-list] [-m mask] [-p path] \n\
     a message. All may be used concurrently.\n\
 \n\
     -e symbol   - Find the EXPORTED function defined by symbol. Print the \n\
-                  function and its argument list as well descendants of \n\
-                  any of its nonscalar arguments or returns. \n\
+                  function and its argument list, and with the -v switch, \n\
+                  the descendants any of its nonscalar arguments or returns. \n\
+                  The -v switch generates a lot of output, but is useful if \n\
+                  you need to see everything the function depends upon.\n\
     -s symbol   - Search for the symbol and print every exported function \n\
                   that depends on the symbol. The hierachical position of \n\
                   the symbol is displayed as indented by the level at which\n\
@@ -75,13 +84,16 @@ kabi-lookup [-v|w|l] -e|s|c|d symbol [-f file-list] [-m mask] [-p path] \n\
                   With the -w switch, the string must contain the compound \n\
                   type enclosed in quotes, e.g.\'struct foo\', \'union bar\'\n\
                   \'enum int foo_states\' \n\
+                  With the -v switch, the symbol will be printed everywhere \n\
+                  it exists as well as its hierarchical ancestors, indented \n\
+                  according to the hierarchical level at which they were \n\
+                  discovered. This generates a lot of output.\n\
     -c symbol   - Counts the instances of the symbol in the kernel tree. \n\
     -d symbol   - Seeks a data structure and prints its members to stdout. \n\
-                  Without the -q switch, descendants of nonscalar members \n\
-                  will also be printed.\n\
+                  With the -v switch, descendants of nonscalar members will \n\
+                  also be printed.\n\
     -l          - White listed symbols only. Limits search to symbols in the\n\
                   kabi white list, if it exists.\n\
-                  Whole word searches only (-w). \n\
     -m mask     - Limits the search to directories and files containing the\n\
                   mask string. \n\
     -p          - Path to top of kernel tree, if operating in a different\n\
@@ -92,6 +104,7 @@ kabi-lookup [-v|w|l] -e|s|c|d symbol [-f file-list] [-m mask] [-p path] \n\
                   during the kernel build, or using the kabi-data.sh script.\n\
                   The default path is redhat/kabi/kabi-datafiles.list \n\
                   relative to the top of the kernel tree.\n\
+    -V          - Print version number.\n\
     -h          - this help message.\n";
 }
 
@@ -201,7 +214,7 @@ int lookup::run()
 		if (!(m_flags & KB_COUNT)) {
 			cerr << "\33[2K\r";
 			cerr << m_datafile;
-			cerr.flush();
+			//cerr.flush();
 		}
 
 		m_errindex = execute(m_datafile);
@@ -213,12 +226,12 @@ int lookup::run()
 	}
 
 	if (m_flags & KB_COUNT)
-		cout << "\33[2K\r" << m_count;
+		cerr << "\33[2K\r" << m_count;
 
 	if (!(m_flags & KB_COUNT))
 		cerr << "\33[2K\r";
 
-	cerr.flush();
+	//cerr.flush();
 	cout << endl;
 	ifs.close();
 
@@ -540,7 +553,7 @@ int lookup::exe_count()
 
 	cerr << "\33[2K\r";
 	cerr << m_count;
-	cerr.flush();
+	//cerr.flush();
 	return m_count !=0 ? EXE_OK : EXE_NOTFOUND;
 }
 
