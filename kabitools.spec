@@ -1,6 +1,6 @@
 Name:           kabitools
 Version:        3.5.3
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
 
@@ -32,12 +32,14 @@ make %{?_smp_mflags}
 
 %install
 mkdir -p $RPM_BUILD_ROOT%{_sbindir}
+mkdir -p $RPM_BUILD_ROOT%{_datadir}
 cp %{_topdir}/BUILD/%{name}-%{version}/kabi-parser  $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/kabi-dump    $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/kabi-lookup  $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/kabi-data.sh $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/makei.sh     $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}-%{version}/kernel-make.patch $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}-%{version}/kabitools-rhel-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
+cp %{_topdir}/BUILD/%{name}-%{version}/kabitools-fedora-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
 
 %files
 %defattr(-,root,root)
@@ -46,10 +48,21 @@ cp %{_topdir}/BUILD/%{name}-%{version}/kernel-make.patch $RPM_BUILD_ROOT%{_sbind
 %{_sbindir}/kabi-lookup
 %{_sbindir}/kabi-data.sh
 %{_sbindir}/makei.sh
-%{_sbindir}/kernel-make.patch
+%{_datadir}/kabitools-rhel-kernel-make.patch
+%{_datadir}/kabitools-fedora-kernel-make.patch
 
 %doc
 
 %changelog
+* Wed Nov 09 2016 Tony Camuso <tcamuso@redhat.com> - 3.5.3-2
+- Update this spec changelog.
+- Rename kernel-make.patch kabitools-rhel-kernel-make.patch.
+- Add kabitools-fedora-kernel-make.patch
+- Moved the Makefile patches to %{datadir} (/usr/share)
+* Tue Nov 08 2016 Tony Camuso <tcamuso@redhat.com> - 3.5.3-1
+- Update to help text and coment-out calls to cerr.flush
+  cerr.flush is unbuffered, so no flush necessary.
+* Sun Nov 06 2016 Tony Camuso <tcamuso@redhat.com> - 3.5.2-1
+- Add kernel-make.patch for fedora-24
 * Thu May 26 2016 Tony Camuso <tcamuso@redhat.com> - 3.5.1-1
 - Bump to 3.5.1-1 as first major nvr
