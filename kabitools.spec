@@ -24,15 +24,13 @@ kabi-lookup - given the symbol name of an exported symbol, determines
               the screen.
 
 %prep
-%autosetup
-mkdir -p $RPM_BUILD_ROOT%{_datadir}
-
+%setup -q
 %build
 make %{?_smp_mflags}
 
 %install
-mkdir -p $RPM_BUILD_ROOT%{_sbindir}
 mkdir -p $RPM_BUILD_ROOT%{_datadir}
+mkdir -p $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/kabi-parser  $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/kabi-dump    $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/kabi-lookup  $RPM_BUILD_ROOT%{_sbindir}
@@ -50,10 +48,12 @@ cp %{_topdir}/BUILD/%{name}-%{version}/kabitools-fedora-kernel-make.patch $RPM_B
 %{_sbindir}/makei.sh
 %{_datadir}/kabitools-rhel-kernel-make.patch
 %{_datadir}/kabitools-fedora-kernel-make.patch
-
-%doc
+%doc README
 
 %changelog
+* Thu Nov 10 2016 Tony Camuso <tcamuso@redhat.com> - 3.5.3-3
+- Refresh kabitools-rhel-kernel-make.patch
+- Update the README
 * Wed Nov 09 2016 Tony Camuso <tcamuso@redhat.com> - 3.5.3-2
 - Update this spec changelog.
 - Rename kernel-make.patch kabitools-rhel-kernel-make.patch.
