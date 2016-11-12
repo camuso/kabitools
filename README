@@ -34,45 +34,59 @@ The following will be installed.
 /usr/sbin/kabi-dump
 /usr/sbin/kabi-data.sh
 /usr/sbin/makei.sh
+/usr/share/kabitools-fedora-kernel-make.patch
+/usr/share/kabitools-rhel-kernel-make.patch
+/usr/share/doc/kabitools-*/README
 
--------------------------------------------------------------
+---------------------------------------------------------------------------
 Creating the Kernel Graph Files wiith the kabitools.sh script
--------------------------------------------------------------
+---------------------------------------------------------------------------
 
-This is the easiest way to create the kernel graph files.
+This is the easiest way to create the kernel graph files. It will apply the
+appropriate kernel Makefile patch using "patch -p1" before compiling
+followed by "patch -R -p1" upon completion.
+
 This script must be invoked from the top of the kernel tree.
 
-kabitools.sh -[j | h]
+kabitools.sh -[j|h]
 
-	Must be invoked from the top of the kernel tree.
-
+	-c	- make clean first
 	-j	- Optional number of processors to assign to the make task.
 	-h	- help screen.
 
 	Runs the following make commands.
 
-	make clean
 	make 		# compiles all files necessary to make vmlinux
 	make modules	# compiles all kmods
 
 	While compiling the kernel and kmods, the script builds a graph
 	from the preprocessor output of each file compiled.
 
+	You should use the -c switch the first time you run this script so
+	you can build the graph files for the whole kernel.
+
+	Without the -c switch, only files that have been changed will be
+	compiled and have their graph files created or updated.
+
 There are other methods for those who like to tinker. They are detailed at
 the end of this README.
 
---------------------------------------------------------------
-Finding Symbols Affecting or Affected by kABI with kabi-lookup
---------------------------------------------------------------
+---------------------------------------------------------------------------
+Using kabi-lookup to Find Symbols Affecting or Affected by kABI
+---------------------------------------------------------------------------
 
-kabi-lookup [-vwl] -e|s|c|d symbol [-m mask] [-p path]
+kabi-lookup enables the user to determine whether a compound data type,
+i.e. struct or union, has any relation to exported symbols. Conversely, the
+tool can search for exported symbols to see their dependency tree. The tool
+traverses the graph files looking for the symbol provided at the command
+line.
 
-This utility traverses the graph files looking for the symbol provided at
-the command line. It is mostly useful for determining whether the given
-symbol is a dependency on which exported symbols depend. If the symbol is
-not a dependency of an exported symbol, a message is printed to stdout
-indicating that the symbol cannot be found. This does not mean that the
-symbol does not exist, but that no exported symbols depend on it.
+Searches can be limited to whitelists and partial or complete pathnames.
+
+If the given symbol is not a dependency of an exported symbol, a message is
+printed to stdout indicating that the symbol cannot be found. This does not
+mean that the symbol does not exist, but that the symbol does not appear
+anywhere in the hierarchy of any of the exported symbols in the search.
 
 It is also useful for dumping the symbols upon which an exported function
 depends. The default output for exported functions lists the name, the
@@ -80,105 +94,126 @@ return value, if not void, and the argument list with types, if not void.
 
 You can even dump the members of a union or data structure.
 
-With the -v option, every symbol hierarchically descendant from the symbol
-given at the command line is printed to stdout. This is a LOT of stuff, so
-it's better to redirect the output to a file for parsing. There are not
-many situations where this volume and depth of information is necessary,
-but it's there if you need it.
+With the -v option, every symbol descendant from the symbol given at the
+command line is printed to stdout. This is a LOT of stuff, so it's better
+to redirect the output to a file for parsing. There are not many situations
+where this volume and depth of information is necessary, but it's there if
+you need it.
 
-Searches can be limited to whitelists and subdirectories.
+You can also use the tool to count how many times a given symbol appears in
+the dependency trees of the exported symbols in the search.
+
+kabi-lookup [-vwl] -e|s|c|d symbol [-m mask] [-p path]
 
 Options:
 
-	-e sym - Searches for an exported symbol. Partial strings that omit
-		 the -w switch will generate output from any and all symbols
-		 that match the partial pattern.
+	-e symbol
+	   Searches for an exported symbol. Strings that omit the -w switch
+	   will generate output from any and all symbols that contain the
+	   string.
 
-	-s sym - Searches for the symbol of a compound data type that
-		 matches the string. Adding the -w "whole word" switch will
-		 speed up the search, but the symbol must be exact. Strings
-		 having spaces must be wraped in quotes.
+	-s symbol
+	   Searches for the symbol of a compound data type that  matches
+	   the string.
 
-	-d sym - Search for the declaration of a compound data type and
-		 print its members to the screen.
+	-d symbol
+	   Search for the declaration of a compound data type and print its
+	   members to the screen
 
-	-c sym - counts the number of times the symbol occurs in the
-		 search.
+	-c symbol
+	   Counts the number of times the symbol occurs in the search. This
+	   is most useful when you know the exact name of the symbol and
+	   are using the -w switch.
 
-	-v	- Verbose output, printing the hierarchy down to the
-		  lowest level.
+	-v Verbose output, prints the hierarchy down to the lowest level.
+	   All descendants of nonscalar types are printed. This creates a
+	   LOT of data, so it's probably better to direct output to a text
+	   file for parsing.
 
-		  All descendants of nonscalar types are printed. This
-		  creates a LOT of data, so it's probably better to direct
-		  output to a text file for parsing.
+	-w Whole words only. Default is substring match.
 
-	-w	- Whole words only. Default is substring match.
+	   NOTE: With this switch, if the symbol is a struct or union, the
+		 string must include the word "struct" or "union" before
+		 the symbol being searched, and the string must be
+		 encapsulated with single or double quotes.
 
-		  With this switch, if the symbol is a struct or union, the
-		  string must include the word "struct" or "union" before
-		  the symbol being searched.  e.g.
+	   Examples:
+		kabi-lookup -sw "struct pci_dev"
+		kabi-lookup -sw 'union ipmi_smi_info_union'
 
-		  kabi-lookup -sw "struct pci_dev"
-		  kabi-lookup -sw 'union ipmi_smi_info_union'
+	-l Limit the search to symbols in the white lists.
+	   What this means is that the symbol will only be considered found
+	   if it appears in the hierarchy of a white listed symbol.
 
-	-l     - Limits search to symbols in the white lists.
-		 Must be used with the -w option.
-		 Run "make rh-kabi" to create the white lists.
+	   Run "make rh-kabi" to create the white lists.
 
-	-m str - The mask string limits the search to pathnames containing
-		 the mask string. For example,
+	  NOTE: Must be used with the -w switch, as described above, or the
+		symbol will not be found.
+
+	  Examples:
+		kabi-lookup -lsw "struct pci_dev"
+		kabi-lookup -lsw 'union ipmi_smi_info_union'
+
+	-m string
+	   The mask string limits the search to pathnames containing the
+	   mask string. For example ...
 
 		 kabi-lookup -m fs -sw 'struct device'
 
-		 Will search every path having "fs" in its name, e.g.
-		 drivers/video/fbsysfs.i and fs/coredump.i
+	   ... will search every path having "fs" in its name, e.g.
+	    drivers/video/fbsysfs.i and fs/coredump.i
 
-		 If you wish to limit the search to a specific directory, a
-		 trailing / must be used, e.g.
+	   If you wish to limit the search to a specific directory, a
+	   trailing / must be used, e.g.
 
 		 kabi-lookup -m fs/ -sw 'struct device'
 		 kabi-lookup -m drivers/acpi/ -sw 'struct acpi_device'
 
-		 The more unique the -m string, the more limited the
-		 search.
+	   The more unique the -m string, the more limited the search.
 
-	-p path - Path to the top of the kernel tree, if executing in a
-		  different directory.
+	-p path
+	   Path to the top of the kernel tree, if executing in a different
+	   directory.
 
-Examples.
+-------------------
+Some Usage Examples
+-------------------
 
-$ kabi-lookup -s pci_dev
+	$ kabi-lookup -s pci_dev
 
-Searches for all instances of "pci_dev", including such patterns as
-"struct pci_device_id".
-
-
-$ kabi-lookup -sw "struct pci_dev"
-
-NOTE: Quotes are needed around patterns having spaces.
-
-Will search only for exactly "struct pci_dev".
-Exact matches for compound data types must include the "struct" or
-"union" declaration.
+	Searches for all instances of "pci_dev", including such patterns as
+	"struct pci_device_id".
 
 
-$ kabi-lookup -m pci -s pci_bus
+	$ kabi-lookup -sw "struct pci_dev"
 
-Searches for all instances of the string "pci_bus" in any and all
-subdirectories and files that have "pci" in their name.
+	Will search only for exactly "struct pci_dev". Whole word matches
+	for compound data types must include the "struct" or "union"
+	declaration.
+
+	NOTE: Quotes are required around search patterns having spaces.
 
 
-$ kabi-lookup -e mlx4_cq
+	$ kabi-lookup -m pci -s pci_bus
 
-Searches for any and all exported symbols that match "mlx4_cq" and their
-argument lists and return values.
+	Searches for all instances of the string "pci_bus" in any and all
+	subdirectories and files that have "pci" in their name.
 
-$ kabi-lookup -ew mlx4_cq_modify
 
-Will find the one and only unique mlx4_cq_modify exported symbol and
-its argument lists and return values.
+	$ kabi-lookup -e mlx4_cq
 
---------------------------------------------------------------------------
+	Searches for any and all exported symbols that match "mlx4_cq" and
+	their argument lists and return values.
+
+	$ kabi-lookup -ew mlx4_cq_modify
+
+	Will find the one and only unique mlx4_cq_modify exported symbol
+	and its argument lists and return values.
+
+
+---------------------------------------------------------------------------
+Other tools in the kabitools kit
+---------------------------------------------------------------------------
 
 kabi-parser - Parses preprocessor .i files for exported symbols and the
               compound data types on which they depend. The results for
@@ -211,142 +246,13 @@ kabi-data.sh - A shell script wrapper for kabi-parser that invokes it for
                a list of files processed to be used by kabi-lookup tool.
                /usr/sbin/kabi-data.sh
 
-kernel-make.patch - a patch for the kernel make that will obviate the
-              need to use the two shell scripts named above. With this
-              patch, the make clean target will also remove the .i
-              and .kb_dat files generated by the make.
-              /usr/sbin/kernel-make.patch
 
-              From the top of your kernel git tree ...
-
-              $ git apply /usr/shre/kernel-make.patch
-
-To install from the rpm
------------------------
-
-RHEL7 and Fedora-22 RPM file can be found at
-        http://people.redhat.com/tcamuso/kabitools/
-
-You must install gcc c++ and the boost library first.
-
-yum install gcc-c++
-yum install boost
-yum install \
-     http://people.redhat.com/tcamuso/kabitools/kabitools-3.5.el7.x86_64.rpm
-
-
-To build from scratch
---------------------
-
-1. git clone git@github.com:camuso/kabiparser.git
-
-2. To build the toolkit, you must download and build the sparse
-   C-semantic parser from this site.
-   http://git.kernel.org/cgit/devel/sparse/sparse.git/
-
-   Build the static libsparse.a and copy it into /usr/lib
-   Also copy all the sparse/*.h files into /usr/lib/sparse/.
-
-3. Download the boost library. For fedora users, this will simply
-   be "yum install boost". For ubuntu users, "apt-get install boost"
-   The kabiparser Makefile expects the boost library to be in
-   /usr/lib64 and the boost headers in /usr/include/boost
-
-   If you're using Ubuntu, you will probably have to edit the Makefile
-   to point to the locations of these files, if they are not the same
-   as fedora.
-
-4. Build the toolkit and put the tools in the correct redhat directories
-   off the kernel tree.
-
-   $ make
-
-   $ sudo rsync -Pva \
-           kabi-parser kabi-dump kabi-lookup kabi-data.sh makei.sh \
-        /usr/sbin
-
-5. From the top of your linux tree, do the following.
-
-   $ makei.sh ./
-
-   $ kabi-data.sh -d ./
-
-   Each of those steps takes about 5 minutes on a core-duo quad-core
-   desktop. There are more than 3000 files with over 18000 exported
-   symbols and all their dependencies that must be processed.
-
-   There are options to build only subdirectories. You can see the
-   options by invoking these scripts without arguments.
-
-   The makei.sh script calls the kernel make to create the preproccesor
-   intermediate (".i") files that are needed by kabi-parser to build the
-   database.
-
-   The database is distributed as ".kb_dat" files having the same name
-   stem as the source ".i" file from which they were created and residing
-   in the same source directory.
-
-   These can be cleaned out with "git clean -f", but that will also erase
-   files you may want to keep. Instead you can simply do the following.
-
-   $ find . -name \*.kb_dat -exec rm -f '{}' \;
-
-
-Using kabi-lookup
------------------
-
-This tool enables the user to determine whether a compound data type,
-i.e. struct or union, has any relation to exported symbols. Conversely,
-you can use the tool to search for exported symbols to see their entire
-dependency tree.
-
-You can also use to tool to count how many times a given symbol appears
-in the dependency trees of all the exported symbols in the kernel.
-
-Searches can be generalized or specific. The -w switch makes the search
-specific. The -w switch also makes searches faster, since it creates
-a hash from the name to search the underlying hash table.
-
-Examples.
-
-$ kabi-lookup -s pci_dev
-
-Searches for all instances of "pci_dev", including such patterns as
-"struct pci_device_id".
-
-
-$ kabi-lookup -sw "struct pci_dev"
-
-NOTE: Quotes are needed around patterns having spaces.
-
-Will search only for exactly "struct pci_dev" and will do so faster.
-Exact matches for compound data types must include the "struct" or
-"union" declaration.
-
-
-$ kabi-lookup -m pci -s pci_bus
-
-Searches for all instances of the string "pci_bus" in any and all
-subdirectories and files that have "pci" in their name.
-
-
-$ kabi-lookup -e mlx4_cq
-
-Searches for any and all exported symbols that match "mlx4_cq" and their
-argument lists and return values.
-
-$ kabi-lookup -ew mlx4_cq_modify
-
-Will find the one and only unique mlx4_cq_modify exported symbol and
-its argument lists and return values.
-
-
--------------------------------------------------
+---------------------------------------------------------------------------
 Other Methods For Creating the Kernel Graph Files
--------------------------------------------------
+---------------------------------------------------------------------------
 
-*** Patch the kernel Makefiles
-******************************.
+1. Patch the kernel Makefiles
+-----------------------------
 
 Patches for the kernel Makefiles are also provided in this kit and are
 saved in /usr/share in the following files.
@@ -370,9 +276,11 @@ Example:
 # Compile the kernel and create the kernel graph
 make -j16 K=1
 
+From this point, kabi-lookup can be used as described above.
 
-*** makei.sh and kabi-data.sh scripts
-*************************************
+
+2. makei.sh and kabi-data.sh scripts
+------------------------------------
 
 This method of creating the kernel graph requires both these scripts.
 
@@ -410,6 +318,4 @@ kabi-data.sh -	This script creates the graph files from the .i files
 
 		# Create the graph files for a subdirectory of the kernel.
 		kabi-data.sh -d ./ -s drivers/acpi
-
-
 
