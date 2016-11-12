@@ -1,6 +1,6 @@
 Name:           kabitools
 Version:        3.5.3
-Release:        3%{?dist}
+Release:        4%{?dist}
 Summary:        A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
 
@@ -25,8 +25,6 @@ kabi-lookup - given the symbol name of an exported symbol, determines
 
 %prep
 %setup -q
-%build
-make %{?_smp_mflags}
 
 %install
 mkdir -p $RPM_BUILD_ROOT%{_datadir}
@@ -34,6 +32,7 @@ mkdir -p $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/kabi-parser  $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/kabi-dump    $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/kabi-lookup  $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}-%{version}/kabitools.sh $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/kabi-data.sh $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/makei.sh     $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}-%{version}/kabitools-rhel-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
@@ -44,6 +43,7 @@ cp %{_topdir}/BUILD/%{name}-%{version}/kabitools-fedora-kernel-make.patch $RPM_B
 %{_sbindir}/kabi-parser
 %{_sbindir}/kabi-dump
 %{_sbindir}/kabi-lookup
+%{_sbindir}/kabitools.sh
 %{_sbindir}/kabi-data.sh
 %{_sbindir}/makei.sh
 %{_datadir}/kabitools-rhel-kernel-make.patch
@@ -51,6 +51,11 @@ cp %{_topdir}/BUILD/%{name}-%{version}/kabitools-fedora-kernel-make.patch $RPM_B
 %doc README
 
 %changelog
+* Sat Nov 12 2016 Tony Camuso <tcamuso@redhat.com> - 3.5.3-4
+- Changed to install only, instead of build.
+- Finished update of README and added README to the %docs directory
+- Added the patchfiles to %{_datadir}
+- Added kabitools.sh script to build the kernel graph files
 * Thu Nov 10 2016 Tony Camuso <tcamuso@redhat.com> - 3.5.3-3
 - Refresh kabitools-rhel-kernel-make.patch
 - Update the README
