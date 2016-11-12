@@ -8,10 +8,23 @@ cmdline=kabitools
 usagestr=$(
 cat <<EOF
 
-kabitools directory
+kabitools.sh -[j | h]
 
-	Install the kabitools rpm and build the kernel kabi graph,
-	where "directory" is the top of the kernel tree or a path
+	Must be invoked from the top of the kernel tree.
+
+	-j	- Optional number of processors to assign to the make task.
+	-h	- This help screen.
+
+	Runs the following make commands with the optional -j specifier
+	for SMP support.
+
+	make clean
+	make 		# compiles all files necessary to make vmlinux
+	make modules	# compiles all kmods
+
+	While compiling the kernel and kmods, builds a graph from the
+	preprocessor output of each file compiled.
+
 \0
 EOF
 )
@@ -21,16 +34,21 @@ usage() {
 	exit
 }
 
-[ $# -eq 1 ] || usage
+declare cpus
 
-declare dir="$1"
-declare cpucount=$(cat /proc/cpuinfo | grep processor | wc -l)
+while getopts hj: OPTION; do
+    case "$OPTION" in
 
-[[ $cpucount > 1 ]] && let --cpucount
+	h ) 	usage
+		;;
+	j )	cpus=$OPTARG
+		;;
+	* )	echo "unrecognized option"
+		usage
+		exit 1
+    esac
+done
 
-yum install -y http://people.redhat.com/tcamuso/kabitools/kabitools-3.5.3-3.el7.x86_64.rpm
-cd "$dir"
 patch -p1 < /usr/share/kabitools-rhel-kernel-make.patch
-make -j $cpucount K=1
+make -j $cpus K=1
 patch -R -p1 < /usr/share/kabitools-rhel-kernel-make.patch
-cd -

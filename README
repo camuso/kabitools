@@ -1,11 +1,22 @@
 kabitools
 =========
 
-This is a toolkit that is intended to assist in determining whether one
+This is a toolkit that is intended to assist in determining whether a given
 symbol affects or is affected by other symbols in a kABI sense.
 
-The kernel can be compiled so that a database graph is made for each of the
-preprocessor, or intermediate ".i" files.
+What is a symbol? From the sparse project:
+
+	An identifier with semantic meaning is a "symbol".
+
+	There's a 1:n relationship: each symbol is always associated with
+	one identifier, while each identifier can have one or more semantic
+	meanings due to C scope rules.
+
+	The progression is symbol -> token -> identifier. The token
+	contains the information on where the symbol was declared.
+
+The kernel can be compiled so that a graph is made for each of the
+preprocessor ".i" files using the information supplied by sparse.
 
 The kabitools can be installed from the following website. Choose the rpm
 that matches your distro and architecture.
@@ -28,28 +39,56 @@ The following will be installed.
 Creating the Kernel Graph Files wiith the kabitools.sh script
 -------------------------------------------------------------
 
-This is the easiest, most transparent way to create the kernel graph files.
-This script requires only one argument, the path to the top of the kernel
-tree.
+This is the easiest way to create the kernel graph files.
+This script must be invoked from the top of the kernel tree.
 
-Examples:
+kabitools.sh -[j | h]
 
-# From the top of the kernel tree
-kabitools.sh ./
+	Must be invoked from the top of the kernel tree.
 
-# From any other PWD
-kabitools.sh /top/of/my/kernel/tree
+	-j	- Optional number of processors to assign to the make task.
+	-h	- help screen.
 
-There are other methods for those who like to dabble. They are detailed at
+	Runs the following make commands.
+
+	make clean
+	make 		# compiles all files necessary to make vmlinux
+	make modules	# compiles all kmods
+
+	While compiling the kernel and kmods, the script builds a graph
+	from the preprocessor output of each file compiled.
+
+There are other methods for those who like to tinker. They are detailed at
 the end of this README.
 
----------------------------------------------
-Finding Symbols Affecting or Affected by kABI
----------------------------------------------
+--------------------------------------------------------------
+Finding Symbols Affecting or Affected by kABI with kabi-lookup
+--------------------------------------------------------------
 
-kabi-lookup  - Utility that traverses the graph files looking for symbols
-	       on which exported symbols depend. The searches are as
-	       follows.
+kabi-lookup [-vwl] -e|s|c|d symbol [-m mask] [-p path]
+
+This utility traverses the graph files looking for the symbol provided at
+the command line. It is mostly useful for determining whether the given
+symbol is a dependency on which exported symbols depend. If the symbol is
+not a dependency of an exported symbol, a message is printed to stdout
+indicating that the symbol cannot be found. This does not mean that the
+symbol does not exist, but that no exported symbols depend on it.
+
+It is also useful for dumping the symbols upon which an exported function
+depends. The default output for exported functions lists the name, the
+return value, if not void, and the argument list with types, if not void.
+
+You can even dump the members of a union or data structure.
+
+With the -v option, every symbol hierarchically descendant from the symbol
+given at the command line is printed to stdout. This is a LOT of stuff, so
+it's better to redirect the output to a file for parsing. There are not
+many situations where this volume and depth of information is necessary,
+but it's there if you need it.
+
+Searches can be limited to whitelists and subdirectories.
+
+Options:
 
 	-e sym - Searches for an exported symbol. Partial strings that omit
 		 the -w switch will generate output from any and all symbols
@@ -65,6 +104,22 @@ kabi-lookup  - Utility that traverses the graph files looking for symbols
 
 	-c sym - counts the number of times the symbol occurs in the
 		 search.
+
+	-v	- Verbose output, printing the hierarchy down to the
+		  lowest level.
+
+		  All descendants of nonscalar types are printed. This
+		  creates a LOT of data, so it's probably better to direct
+		  output to a text file for parsing.
+
+	-w	- Whole words only. Default is substring match.
+
+		  With this switch, if the symbol is a struct or union, the
+		  string must include the word "struct" or "union" before
+		  the symbol being searched.  e.g.
+
+		  kabi-lookup -sw "struct pci_dev"
+		  kabi-lookup -sw 'union ipmi_smi_info_union'
 
 	-l     - Limits search to symbols in the white lists.
 		 Must be used with the -w option.
@@ -87,25 +142,43 @@ kabi-lookup  - Utility that traverses the graph files looking for symbols
 		 The more unique the -m string, the more limited the
 		 search.
 
-	-v	- Verbose output, printing the hierarchy down to the
-		  lowest level.
-
-		  All descendants of nonscalar types are printed. This
-		  creates a LOT of data, so it's probably better to direct
-		  output to a text file for parsing.
-
-	-w	- Whole words only. Default is substring match.
-
-		  With this switch, if the symbol is a struct or union, the
-		  string must include the word "struct" or "union" before
-		  the symbol being searched.  e.g.
-
-		  kabi-lookup -sw "struct pci_dev"
-		  kabi-lookup -sw 'union ipmi_smi_info_union'
-
 	-p path - Path to the top of the kernel tree, if executing in a
 		  different directory.
 
+Examples.
+
+$ kabi-lookup -s pci_dev
+
+Searches for all instances of "pci_dev", including such patterns as
+"struct pci_device_id".
+
+
+$ kabi-lookup -sw "struct pci_dev"
+
+NOTE: Quotes are needed around patterns having spaces.
+
+Will search only for exactly "struct pci_dev".
+Exact matches for compound data types must include the "struct" or
+"union" declaration.
+
+
+$ kabi-lookup -m pci -s pci_bus
+
+Searches for all instances of the string "pci_bus" in any and all
+subdirectories and files that have "pci" in their name.
+
+
+$ kabi-lookup -e mlx4_cq
+
+Searches for any and all exported symbols that match "mlx4_cq" and their
+argument lists and return values.
+
+$ kabi-lookup -ew mlx4_cq_modify
+
+Will find the one and only unique mlx4_cq_modify exported symbol and
+its argument lists and return values.
+
+--------------------------------------------------------------------------
 
 kabi-parser - Parses preprocessor .i files for exported symbols and the
               compound data types on which they depend. The results for
