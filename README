@@ -38,17 +38,27 @@ The following will be installed.
 /usr/share/kabitools-rhel-kernel-make.patch
 /usr/share/doc/kabitools-*/README
 
+Use of this toolkit consists primarily of two steps.
+
+1. Create the kernel graph files
+2. Use the lookup tool to determine whether a given symbol could affect
+   kABI.
+
+   There are other tools in the kit for those who like to get under the hood,
+   but the most practical application is comprised of the above two steps.
+
+
 ---------------------------------------------------------------------------
 Creating the Kernel Graph Files wiith the kabitools.sh script
 ---------------------------------------------------------------------------
 
-This is the easiest way to create the kernel graph files. It will apply the
-appropriate kernel Makefile patch using "patch -p1" before compiling
-followed by "patch -R -p1" upon completion.
-
+This is the easiest way to create the kernel graph files.
 This script must be invoked from the top of the kernel tree.
 
-kabitools.sh -[j|h]
+Time to complete a full kernel build is lengthened by about 10% by invoking
+this tool.
+
+kabitools.sh -[cjh]
 
 	-c	- make clean first
 	-j	- Optional number of processors to assign to the make task.
@@ -56,8 +66,8 @@ kabitools.sh -[j|h]
 
 	Runs the following make commands.
 
-	make 		# compiles all files necessary to make vmlinux
-	make modules	# compiles all kmods
+	make            # compiles all files necessary to make vmlinux
+	make modules    # compiles all kmods
 
 	While compiling the kernel and kmods, the script builds a graph
 	from the preprocessor output of each file compiled.
