@@ -8,7 +8,7 @@ cmdline=kabitools
 usagestr=$(
 cat <<EOF
 
-kabitools.sh -[j | h]
+kabitools.sh -[cjh]
 
 	Must be invoked from the top of the kernel tree.
 
