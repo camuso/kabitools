@@ -1,7 +1,20 @@
-CFLAGS		+= -I/usr/include/sparse -I/usr/include/c++/4.9.2
+# kabitools Makefile 
+
+ifeq ("$(origin D)", "command line")
+	BUIDLD_DYN := $(D)
+endif
+
+# Need to have sparse headers handy in a local include directory
+#
+CFLAGS		+= -I./include -I/usr/include/c++/4.9.2
 CXXFLAGS	+= -std=gnu++11
 
-LIBS		+= -lsparse -lboost_serialization
+ifeq ($(KBUILD_DYN),1)
+	LIBS		+= -lboost_serialization
+endif
+
+LIBS		+= -lboost_serialization
+STATICLIBS	+= ./libsparse.a
 
 COMMON_OBJS	:= checksum.o kabi-map.o
 COMMON_HDRS	:= checksum.h kabi-map.h
@@ -11,9 +24,6 @@ PARSER_HDRS	:= $(COMMON_HDRS) kabi.h $
 
 LOOKUP_OBJS	:= $(COMMON_OBJS) kabilookup.o options.o error.o rowman.o qrow.o
 LOOKUP_HDRS	:= $(COMMON_HDRS) kabilookup.h options.h error.h rowman.h qrow.h
-
-# COMPDB_OBJS	:= kabi-compdb.o kabi-node.o
-# COMPDB_HDRS	:= kabi-compdb.h kabi-node.h
 
 DUMP_OBJS	:= $(COMMON_OBJS) kabidump.o
 DUMP_HDRS	:= $(COMMON_HDRS) kabidump.h
@@ -26,7 +36,7 @@ clean	:
 	rm -vf *.o $(PROGRAMS)
 
 kabi-parser	: $(PARSER_OBJS) $(PARSER_HDRS)
-	g++ $(CXXFLAGS) $(CFLAGS) -o kabi-parser $(PARSER_OBJS) $(LIBS)
+	g++ $(CXXFLAGS) $(CFLAGS) -o kabi-parser $(PARSER_OBJS) $(LIBS) $(STATICLIBS)
 
 kabi-lookup 	: $(LOOKUP_OBJS) $(LOOKUP_HDRS)
 	g++ $(CXXFLAGS) -o kabi-lookup $(LOOKUP_OBJS) $(LIBS)
@@ -34,5 +44,3 @@ kabi-lookup 	: $(LOOKUP_OBJS) $(LOOKUP_HDRS)
 kabi-dump	: $(DUMP_OBJS) $(DUMP_HDRS)
 	g++ $(CXXFLAGS) -o kabi-dump $(DUMP_OBJS) $(LIBS)
 
-# kabi-compdb	: $(COMPDB_OBJS) $(COMPDB_HDRS)
-#	g++ $(CXXFLAGS) -o kabi-compdb $(COMPDB_OBJS) $(LIBS)
