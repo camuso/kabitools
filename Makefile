@@ -1,20 +1,12 @@
 # kabitools Makefile 
 
-ifeq ("$(origin D)", "command line")
-	BUIDLD_DYN := $(D)
-endif
-
 # Need to have sparse headers handy in a local include directory
 #
 CFLAGS		+= -I./include -I/usr/include/c++/4.9.2
 CXXFLAGS	+= -std=gnu++11
 
-ifeq ($(KBUILD_DYN),1)
-	LIBS		+= -lboost_serialization
-endif
-
 LIBS		+= -lboost_serialization
-STATICLIBS	+= ./libsparse.a
+STATICLIBS	+= ../lib/libsparse.a
 
 COMMON_OBJS	:= checksum.o kabi-map.o
 COMMON_HDRS	:= checksum.h kabi-map.h
