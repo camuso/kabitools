@@ -13,6 +13,7 @@ sparksyms/
 sparse-debug/
 coventry/
 kabicompdb/
+redhat/rpm/
 
 # Object files
 *.o
