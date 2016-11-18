@@ -28,7 +28,7 @@ The following will be installed.
 /usr/lib/ 	    - boost libraries
 /usr/include/boost/ - boost headers
 
-/usr/sbin/kabitools.sh
+/usr/sbin/kabi-graph
 /usr/sbin/kabi-lookup
 /usr/sbin/kabi-parser
 /usr/sbin/kabi-dump
@@ -49,7 +49,7 @@ Use of this toolkit consists primarily of two steps.
 
 
 ---------------------------------------------------------------------------
-Creating the Kernel Graph Files wiith the kabitools.sh script
+Creating the Kernel Graph Files wiith the kabi-graph script
 ---------------------------------------------------------------------------
 
 This is the easiest way to create the kernel graph files.
@@ -58,7 +58,7 @@ This script must be invoked from the top of the kernel tree.
 Time to complete a full kernel build is lengthened by about 10% by invoking
 this tool.
 
-kabitools.sh -[cjh]
+kabi-graph -[cjh]
 
 	-c	- make clean first
 	-j	- Optional number of processors to assign to the make task.
