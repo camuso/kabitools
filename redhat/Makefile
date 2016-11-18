@@ -29,10 +29,12 @@ ARCH		:= $(shell uname -i)
 
 RPM2CPIO	:= /usr/bin/rpm2cpio
 CPIO		:= /usr/bin/cpio
-CPIOFLAGS	:= "cpio -iv --to-stdout"
+CPIOFLAGS	:= -iv --to-stdout
 SPARSEROOT	:= /work/sparse
 SPARSERPMS	:= $(SPARSEROOT)/redhat/rpm/RPMS
 SPARSESPECS	:= $(SPARSEROOT)/redhat/rpm/SPECS
+
+TARFLAGS	:= --exclude-vcs --exclude=redhat -czf
 
 RPMFLAGS = $(RPMBUILD) \
 	--define "_topdir	$(RPM)" \
@@ -63,17 +65,19 @@ CROSS_PACKAGE_LIST = binutils-powerpc64-linux-gnu \
 		     numactl-devel \
 		     diffstat
 
+#export RPMFLAGS CPIOFLAGS
+
 wrong_arch = 	\
-	echo -e "\nThis arch is $(uname -m), but this make must be executed on x86_64.";
+	echo -e "\nThis arch is $(uname -m), but this make must be executed on x86_64."
 
 make_tar = \
-	tar --exclude-vcs -czf $(SOURCES)/kabitools-$(VERSION).tar.gz -C $(KABISRC) .
+	tar $(TARFLAGS) $(SOURCES)/kabitools-$(VERSION).tar.gz -C $(KABISRC) .
 
 prepare_lib = \
 	set -x; \
 	mkdir -p $(KABILIB)/$(1); \
 	$(RPM2CPIO) $(SPARSERPMS)/$(1)/libsparse-$(SPARSE_VER)-1.$(OS_MEME).$(1).rpm \
-	| $(CPIO) cpio -iv --to-stdout ./usr/lib64/libsparse.a > $(KABILIB)/libsparse.a
+	| $(CPIO) $(CPIOFLAGS) ./usr/lib64/libsparse.a > $(KABILIB)/libsparse.a
 
 # These are the cross-compile targets
 # The final one will also build the src.rpm
@@ -84,14 +88,16 @@ all:
 	echo "SPARSE_VER $(SPARSE_VER)"
 	$(call make_tar)
 
-	$(shell for arch in s390x ppc64 ppc64le aarch64; do \
+	for arch in $(ARCH_LIST); do \
 		echo arch = $$arch; \
 		$(call prepare_lib,$$arch); \
 		$(RPMFLAGS) --target $$arch --with cross -bb $(SPECS)/kabitools.spec; \
-	done)
+	done
 
+one:
+	$(call make_tar)
 	$(call prepare_lib,x86_64)
-	$(RPMFLAGS) -ba $(SPECS)/kabitools.spec
+	$(RPMFLAGS) --target x86_64 --with cross -ba $(SPECS)/kabitools.spec
 
 clean:
 	make -C $(KABISRC) clean

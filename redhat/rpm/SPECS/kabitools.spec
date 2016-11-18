@@ -9,15 +9,15 @@
 #
 #	RPMBUILD	:= /usr/bin/rpmbuild
 #	KABIDIR		:= /work/kabi
+#	KABILIB		:= $(KABIDIR)/lib
 #	KABISRC		:= $(KABIDIR)/src
-#	REDHAT		:= $(KABIDIR)/redhat
+#	REDHAT		:= $(KABISRC)/redhat
 #	RPM		:= $(REDHAT)/rpm
 #	SOURCES 	:= $(RPM)/SOURCES
 #	BUILD		:= $(RPM)/BUILD
 #	RPMS		:= $(RPM)/RPMS
 #	SRPMS		:= $(RPM)/SRPMS
 #	SPECS		:= $(RPM)/SPECS
-#	ARCH		:= $(shell uname -i)
 #
 #	RPMFLAGS = $(RPMBUILD)
 #		--define "_topdir	$(RPM)" \
@@ -28,9 +28,7 @@
 #		--define "_specdir	$(SPECS)" \
 #
 # The Makefile also creates the libsparse.tar.gz archive from whatever is
-# in the $(KABISRC) directory. Because this archive file is not named
-# according to the rpm standard {name)-{version}, the setup macro must
-# be informed accordingly.
+# in the $(KABISRC) directory.
 #
 ###########################################################################
 
@@ -51,12 +49,12 @@ Requires:       boost
 Requires:	gcc >= 4.8
 
 %description
-kabitools 
+kabitools
 =========
 
 This kit provides utilities for navigating the kABI
 
-kabitools.sh 	- builds the kernel graph when and the kernel and kmods
+kabi-graph 	- builds the kernel graph when and the kernel and kmods
 		  through vmlinuz.
 
 kabi-lookup 	- given the symbol name of an exported symbol, determines
@@ -73,24 +71,23 @@ kabitools-fedora-kernel-make.patch
 	order to make the kernel graph files while building the kernel.
 
 %prep
-%setup -q -c kabitools -n kabitools
-
+%setup -q -c %{name} -n %{name}
 
 %build
-# cd %{_builddir}/%{name}-%{version}
+echo $PWD
 make %{?_smp_mflags}
 
 %install
 mkdir -p $RPM_BUILD_ROOT%{_sbindir}
 mkdir -p $RPM_BUILD_ROOT%{_datadir}
-cp %{_topdir}/BUILD/%{name}-%{version}/kabi-parser  $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}-%{version}/kabi-dump    $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}-%{version}/kabi-lookup  $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}-%{version}/kabi-graph   $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}-%{version}/kabi-data.sh $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}-%{version}/makei.sh     $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}-%{version}/kabitools-rhel-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
-cp %{_topdir}/BUILD/%{name}-%{version}/kabitools-fedora-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
+cp %{_topdir}/BUILD/%{name}/kabi-parser  $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/kabi-dump    $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/kabi-lookup  $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/kabi-graph   $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/kabi-data.sh $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/makei.sh     $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/kabitools-rhel-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
+cp %{_topdir}/BUILD/%{name}/kabitools-fedora-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
 
 %files
 %defattr(-,root,root)
@@ -105,7 +102,7 @@ cp %{_topdir}/BUILD/%{name}-%{version}/kabitools-fedora-kernel-make.patch $RPM_B
 %doc README
 
 %changelog
-* Thu Nov 17 2016 Tony Camuso <tcamuso@redhat.com> - 3.5.3-6
+* Fri Nov 18 2016 Tony Camuso <tcamuso@redhat.com> - 3.5.3-6
 - Adapt for cross-compiling into other arches.
   This means it must be invoked by a make file.
 * Mon Nov 14 2016 Tony Camuso <tcamuso@redhat.com> - 3.5.3-5
