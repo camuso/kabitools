@@ -1,4 +1,5 @@
-*.swp
+*.*.swp
+*~
 *.sql
 *.pro*
 *.tgz
@@ -6,6 +7,8 @@
 *.autosave
 *.save.*
 *.tmp
+*.rpm
+*.gz
 
 # directories
 sparse/
@@ -13,7 +16,6 @@ sparksyms/
 sparse-debug/
 coventry/
 kabicompdb/
-redhat/rpm/
 
 # Object files
 *.o

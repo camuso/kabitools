@@ -101,4 +101,4 @@ one:
 
 clean:
 	make -C $(KABISRC) clean
-	rm -rf $(BUILD)
+	rm -rf $(BUILD)/*
