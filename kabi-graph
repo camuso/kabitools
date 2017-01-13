@@ -3,7 +3,16 @@
 # kabitools
 #
 
-cmdline=kabitools
+declare cmdline=kabitools
+declare cpus=$(cat /proc/cpuinfo | grep processor | wc -l)
+declare clean=false
+declare patch
+declare distro="$(cat /etc/os-release | grep -w ID | cut -d'=' -f2)"
+
+# strip outside quotes from the distro string
+#
+distro=$(sed -e 's/^"//' -e 's/"$//' <<<"$distro")
+
 
 usagestr=$(
 cat <<EOF
@@ -14,6 +23,7 @@ kabitools.sh -[cjh]
 
 	-c	- make clean first
 	-j	- Optional number of processors to assign to the make task.
+		  Default is all processors: $cpus
 	-h	- This help screen.
 
 	Runs the following make commands with the optional -j specifier
@@ -64,6 +74,18 @@ You are here: $PWD
 EOF
 )
 
+not_redhat_str=$(
+cat <<EOF
+
+$(basename $0) must be invoked from the top of a rhel or fedora tree.
+
+Your current distro is: "$distro"
+Your current branch is: "$(git branch | grep \*)"
+
+\0
+EOF
+)
+
 usage() {
 	echo -e "$usagestr"
 	exit
@@ -82,18 +104,13 @@ control_c()
 
 declare kerneltree="$(head -1 README)"
 kerneltree=$(echo $kerneltree)
-[[ ${kerneltree:0:20} == "Linux kernel release" ]] || \
-	{ echo -e "not_kernel_str"; exit 4; }
+[[ ${kerneltree:0:12} == "Linux kernel" ]] || \
+	{ echo -e "$not_kernel_str"; exit 4; }
 
 
-declare cpus
-declare clean=false
-declare patch
-declare distro="$(cat /etc/os-release | grep -w ID | cut -d'=' -f2)"
-
-# strip outside quotes from the distro string
+# Make sure that we are in a rhel or fedora tree
 #
-distro=$(sed -e 's/^"//' -e 's/"$//' <<<"$distro")
+[ -e redhat ] || { echo -e $not_redhat_str; exit 5; }
 
 while getopts chj: OPTION; do
     case "$OPTION" in

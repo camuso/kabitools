@@ -34,7 +34,7 @@
 
 Name:		kabitools
 Version:	3.5.3
-Release:	6%{?dist}
+Release:	7%{?dist}
 Summary:	A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
 
@@ -102,6 +102,9 @@ cp %{_topdir}/BUILD/%{name}/kabitools-fedora-kernel-make.patch $RPM_BUILD_ROOT%{
 %doc README
 
 %changelog
+* Fri Jan 13 2017 Tony Camuso <tcamuso@redhat.com> - 3.5.3-7
+- Modified kabi-graph script to fix bug and test for fedora
+  or redhat branch.
 * Fri Nov 18 2016 Tony Camuso <tcamuso@redhat.com> - 3.5.3-6
 - Adapt for cross-compiling into other arches.
   This means it must be invoked by a make file.
