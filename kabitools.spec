@@ -1,17 +1,17 @@
 Name:           kabitools
-Version:        3.5.3
-Release:        4%{?dist}
+Version:        3.5.4
+Release:        1%{?dist}
 Summary:        A toolkit for KABI navigation
-BuildRoot:	%{_topdir}/BUILDROOT/
+BuildRoot:      %{_topdir}/BUILDROOT/
 
 License:        GPLv2
 URL:            https://github.com/camuso/kabiparser
 Source0:        %{_topdir}/%{name}-%{version}.tar.gz
 
-BuildArch:	x86_64
+BuildArch:      x86_64
 BuildRequires:  gcc >= 4.8
-BuildRequires:	gcc-c++
-BuildRequires:	boost
+BuildRequires:  gcc-c++
+BuildRequires:  boost
 Requires:       boost
 
 %description
@@ -51,6 +51,10 @@ cp %{_topdir}/BUILD/%{name}-%{version}/kabitools-fedora-kernel-make.patch $RPM_B
 %doc README
 
 %changelog
+* Tue Mar 22 2017 Tony Camuso <tcamuso@redhat.com> - 3.5.4-1
+- Added the -1 option to exit after finding just one symbol.
+- Changed the NOTFOUND message to say that the symbol is not
+  in the database, so is kABI safe.
 * Sat Nov 12 2016 Tony Camuso <tcamuso@redhat.com> - 3.5.3-4
 - Changed to install only, instead of build.
 - Finished update of README and added README to the %docs directory

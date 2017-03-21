@@ -1,6 +1,6 @@
 ###########################################################################
 #
-# libsparse.spec
+# kabitools.spec
 #
 # This spec file is intended to be invoked only from a Makefile that has
 # correctly defined the directory tree in which this will be built.
@@ -33,8 +33,8 @@
 ###########################################################################
 
 Name:		kabitools
-Version:	3.5.3
-Release:	7%{?dist}
+Version:	3.5.4
+Release:	1%{?dist}
 Summary:	A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
 
@@ -102,6 +102,10 @@ cp %{_topdir}/BUILD/%{name}/kabitools-fedora-kernel-make.patch $RPM_BUILD_ROOT%{
 %doc README
 
 %changelog
+* Tue Mar 22 2017 Tony Camuso <tcamuso@redhat.com> - 3.5.4-1
+- Added the -1 option to exit after finding just one symbol.
+- Changed the NOTFOUND message to say that the symbol is not
+  in the database, so is kABI safe.
 * Fri Jan 13 2017 Tony Camuso <tcamuso@redhat.com> - 3.5.3-7
 - Modified kabi-graph script to fix bug and test for fedora
   or redhat branch.
