@@ -96,6 +96,7 @@ kabi-lookup [-vwl] -e|s|c|d symbol [-f file-list] [-m mask] [-p path] \n\
                   kabi white list, if it exists.\n\
     -m mask     - Limits the search to directories and files containing the\n\
                   mask string. \n\
+    -1          - Return only the first instance discovered.\n\
     -p          - Path to top of kernel tree, if operating in a different\n\
                   directory.\n\
     -v          - Verbose output. Default is quiet.\n\
@@ -198,7 +199,7 @@ int lookup::run()
 	m_filelist = m_kabidir + m_filelist;
 	ifs.open(m_filelist);
 
-	if(!ifs.is_open())
+	if (!ifs.is_open())
 		report_nopath(m_filelist.c_str(), "file");
 
 	if (m_flags & KB_WHITE_LIST)
@@ -212,16 +213,24 @@ int lookup::run()
 			continue;
 
 		if (!(m_flags & KB_COUNT)) {
-			cerr << "\33[2K\r";
+			cerr << "\33[2K\r";	// return to start of line
 			cerr << m_datafile;
 			//cerr.flush();
 		}
 
 		m_errindex = execute(m_datafile);
 
+		// If we're looking for EXPORTed symbols or struct decls,
+		// then no need to look any further once we find one.
+		//
 		if (m_isfound && (m_flags & KB_WHOLE_WORD)
 			      && ((m_flags & KB_EXPORTS)
 			      ||  (m_flags & KB_DECL)))
+			break;
+
+		// Break also if the KB_JUSTONE flag is set.
+		//
+		if (m_isfound && KB_JUSTONE)
 			break;
 	}
 

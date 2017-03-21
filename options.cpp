@@ -103,6 +103,8 @@ bool options::parse_opt(char opt, char ***argv,
 		   exit(0);
 	case 'V' : cout << lookup::get_version();
 		   exit(0);
+	case '1' : kb_flags |= KB_JUSTONE;
+		   break;
 	default  : return false;
 	}
 	return true;
