@@ -230,7 +230,7 @@ int lookup::run()
 
 		// Break also if the KB_JUSTONE flag is set.
 		//
-		if (m_isfound && KB_JUSTONE)
+		if (m_isfound && (m_flags & KB_JUSTONE))
 			break;
 	}
 
