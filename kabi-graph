@@ -24,6 +24,7 @@ kabitools.sh -[cjh]
 	-c	- make clean first
 	-j	- Optional number of processors to assign to the make task.
 		  Default is all processors: $cpus
+	-D      - Delete all the graph files
 	-h	- This help screen.
 
 	Runs the following make commands with the optional -j specifier
@@ -91,16 +92,48 @@ usage() {
 	exit
 }
 
+# ui_waitonproc
+#
+# Prints a dot to the screen every half second until the passed PID
+# completes.
+#
+# $1 - PID of process we are waiting for.
+# $2 - optional time argument
+#
+ui_waitonproc () {
+    __pid__=$1;
+    __time__=1
+
+    [ $# -eq 2 ] && __time__=$2
+    while kill -0 $__pid__ > /dev/null 2>&1; do
+        echo -n '.';
+        sleep $__time__;
+    done
+}
+
 # run if user hits control-c
 #
 control_c()
 {
 	echo -en "\nCtrl-c detected\nCleaning up and exiting.\n"
 	patch -Rs -p1 < "$patch"
-  	exit 127
+	exit 127
 }
 
-[[ -f README ]] || { echo -e "$not_kernel_str"; exit 3; }
+delete_graph() {
+	local mypid
+	echo -n "Deleting graph files.."
+	find . -name \*.kbg -exec rm -f '{}' \; &
+	mypid=$!
+	ui_waitonproc mypid .1
+	rm -f redhat/kabi/kabi-datafiles.list
+	echo
+	echo "Done!"
+	echo
+	exit 0
+}
+
+[ -f README ] || { echo -e "$not_kernel_str"; exit 3; }
 
 declare kerneltree="$(head -1 README)"
 kerneltree=$(echo $kerneltree)
@@ -110,9 +143,9 @@ kerneltree=$(echo $kerneltree)
 
 # Make sure that we are in a rhel or fedora tree
 #
-[ -e redhat ] || { echo -e $not_redhat_str; exit 5; }
+[ -d redhat ] || { echo -e $not_redhat_str; exit 5; }
 
-while getopts chj: OPTION; do
+while getopts chDj: OPTION; do
     case "$OPTION" in
 
 	c )	clean=true
@@ -120,6 +153,8 @@ while getopts chj: OPTION; do
 	h ) 	usage
 		;;
 	j )	cpus=$OPTARG
+		;;
+	D )	delete_graph
 		;;
 	* )	echo "unrecognized option"
 		usage
@@ -137,7 +172,7 @@ case $distro in
 			;;
 esac
 
-[[ -e "$patch" ]] || { echo -e "$no_os_str"; exit 2; }
+[ -f "$patch" ] || { echo -e "$no_os_str"; exit 2; }
 
 patch -s -p1 < "$patch"
 
