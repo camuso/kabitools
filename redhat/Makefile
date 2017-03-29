@@ -25,6 +25,8 @@ BUILD		:= $(RPM)/BUILD
 RPMS		:= $(RPM)/RPMS
 SRPMS		:= $(RPM)/SRPMS
 SPECS		:= $(RPM)/SPECS
+HOMEBINLIB	:= $(HOME)/bin/lib
+
 ARCH		:= $(shell uname -i)
 
 RPM2CPIO	:= /usr/bin/rpm2cpio
@@ -73,6 +75,17 @@ wrong_arch = 	\
 make_tar = \
 	tar $(TARFLAGS) $(SOURCES)/kabitools-$(VERSION).tar.gz -C $(KABISRC) .
 
+make_kabiscan = \
+	cat $(HOMEBINLIB)/ui.source > $(KABISRC)/kabiscan; \
+	cat $(HOMEBINLIB)/project.source >> $(KABISRC)/kabiscan; \
+	cat $(HOMEBINLIB)/kabiscan.source >> $(KABISRC)/kabiscan; \
+	chmod +x $(KABISRC)/kabiscan
+
+# This procedure requires that the cross-compile of libsparse.a has been
+# accomplished and is in the directory tree defined by SPARSEROOT.
+# See http://git.engineering.redhat.com/git/users/tcamuso/libsparse/libsparse.git/.git/
+# git://git.engineering.redhat.com/users/tcamuso/libsparse/libsparse.git/.git
+#
 prepare_lib = \
 	set -x; \
 	mkdir -p $(KABILIB)/$(1); \
@@ -86,6 +99,7 @@ all:
 	$(shell [[ $(ARCH) == "x86_64" ]] || $(call wrong_arch))
 	echo "OS $(OS_MEME)"
 	echo "SPARSE_VER $(SPARSE_VER)"
+	$(call make_kabiscan)
 	$(call make_tar)
 
 	for arch in $(ARCH_LIST); do \

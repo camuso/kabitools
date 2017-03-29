@@ -34,7 +34,7 @@
 
 Name:		kabitools
 Version:	3.5.4
-Release:	2%{?dist}
+Release:	3%{?dist}
 Summary:	A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
 
@@ -54,8 +54,11 @@ kabitools
 
 This kit provides utilities for navigating the kABI
 
-kabi-graph 	- builds the kernel graph when and the kernel and kmods
-		  through vmlinuz.
+kabi-graph 	- builds the kernel graph and the kernel and kmods, but
+		  does not install the kmods or kernel.
+
+kabiscan	- provides a menu-driven wrapper around kabi-lookup,
+		  making the tool much easier to use.
 
 kabi-lookup 	- given the symbol name of an exported symbol, determines
 		  all the dependencies for that symbol and prints them to
@@ -84,6 +87,7 @@ cp %{_topdir}/BUILD/%{name}/kabi-parser  $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}/kabi-dump    $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}/kabi-lookup  $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}/kabi-graph   $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/kabiscan     $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}/kabi-data.sh $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}/makei.sh     $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}/kabitools-rhel-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
@@ -95,6 +99,7 @@ cp %{_topdir}/BUILD/%{name}/kabitools-fedora-kernel-make.patch $RPM_BUILD_ROOT%{
 %{_sbindir}/kabi-dump
 %{_sbindir}/kabi-lookup
 %{_sbindir}/kabi-graph
+%{_sbindir}/kabiscan
 %{_sbindir}/kabi-data.sh
 %{_sbindir}/makei.sh
 %{_datadir}/kabitools-rhel-kernel-make.patch
@@ -102,8 +107,12 @@ cp %{_topdir}/BUILD/%{name}/kabitools-fedora-kernel-make.patch $RPM_BUILD_ROOT%{
 %doc README
 
 %changelog
+* Wed Mar 29 2017 Tony Camuso <tcamuso@redhat.com> - 3.5.4-3
+- Add build of kabiscan menu-driven wrapper for kabi-lookup.
+- Change graph filename type from kb_dat to kbg
 * Fri Mar 24 2017 Tony Camuso <tcamuso@redhat.com> - 3.5.4-2
-- Fix bug in lookup.cpp::lookup::run improper use of mask being
+- Fix bug in lookup.cpp::lookup::run() improper use of mask
+  m_flags with KB_JUSTONE.
 * Tue Mar 21 2017 Tony Camuso <tcamuso@redhat.com> - 3.5.4-1
 - Added the -1 option to exit after finding just one symbol.
 - Changed the NOTFOUND message to say that the symbol is not
