@@ -16,9 +16,9 @@ cat <<EOF
 $ $(basename $0) -d directory [-s subdir -f filelist -e errfile -V -h]
 
   - Given a path to the top of the kernel tree, this script calls the
-    kabi-parser tool to create a kb_dat graph file from each .i file in
-    the tree. Each kb_dat graph file contains an abstract of all exported
-    symbols and all their dependencies. A list of kb_dat files is compiled
+    kabi-parser tool to create a kbg graph file from each .i file in
+    the tree. Each kbg graph file contains an abstract of all exported
+    symbols and all their dependencies. A list of kbg files is compiled
     for use by the kabi-lookup tool.
 
   -d directory - Required. Path to the topmost directory of the kernel tree.
@@ -26,7 +26,7 @@ $ $(basename $0) -d directory [-s subdir -f filelist -e errfile -V -h]
                  to the top of the kernel tree.
   -f filelist  - Optional. Default is redhat/kabi/kabi-datafiles.list
                  relative to the top of the kernel tree. This file will
-                 contain a list of kb_dat graph files that were created from
+                 contain a list of kbg graph files that were created from
                  .i files generated previously by the preprocessor.
                  If it already exists, this file will be destroyed and
                  rebuilt.
@@ -110,7 +110,7 @@ rm -vf $filelist
 START=$(date +%s)
 
 find $directory/$subdir -name \*.i -exec sh -c \
-        'datafile="${1%.*}.kb_dat"; \
+        'datafile="${1%.*}.kbg"; \
 	kabi-parser -xo "$datafile" -f $1 -S -Wall_off 2>$2; \
 	if [ -f "$datafile" ]; then \
                 echo "$datafile" >> $3; \
@@ -155,4 +155,4 @@ echo
 echo "Compression time: $compmin minutes and $compsec seconds"
 
 #
-# tar --remove-files -uf $3 ${1%.*}.kb_dat;
+# tar --remove-files -uf $3 ${1%.*}.kbg;

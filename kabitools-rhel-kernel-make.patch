@@ -50,7 +50,7 @@ index f73f35f..13a3e04 100644
  #
  configs/*.config
  localversion
-+*.kb_dat
++*.kbg
  
  # configuration file for rh- targets
  .rhel7git.mk
@@ -113,7 +113,7 @@ index 1c54427..dfea585 100644
  		-o -name '.*.d' -o -name '.*.tmp' -o -name '*.mod.c' \
  		-o -name '*.symtypes' -o -name 'modules.order' \
  		-o -name modules.builtin -o -name '.tmp_*.o.*' \
-+		-o -name '*.i' -o -name '*.kb_dat' -o -name 'kabi-datafiles.*' \
++		-o -name '*.i' -o -name '*.kbg' -o -name 'kabi-datafiles.*' \
  		-o -name '*.gcno' \) -type f -print | xargs rm -f
  
  # Generate tags for editors
@@ -162,7 +162,7 @@ index 61527b0..bb233e7 100644
  		    > $(@D)/.tmp_$(@F:.o=.ver);					\
  										\
 +		if [ "$(KABIPARSER)" ]; then					\
-+			$(call cmd_kabiparser,$(@:.o=.i),$(@:.o=.kb_dat))	\
++			$(call cmd_kabiparser,$(@:.o=.i),$(@:.o=.kbg))	\
 +		fi;								\
 +										\
  		$(LD) $(LDFLAGS) -r -o $@ $(@D)/.tmp_$(@F) 			\
