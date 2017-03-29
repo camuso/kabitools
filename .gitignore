@@ -16,6 +16,8 @@ sparksyms/
 sparse-debug/
 coventry/
 kabicompdb/
+redhat/rpm/BUILDROOT
+redhat/rpm/BUILD
 
 # Object files
 *.o
@@ -54,4 +56,5 @@ kabi-lookup
 kabi-parser
 kabi-compdb
 kabi-dump
+kabiscan
 prep
