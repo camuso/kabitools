@@ -27,8 +27,6 @@ SRPMS		:= $(RPM)/SRPMS
 SPECS		:= $(RPM)/SPECS
 HOMEBINLIB	:= $(HOME)/bin/lib
 
-ARCH		:= $(shell uname -i)
-
 RPM2CPIO	:= /usr/bin/rpm2cpio
 CPIO		:= /usr/bin/cpio
 CPIOFLAGS	:= -iv --to-stdout
@@ -53,8 +51,11 @@ ARCH_LIST := \
 	aarch64 \
 	x86_64
 
-OS_MEME = $(shell uname -r | rev | cut -d'.' -f2 | rev)
-SPARSE_VER = $(shell grep -m1 Version $(SPARSESPECS)/libsparse.spec | cut -d '	' -f2)
+BOOSTPKG := $(shell rpm -qa | grep boost-serialization)
+ARCH 	 := $(shell echo $(BOOSTPKG) | rev | cut -d'.' -f1 | rev)
+DISTRO	 := $(shell echo $(BOOSTPKG) | rev | cut -d'.' -f2 | rev)
+
+SPARSE_VER := $(shell grep -m1 Version $(SPARSESPECS)/libsparse.spec | cut -d '	' -f2)
 
 CROSS_PACKAGE_LIST = binutils-powerpc64-linux-gnu \
 		     binutils-s390x-linux-gnu \
@@ -67,10 +68,13 @@ CROSS_PACKAGE_LIST = binutils-powerpc64-linux-gnu \
 		     numactl-devel \
 		     diffstat
 
-#export RPMFLAGS CPIOFLAGS
-
 wrong_arch = 	\
-	echo -e "\nThis arch is $(uname -m), but this make must be executed on x86_64."
+	echo -en "\nArch is $(ARCH), but this make must be executed on x86_64.\n"; \
+	exit 1
+
+no_boost = 	\
+	echo -e "\n*** Please install boost before running this make. ***\n"; \
+	exit 1
 
 make_tar = \
 	tar $(TARFLAGS) $(SOURCES)/kabitools-$(VERSION).tar.gz -C $(KABISRC) .
@@ -87,23 +91,24 @@ make_kabiscan = \
 # git://git.engineering.redhat.com/users/tcamuso/libsparse/libsparse.git/.git
 #
 prepare_lib = \
-	set -x; \
 	mkdir -p $(KABILIB)/$(1); \
-	$(RPM2CPIO) $(SPARSERPMS)/$(1)/libsparse-$(SPARSE_VER)-1.$(OS_MEME).$(1).rpm \
-	| $(CPIO) $(CPIOFLAGS) ./usr/lib64/libsparse.a > $(KABILIB)/libsparse.a
+	$(RPM2CPIO) \
+	$(SPARSERPMS)/$(1)/libsparse-$(SPARSE_VER)-1.$(DISTRO).$(1).rpm \
+	| $(CPIO) $(CPIOFLAGS) > $(KABILIB)/libsparse.a
 
 # These are the cross-compile targets
 # The final one will also build the src.rpm
 #
 all:
+	$(shell [ $(BOOSTPKG) ] || $(call no_boost))
+	@echo "DISTRO: $(DISTRO)"
 	$(shell [[ $(ARCH) == "x86_64" ]] || $(call wrong_arch))
-	echo "OS $(OS_MEME)"
-	echo "SPARSE_VER $(SPARSE_VER)"
+	@echo "SPARSE_VER: $(SPARSE_VER)"
 	$(call make_kabiscan)
 	$(call make_tar)
 
 	for arch in $(ARCH_LIST); do \
-		echo arch = $$arch; \
+		echo; echo "*****"; echo arch = $$arch; echo "*****"; \
 		$(call prepare_lib,$$arch); \
 		$(RPMFLAGS) --target $$arch --with cross -bb $(SPECS)/kabitools.spec; \
 	done
@@ -116,3 +121,4 @@ one:
 clean:
 	make -C $(KABISRC) clean
 	rm -rf $(BUILD)/*
+	find $(RPMS)/ -type f -name "*.rpm" -exec rm -vf '{}' \;
