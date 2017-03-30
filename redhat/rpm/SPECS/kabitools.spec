@@ -34,7 +34,7 @@
 
 Name:		kabitools
 Version:	3.5.4
-Release:	3%{?dist}
+Release:	4%{?dist}
 Summary:	A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
 
