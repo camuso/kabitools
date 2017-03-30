@@ -73,6 +73,10 @@ kabitools-fedora-kernel-make.patch
 	These are patches for the rhel and fedora kernel make files in
 	order to make the kernel graph files while building the kernel.
 
+# The following line disables building of the debug package.
+#
+%global debug_package %{nil}
+
 %prep
 %setup -q -c %{name} -n %{name}
 
@@ -107,6 +111,8 @@ cp %{_topdir}/BUILD/%{name}/kabitools-fedora-kernel-make.patch $RPM_BUILD_ROOT%{
 %doc README
 
 %changelog
+* Thu Mar 30 2017 Tony Camuso <tcamuso@redhat.com> - 3.5.4-4
+- Disabled building of debug packages.
 * Wed Mar 29 2017 Tony Camuso <tcamuso@redhat.com> - 3.5.4-3
 - Add build of kabiscan menu-driven wrapper for kabi-lookup.
 - Change graph filename type from kb_dat to kbg
