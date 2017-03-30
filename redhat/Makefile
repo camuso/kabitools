@@ -93,7 +93,7 @@ make_kabiscan = \
 prepare_lib = \
 	mkdir -p $(KABILIB)/$(1); \
 	$(RPM2CPIO) \
-	$(SPARSERPMS)/$(1)/libsparse-$(SPARSE_VER)-1.$(DISTRO).$(1).rpm \
+	$(SPARSERPMS)/$(1)/libsparse-$(SPARSE_VER)-*.$(DISTRO).$(1).rpm \
 	| $(CPIO) $(CPIOFLAGS) > $(KABILIB)/libsparse.a
 
 # These are the cross-compile targets
