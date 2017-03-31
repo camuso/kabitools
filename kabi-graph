@@ -9,7 +9,20 @@ declare clean=true
 declare patch
 declare target=""
 declare distro="$(cat /etc/os-release | grep -w ID | cut -d'=' -f2)"
+
 declare -i optcnt=0
+
+declare -i err_no_patch=1
+declare -i err_no_os=2
+declare -i err_not_kernel=3
+declare -i err_not_redhat=4
+declare -i err_no_boost=5
+declare -i err_bad_opt=127
+declare -i CTRL_C=130
+
+declare BLD="\033[1m"
+declare OFF="\033[0m"
+declare UND="\033[4m"
 
 # strip outside quotes from the distro string
 #
@@ -18,32 +31,36 @@ distro=$(sed -e 's/^"//' -e 's/"$//' <<<"$distro")
 
 usagestr=$(
 cat <<EOF
-
-kabitools.sh -[jnDh] [target]
+$BLD
+$(basename $0) -[jnDh] [target]$OFF
 
 	Builds a graph from the preprocessor output of each file compiled.
 	Must be invoked from the top of the kernel tree.
 
-	target can be any valid kernel make target including a subdirectory,
-	e.g. "virt/" or a module build,	e.g. "M=drivers/char/tpm"
-	The kABI graph will be limited to the scope of the build of optarg.
+	The optional $BLD\0target$OFF argument can be any valid kernel make target
+	including a subdirectory, e.g. "$BLD\0virt/$OFF" or a module build, e.g.
+	"$BLD\0M=drivers/char/tpm$OFF"
+
+	The kABI graph will be limited to the scope of the build of the
+	optional target.
 
 	Default action without the optarg:
 		make clean	# can be disabled with -n option
-		make -j $cpus	# number of cpus can be set with the -j option
+		make
 		make modules
 
-	Options
-	-j	- Optional number of processors to assign to the make task.
-		  Default is all processors: $cpus
-		  NOTE: There must be a space between -j and the number.
-	-n	- Do not make clean first
-	-D      - Delete all the graph files
-	-h	- This help screen.
+	$UND\0Options$OFF
+$BLD	-j$OFF	- Optional number of processors to assign to the make task.
+		  There must be a space between -j and the number.
+		  Default is all processors in this system: $BLD$cpus$OFF
 
-	NOTE:	The graph file extension will be added to .git/info/exclude,
-		but will be selectively removed with "kabi-graph -D" command,
-		which also removes all the graph files.
+$BLD	-n$OFF	- Do not make clean first
+$BLD	-D$OFF	- Delete all the graph files and exit.
+$BLD	-h$OFF	- This help screen.
+	$BLD
+	NOTE:$OFF	The graph file extension will be added to $BLD\0.git/info/exclude$OFF,
+		but will be selectively removed with "$BLD\0kabi-graph -D$OFF" command,
+		which removes all the graph files.
 \0
 EOF
 )
@@ -51,13 +68,12 @@ EOF
 no_patch_str=$(
 cat <<EOF
 
-$(basename $0) could not find the correct patch for the kernel Makefiles.
+$BLD$(basename $0)$OFF could not find the correct patch for the kernel Makefiles.
 
 Please check for the existence of:
-
+$BLD
 /usr/share/kabitools-rhel-kernel-make.patch
-/usr/share/kabitools-fedora-kernel-make.patch
-
+/usr/share/kabitools-fedora-kernel-make.patch$OFF
 \0
 EOF
 )
@@ -65,8 +81,7 @@ EOF
 no_os_str=$(
 cat <<EOF
 
-$(basename $0) does not handle distro: $distro
-
+$BLD$(basename $0)$OFF does not handle distro: $BLD$distro$OFF
 \0
 EOF
 )
@@ -74,10 +89,9 @@ EOF
 not_kernel_str=$(
 cat <<EOF
 
-$(basename $0) must be invoked from the top of a kernel tree.
+$BLD$(basename $0)$OFF must be invoked from the top of a kernel tree.
 
-You are here: $PWD
-
+You are here: $BLD$PWD$OFF
 \0
 EOF
 )
@@ -85,11 +99,18 @@ EOF
 not_redhat_str=$(
 cat <<EOF
 
-$(basename $0) must be invoked from the top of a rhel or fedora tree.
+$BLD$(basename $0)$OFF must be invoked from the top of a rhel or fedora tree.
 
-Your current distro is: "$distro"
-Your current branch is: "$(git branch | grep \*)"
+Your current distro is: "$BLD$distro$OFF"
+Your current branch is: "$BLD$(git rev-parse --abbrev-ref HEAD)$OFF"
+\0
+EOF
+)
 
+no_boost_str=$(
+cat <<EOF
+
+You must install $BLD\0boost$OFF before you can run $BLD$(basename $0)$OFF\0.
 \0
 EOF
 )
@@ -97,6 +118,11 @@ EOF
 usage() {
 	echo -e "$usagestr"
 	exit 0
+}
+
+errexit() {
+	echo -e "$1"
+	exit $2
 }
 
 # ui_waitonproc
@@ -116,14 +142,6 @@ ui_waitonproc() {
         echo -n '.';
         sleep $__time__;
     done
-}
-
-# run if user hits control-c
-#
-control_c() {
-	echo -en "\nCtrl-c detected\nCleaning up and exiting.\n"
-	patch -Rs -p1 < "$patch"
-	exit 127
 }
 
 # delete_linen - deletes the line 'n' from the file
@@ -189,6 +207,14 @@ delete_graph() {
 	exit 0
 }
 
+# run if user hits control-c
+#
+control_c() {
+	echo -en "\nCtrl-c detected\nCleaning up and exiting.\n"
+	patch -Rs -p1 < "$patch"
+	errexit "Done." $CTRL_C
+}
+
 main() {
 
 	local kerneltree
@@ -196,15 +222,20 @@ main() {
 
 	# Determine if we're in a Linux Kernel directory
 	#
-	[ -f README ] || { echo -e "$not_kernel_str"; exit 3; }
+	[ -f README ] || errexit "$not_kernel_str" $err_not_kernel
 	kerneltree="$(head -1 README)"
 	kerneltree=$(echo $kerneltree)
 	[[ ${kerneltree:0:12} == "Linux kernel" ]] || \
-		{ echo -e "$not_kernel_str"; exit 4; }
+		errexit "$not_kernel_str" $err_not_kernel
 
 	# Make sure that we are in a rhel or fedora tree
 	#
-	[ -d redhat ] || { echo -e $not_redhat_str; exit 5; }
+	[ -d redhat ] || errexit "$not_redhat_str" $err_not_redhat
+
+	# Make sure that we have boost-serialization. Can't work without it.
+	#
+	rpm -qa | grep boost-serialization > /dev/null 2>&1
+	[ $? -eq 0 ] || errexit "$no_boost_str" $err_no_boost
 
 	while getopts hnDj: OPTION; do
 	    case "$OPTION" in
@@ -219,9 +250,8 @@ main() {
 			;;
 		D )	delete_graph
 			;;
-		* )	echo "unrecognized option"
-			usage
-			exit 1
+		* )	usage
+			errexit "Unrecognized option." $err_bad_opt
 	    esac
 	done
 
@@ -229,16 +259,14 @@ main() {
 	target="$1"
 
 	case $distro in
-		"rhel")		patch="/usr/share/kabitools-rhel-kernel-make.patch"
-				;;
-		"fedora")	patch="/usr/share/kabitools-fedora-kernel-make.patch"
-				;;
-		* )		echo -e "$no_patch_str"
-				exit 1
-				;;
+	    "rhel" )	patch="/usr/share/kabitools-rhel-kernel-make.patch"
+			;;
+	    "fedora" )	patch="/usr/share/kabitools-fedora-kernel-make.patch"
+			;;
+	    * )	errexit "$no_patch_str" $err_no_patch
 	esac
 
-	[ -f "$patch" ] || { echo -e "$no_os_str"; exit 2; }
+	[ -f "$patch" ] || errexit "$no_os_str" $err_no_os
 
 	patch -s -p1 < "$patch"
 
@@ -246,17 +274,24 @@ main() {
 	make -j $cpus K=1 $target
 	patch -Rs -p1 < "$patch"
 
-	# If we haven't already done so, then add the grap files to
-	# .git/info/exclude
+	# If we haven't already done so, then add the graph file extensions
+	# to .git/info/exclude
 	#
 	find_line '\*.kbg' .git/info/exclude linenumber
 	[ $linenumber -eq 0 ] && echo '*.kbg' >> .git/info/exclude
+
 	find_line 'redhat/kabi/kabi-datafiles.list' .git/info/exclude linenumber
-	[ $linenumber -eq 0 ] && echo 'redhat/kabi/kabi-datafiles.list' >> .git/info/exclude
+	[ $linenumber -eq 0 ] && echo 'redhat/kabi/kabi-datafiles.list' \
+		>> .git/info/exclude
+
+	exit 0
 }
 
 # trap keyboard interrupt (control-c)
+#
 trap control_c SIGINT
 
+# Call the main function.
+#
 main $@
-exit 0
+
