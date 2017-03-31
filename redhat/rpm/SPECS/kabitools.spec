@@ -34,7 +34,7 @@
 
 Name:		kabitools
 Version:	3.5.4
-Release:	4%{?dist}
+Release:	5%{?dist}
 Summary:	A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
 
@@ -111,6 +111,9 @@ cp %{_topdir}/BUILD/%{name}/kabitools-fedora-kernel-make.patch $RPM_BUILD_ROOT%{
 %doc README
 
 %changelog
+* Fri Mar 31 2017 Tony Camuso <tcamuso@redhat.com> - 3.5.4-5
+- Changes to make kabi-graph more useful and to obscure the
+  graph files from git.
 * Thu Mar 30 2017 Tony Camuso <tcamuso@redhat.com> - 3.5.4-4
 - Disabled building of debug packages.
 * Wed Mar 29 2017 Tony Camuso <tcamuso@redhat.com> - 3.5.4-3

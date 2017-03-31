@@ -4,10 +4,12 @@
 #
 
 declare cmdline=kabitools
-declare cpus=$(cat /proc/cpuinfo | grep processor | wc -l)
-declare clean=false
+declare -i cpus=$(cat /proc/cpuinfo | grep processor | wc -l)
+declare clean=true
 declare patch
+declare target=""
 declare distro="$(cat /etc/os-release | grep -w ID | cut -d'=' -f2)"
+declare -i optcnt=0
 
 # strip outside quotes from the distro string
 #
@@ -17,26 +19,31 @@ distro=$(sed -e 's/^"//' -e 's/"$//' <<<"$distro")
 usagestr=$(
 cat <<EOF
 
-kabitools.sh -[cjh]
+kabitools.sh -[jnDh] [target]
 
+	Builds a graph from the preprocessor output of each file compiled.
 	Must be invoked from the top of the kernel tree.
 
-	-c	- make clean first
+	target can be any valid kernel make target including a subdirectory,
+	e.g. "virt/" or a module build,	e.g. "M=drivers/char/tpm"
+	The kABI graph will be limited to the scope of the build of optarg.
+
+	Default action without the optarg:
+		make clean	# can be disabled with -n option
+		make -j $cpus	# number of cpus can be set with the -j option
+		make modules
+
+	Options
 	-j	- Optional number of processors to assign to the make task.
 		  Default is all processors: $cpus
+		  NOTE: There must be a space between -j and the number.
+	-n	- Do not make clean first
 	-D      - Delete all the graph files
 	-h	- This help screen.
 
-	Runs the following make commands with the optional -j specifier
-	for SMP support.
-
-	make clean
-	make 		# compiles all files necessary to make vmlinux
-	make modules	# compiles all kmods
-
-	While compiling the kernel and kmods, builds a graph from the
-	preprocessor output of each file compiled.
-
+	NOTE:	The graph file extension will be added to .git/info/exclude,
+		but will be selectively removed with "kabi-graph -D" command,
+		which also removes all the graph files.
 \0
 EOF
 )
@@ -89,7 +96,7 @@ EOF
 
 usage() {
 	echo -e "$usagestr"
-	exit
+	exit 0
 }
 
 # ui_waitonproc
@@ -100,7 +107,7 @@ usage() {
 # $1 - PID of process we are waiting for.
 # $2 - optional time argument
 #
-ui_waitonproc () {
+ui_waitonproc() {
     __pid__=$1;
     __time__=1
 
@@ -113,73 +120,143 @@ ui_waitonproc () {
 
 # run if user hits control-c
 #
-control_c()
-{
+control_c() {
 	echo -en "\nCtrl-c detected\nCleaning up and exiting.\n"
 	patch -Rs -p1 < "$patch"
 	exit 127
 }
 
+# delete_linen - deletes the line 'n' from the file
+#
+# $1 - number of the line to delete
+# $2 - file from which to delete the line
+#
+delete_linen() {
+	local tfil="/tmp/__temp__file__"
+	local mode=$(stat --format '%a' $2)
+
+	touch $tfil
+	chmod $mode $tfil
+
+	awk -v line=$1 '{
+		if (NR != line) {
+			print $0;
+		}
+	}' $2 > $tfil
+	mv $tfil $2
+}
+
+# find_line - return the 1-based line number of the string in the file
+#
+# Sends a 0 to $3 if not found
+#
+# $1 - string
+# $2 - file
+# $3 - number, receives the line number, 0 if not found
+#
+find_line() {
+	local _line_="$1"
+	local _file_="$2"
+	local _number_
+
+	_line_=$(grep -n "$_line_" "$_file_")
+	[ $? -eq 0 ] || { eval $3=0; return 1; }
+	_number_=$(echo "$_line_" | cut -d':' -f1)
+	eval $3=$_number_
+	return 0
+}
+
 delete_graph() {
 	local mypid
+	local linenum
+	local line
+
 	echo -n "Deleting graph files.."
 	find . -name \*.kbg -exec rm -f '{}' \; &
 	mypid=$!
 	ui_waitonproc mypid .1
 	rm -f redhat/kabi/kabi-datafiles.list
+
+	# delete the kabi-graph lines from .git/info/exclude
+	#
+	find_line '\*.kbg' .git/info/exclude linenum
+	[ $linenum -gt 0 ] && delete_linen $linenum .git/info/exclude
+	find_line 'redhat/kabi/kabi-datafiles.list' .git/info/exclude linenum
+	[ $linenum -gt 0 ] && delete_linen $linenum .git/info/exclude
+
 	echo
 	echo "Done!"
-	echo
 	exit 0
 }
 
-[ -f README ] || { echo -e "$not_kernel_str"; exit 3; }
+main() {
 
-declare kerneltree="$(head -1 README)"
-kerneltree=$(echo $kerneltree)
-[[ ${kerneltree:0:12} == "Linux kernel" ]] || \
-	{ echo -e "$not_kernel_str"; exit 4; }
+	local kerneltree
+	local linenumber
 
+	# Determine if we're in a Linux Kernel directory
+	#
+	[ -f README ] || { echo -e "$not_kernel_str"; exit 3; }
+	kerneltree="$(head -1 README)"
+	kerneltree=$(echo $kerneltree)
+	[[ ${kerneltree:0:12} == "Linux kernel" ]] || \
+		{ echo -e "$not_kernel_str"; exit 4; }
 
-# Make sure that we are in a rhel or fedora tree
-#
-[ -d redhat ] || { echo -e $not_redhat_str; exit 5; }
+	# Make sure that we are in a rhel or fedora tree
+	#
+	[ -d redhat ] || { echo -e $not_redhat_str; exit 5; }
 
-while getopts chDj: OPTION; do
-    case "$OPTION" in
+	while getopts hnDj: OPTION; do
+	    case "$OPTION" in
 
-	c )	clean=true
-		;;
-	h ) 	usage
-		;;
-	j )	cpus=$OPTARG
-		;;
-	D )	delete_graph
-		;;
-	* )	echo "unrecognized option"
-		usage
-		exit 1
-    esac
-done
-
-case $distro in
-	"rhel")		patch="/usr/share/kabitools-rhel-kernel-make.patch"
+		h ) 	usage
 			;;
-	"fedora")	patch="/usr/share/kabitools-fedora-kernel-make.patch"
+		j )	cpus=$OPTARG
+			optcnt=$((optcnt + 2))
 			;;
-	* )		echo -e "$no_patch_str"
+		n )	clean=false
+			optcnt=$((optcnt + 1))
+			;;
+		D )	delete_graph
+			;;
+		* )	echo "unrecognized option"
+			usage
 			exit 1
-			;;
-esac
+	    esac
+	done
 
-[ -f "$patch" ] || { echo -e "$no_os_str"; exit 2; }
+	shift $optcnt
+	target="$1"
 
-patch -s -p1 < "$patch"
+	case $distro in
+		"rhel")		patch="/usr/share/kabitools-rhel-kernel-make.patch"
+				;;
+		"fedora")	patch="/usr/share/kabitools-fedora-kernel-make.patch"
+				;;
+		* )		echo -e "$no_patch_str"
+				exit 1
+				;;
+	esac
+
+	[ -f "$patch" ] || { echo -e "$no_os_str"; exit 2; }
+
+	patch -s -p1 < "$patch"
+
+	$clean && make clean
+	make -j $cpus K=1 $target
+	patch -Rs -p1 < "$patch"
+
+	# If we haven't already done so, then add the grap files to
+	# .git/info/exclude
+	#
+	find_line '\*.kbg' .git/info/exclude linenumber
+	[ $linenumber -eq 0 ] && echo '*.kbg' >> .git/info/exclude
+	find_line 'redhat/kabi/kabi-datafiles.list' .git/info/exclude linenumber
+	[ $linenumber -eq 0 ] && echo 'redhat/kabi/kabi-datafiles.list' >> .git/info/exclude
+}
 
 # trap keyboard interrupt (control-c)
 trap control_c SIGINT
 
-$clean && make clean
-make -j $cpus K=1
-patch -Rs -p1 < "$patch"
+main $@
 exit 0
