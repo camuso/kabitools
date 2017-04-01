@@ -33,8 +33,8 @@
 ###########################################################################
 
 Name:		kabitools
-Version:	3.5.4
-Release:	6%{?dist}
+Version:	3.6.0
+Release:	1%{?dist}
 Summary:	A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
 
@@ -95,7 +95,7 @@ cp %{_topdir}/BUILD/%{name}/kabiscan     $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}/kabi-data.sh $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}/makei.sh     $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}/kabitools-rhel-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
-cp %{_topdir}/BUILD/%{name}/kabitools-fedora-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
+cp %{_topdir}/BUILD/%{name}/kabitools-pegas-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
 
 %files
 %defattr(-,root,root)
@@ -107,10 +107,13 @@ cp %{_topdir}/BUILD/%{name}/kabitools-fedora-kernel-make.patch $RPM_BUILD_ROOT%{
 %{_sbindir}/kabi-data.sh
 %{_sbindir}/makei.sh
 %{_datadir}/kabitools-rhel-kernel-make.patch
-%{_datadir}/kabitools-fedora-kernel-make.patch
+%{_datadir}/kabitools-pegas-kernel-make.patch
 %doc README
 
 %changelog
+* Sat Apr 01 2017 Tony Camuso <tcamuso@redhat.com> - 3.6.0-1
+- Changed the way we do whitelists
+- Added pegas kernel patch, removed fedora kernal patch.
 * Fri Mar 31 2017 Tony Camuso <tcamuso@redhat.com> - 3.5.4-6
 - Improve usage and error messages
 - Correct the script name in the usage string.

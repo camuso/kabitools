@@ -73,7 +73,7 @@ $BLD$(basename $0)$OFF could not find the correct patch for the kernel Makefiles
 Please check for the existence of:
 $BLD
 /usr/share/kabitools-rhel-kernel-make.patch
-/usr/share/kabitools-fedora-kernel-make.patch$OFF
+/usr/share/kabitools-pegas-kernel-make.patch$OFF
 \0
 EOF
 )
@@ -99,7 +99,7 @@ EOF
 not_redhat_str=$(
 cat <<EOF
 
-$BLD$(basename $0)$OFF must be invoked from the top of a rhel or fedora tree.
+$BLD$(basename $0)$OFF must be invoked from the top of a RHEL tree.
 
 Your current distro is: "$BLD$distro$OFF"
 Your current branch is: "$BLD$(git rev-parse --abbrev-ref HEAD)$OFF"
@@ -219,6 +219,13 @@ main() {
 
 	local kerneltree
 	local linenumber
+	local rhel
+	local kernel
+
+	# Make sure that we have boost-serialization. Can't work without it.
+	#
+	rpm -qa | grep boost-serialization > /dev/null 2>&1
+	[ $? -eq 0 ] || errexit "$no_boost_str" $err_no_boost
 
 	# Determine if we're in a Linux Kernel directory
 	#
@@ -232,10 +239,12 @@ main() {
 	#
 	[ -d redhat ] || errexit "$not_redhat_str" $err_not_redhat
 
-	# Make sure that we have boost-serialization. Can't work without it.
+	# We only do RHEL6 and RHEL7
 	#
-	rpm -qa | grep boost-serialization > /dev/null 2>&1
-	[ $? -eq 0 ] || errexit "$no_boost_str" $err_no_boost
+	rhel=$(grep -m1 RHEL_MAJOR Makefile | cut -d' ' -f3)
+	[[ $rhel =~ ^[6-7] ]] || errexit "$not_redhat_str" $err_not_redhat
+
+	kernel=$(grep -m1 VERSION Makefile | cut -d' ' -f3)
 
 	while getopts hnDj: OPTION; do
 	    case "$OPTION" in
@@ -258,10 +267,12 @@ main() {
 	shift $optcnt
 	target="$1"
 
-	case $distro in
-	    "rhel" )	patch="/usr/share/kabitools-rhel-kernel-make.patch"
+	case $kernel in
+	    2 )	patch="/usr/share/kabitools-rhel-kernel-make.patch"
 			;;
-	    "fedora" )	patch="/usr/share/kabitools-fedora-kernel-make.patch"
+	    3 )	patch="/usr/share/kabitools-rhel-kernel-make.patch"
+			;;
+	    4 )	patch="/usr/share/kabitools-pegas-kernel-make.patch"
 			;;
 	    * )	errexit "$no_patch_str" $err_no_patch
 	esac

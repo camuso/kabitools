@@ -12,7 +12,7 @@
 #
 ###########################################################################
 
-VERSION		:= 3.5.4
+VERSION		:= 3.6.0
 
 RPMBUILD	:= /usr/bin/rpmbuild
 KABIDIR		:= /work/kabi
