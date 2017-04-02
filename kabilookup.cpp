@@ -28,6 +28,7 @@
 #include <boost/foreach.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/range/adaptor/reversed.hpp>
+#include <boost/algorithm/string.hpp>
 
 #include "checksum.h"
 #include "kabilookup.h"
@@ -54,7 +55,7 @@ string lookup::get_version()
 {
 	return "\
 \n\
-kabi-lookup Version 3.5.3\n\
+kabi-lookup Version 3.6.0\n\
 \n";
 }
 
@@ -202,9 +203,15 @@ int lookup::run()
 	if (!ifs.is_open())
 		report_nopath(m_filelist.c_str(), "file");
 
-	if (m_flags & KB_WHITE_LIST)
+	if (m_flags & KB_WHITE_LIST) {
 		if (!build_whitelist())
 			goto lookup_error;
+
+		if (!check_whitelist()) {
+			m_errvec.push_back(m_declstr);
+			goto lookup_error;
+		}
+	}
 
 	while (getline(ifs, m_datafile)) {
 
@@ -319,6 +326,39 @@ int lookup::set_start_directory()
 	return (m_errindex = EXE_OK);
 }
 
+/*****************************************************************************
+ * lookup::check_whitelist()
+ *
+ * Check to see if the m_declstr is in the whitelist vector built by
+ * build_whitelist()
+ *
+ */
+bool lookup::check_whitelist()
+{
+	string decl;
+	bool found = false;
+
+	if (m_flags & KB_WHOLE_WORD) {
+		vector<string> toklist;
+
+		boost::split(toklist, m_declstr, boost::is_any_of(" "));
+
+		if (toklist.size() > 1 )
+			decl = toklist[1];
+		else
+			decl = m_declstr;
+	}
+
+	for (auto it : m_whitelist) {
+		if (decl == it) {
+			found = true;
+			break;
+		}
+	}
+
+	m_errindex = found ? EXE_OK : EXE_NOTWHITE;
+	return found;
+}
 
 /*****************************************************************************
  * lookup::build_whitelist()

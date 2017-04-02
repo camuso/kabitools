@@ -61,6 +61,7 @@ private:
 	bool is_whitelisted(std::string& ksym);
 	bool is_function_whitelisted(cnode& cn);
 	bool build_whitelist();
+	bool check_whitelist();
 
 	// member classes
 	dnodemap& m_dnmap = kb_get_public_dnodemap();
