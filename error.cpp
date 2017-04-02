@@ -22,7 +22,7 @@ void error::init(int argc, char **argv)
 	map_err(EXE_NOFILE,   "Cannot open %s : %s\n");
 	map_err(EXE_NOTFOUND, "Symbol \e[1m%s\e[0m is not in the graph.\n"
 	                      "It is either kABI-safe or does not exist.\n");
-	map_err(EXE_NOTWHITE, "\"%s\" : symbol is not whitelisted.\n");
+	map_err(EXE_NOTWHITE, "\e[1m%s\e[0m : symbol is not whitelisted.\n");
 	map_err(EXE_NO_WLIST, "No white list. Run \"make rh-kabi\"\n");
 	map_err(EXE_NODIR,    "Cannot access directory: %s\n");
 }
