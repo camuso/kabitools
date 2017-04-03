@@ -87,13 +87,14 @@ make %{?_smp_mflags}
 %install
 mkdir -p $RPM_BUILD_ROOT%{_sbindir}
 mkdir -p $RPM_BUILD_ROOT%{_datadir}
-cp %{_topdir}/BUILD/%{name}/kabi-parser  $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}/kabi-dump    $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}/kabi-lookup  $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}/kabi-graph   $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}/kabiscan     $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}/kabi-data.sh $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}/makei.sh     $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/kabi-parser   $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/kabi-dump     $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/kabi-lookup   $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/kabi-graph    $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/kabiscan      $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/kabiscan.help $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/kabi-data.sh  $RPM_BUILD_ROOT%{_sbindir}
+cp %{_topdir}/BUILD/%{name}/makei.sh      $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}/kabitools-rhel-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
 cp %{_topdir}/BUILD/%{name}/kabitools-pegas-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
 
@@ -104,6 +105,7 @@ cp %{_topdir}/BUILD/%{name}/kabitools-pegas-kernel-make.patch $RPM_BUILD_ROOT%{_
 %{_sbindir}/kabi-lookup
 %{_sbindir}/kabi-graph
 %{_sbindir}/kabiscan
+%{_sbindir}/kabiscan.help
 %{_sbindir}/kabi-data.sh
 %{_sbindir}/makei.sh
 %{_datadir}/kabitools-rhel-kernel-make.patch
@@ -112,8 +114,10 @@ cp %{_topdir}/BUILD/%{name}/kabitools-pegas-kernel-make.patch $RPM_BUILD_ROOT%{_
 
 %changelog
 * Sat Apr 01 2017 Tony Camuso <tcamuso@redhat.com> - 3.6.0-1
-- Changed the way we do whitelists
+- When whitelist flag is set, check the whitelist for the sybmol
+  before proceeding.
 - Added pegas kernel patch, removed fedora kernal patch.
+- Added kabiscan.help script to provide formatted help text
 * Fri Mar 31 2017 Tony Camuso <tcamuso@redhat.com> - 3.5.4-6
 - Improve usage and error messages
 - Correct the script name in the usage string.
