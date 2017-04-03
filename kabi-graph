@@ -24,6 +24,9 @@ declare BLD="\033[1m"
 declare OFF="\033[0m"
 declare UND="\033[4m"
 
+declare graphlist="redhat/kabi/kabi-datafiles.list"
+declare graphext="kbg"
+
 # strip outside quotes from the distro string
 #
 distro=$(sed -e 's/^"//' -e 's/"$//' <<<"$distro")
@@ -55,6 +58,7 @@ $BLD	-j$OFF	- Optional number of processors to assign to the make task.
 		  Default is all processors in this system: $BLD$cpus$OFF
 
 $BLD	-n$OFF	- Do not make clean first
+$BLD	-R$OFF	- Recreate the list of graph files: $graphlist
 $BLD	-D$OFF	- Delete all the graph files and exit.
 $BLD	-h$OFF	- This help screen.
 	$BLD
@@ -207,6 +211,17 @@ delete_graph() {
 	exit 0
 }
 
+recreate_graphlist() {
+	local mypid
+	> "$graphlist"
+	find ./ -name "*.kbg" -exec echo '{}' >> "$graphlist" \; &
+	mypid=$!
+	ui_waitonproc $mypid .1
+	echo "Done."
+	exit 0
+}
+
+
 # run if user hits control-c
 #
 control_c() {
@@ -216,7 +231,6 @@ control_c() {
 }
 
 main() {
-
 	local kerneltree
 	local linenumber
 	local rhel
@@ -224,7 +238,7 @@ main() {
 
 	# Make sure that we have boost-serialization. Can't work without it.
 	#
-	rpm -qa | grep boost-serialization > /dev/null 2>&1
+	rpm -q boost-serialization > /dev/null 2>&1
 	[ $? -eq 0 ] || errexit "$no_boost_str" $err_no_boost
 
 	# Determine if we're in a Linux Kernel directory
@@ -244,9 +258,7 @@ main() {
 	rhel=$(grep -m1 RHEL_MAJOR Makefile | cut -d' ' -f3)
 	[[ $rhel =~ ^[6-7] ]] || errexit "$not_redhat_str" $err_not_redhat
 
-	kernel=$(grep -m1 VERSION Makefile | cut -d' ' -f3)
-
-	while getopts hnDj: OPTION; do
+	while getopts hnRDj: OPTION; do
 	    case "$OPTION" in
 
 		h ) 	usage
@@ -257,6 +269,8 @@ main() {
 		n )	clean=false
 			optcnt=$((optcnt + 1))
 			;;
+		R )	recreate_graphlist
+			;;
 		D )	delete_graph
 			;;
 		* )	usage
@@ -266,6 +280,8 @@ main() {
 
 	shift $optcnt
 	target="$1"
+
+	kernel=$(grep -m1 VERSION Makefile | cut -d' ' -f3)
 
 	case $kernel in
 	    2 )	patch="/usr/share/kabitools-rhel-kernel-make.patch"
@@ -282,18 +298,18 @@ main() {
 	patch -s -p1 < "$patch"
 
 	$clean && make clean
+	> redhat/kabi/kabi-datafiles.list
 	make -j $cpus K=1 $target
 	patch -Rs -p1 < "$patch"
 
 	# If we haven't already done so, then add the graph file extensions
 	# to .git/info/exclude
 	#
-	find_line '\*.kbg' .git/info/exclude linenumber
-	[ $linenumber -eq 0 ] && echo '*.kbg' >> .git/info/exclude
+	find_line "\*.$graphext" .git/info/exclude linenumber
+	[ $linenumber -eq 0 ] && echo "*.$graphext" >> .git/info/exclude
 
-	find_line 'redhat/kabi/kabi-datafiles.list' .git/info/exclude linenumber
-	[ $linenumber -eq 0 ] && echo 'redhat/kabi/kabi-datafiles.list' \
-		>> .git/info/exclude
+	find_line "$graphlist" .git/info/exclude linenumber
+	[ $linenumber -eq 0 ] && echo "$graphlist" >> .git/info/exclude
 
 	exit 0
 }
