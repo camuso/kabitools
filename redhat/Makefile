@@ -51,7 +51,7 @@ ARCH_LIST := \
 	aarch64 \
 	x86_64
 
-BOOSTPKG := $(shell rpm -qa | grep boost-serialization)
+BOOSTPKG := $(shell rpm -q boost-serialization)
 ARCH 	 := $(shell echo $(BOOSTPKG) | rev | cut -d'.' -f1 | rev)
 DISTRO	 := $(shell echo $(BOOSTPKG) | rev | cut -d'.' -f2 | rev)
 
