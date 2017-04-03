@@ -1,0 +1,116 @@
+#!/bin/bash
+
+declare BLD="\033[1m"
+declare UND="\033[4m"
+declare OFF="\033[0m"
+
+helpstr="
+
+
+$OFF$BLD $(basename -s .help $0)$OFF is a menu-driven wrapper for kabi-lookup. The switches
+$OFF for that utility are many and varied, so this helps to better present
+$OFF the expected behavior.
+
+$OFF Before using this tool, the following criteria must be met.
+
+$OFF * Install boost.
+$OFF * Build the kernel graph using the kabi-graph script.
+$OFF * Build the kABI whitelist with \"make rh-kabi\".
+$OFF * This script must be invoked from the top of your kernel tree.
+
+$OFF Here is a view of the default menu after a fresh install of kabitools.
+
+$BLD$UND Scan The Kernel for kABI Sensitive Symbols
+
+$BLD$UND Environment    $OFF
+$BLD     Most Recent Tag             :$OFF kernel-pegas-4.10.0-7.el7$
+$BLD  b  Current git branch          :$OFF pegas
+$BLD  f  File to receive output      :$OFF /dev/stdout
+$BLD  n  Search name                 :
+$BLD  m  Search mask                 :$OFF
+$BLD  t  struct or union             :OFF struct
+
+$BLD$UND Run Parameters $OFF
+$BLD  1  Stop after finding one      :$OFF true
+$BLD  l  Only seek whitelist symbols :$OFF true
+$BLD  w  Whole words only            :$OFF true
+$BLD  v  Verbose output              :$OFF false
+$BLD  s  Search mode                 :$OFF kABI Sensitive Symbols
+
+$UND$BLD Control        $OFF
+$BLD  r  Run the search
+$BLD  h  help text
+$BLD  q  Quit
+
+$BLD Enter one of the above:$OFF
+
+$BLD$UND Environment$OFF
+
+	b - An enumerated list of git branches will be presented from which
+	    to select by number.
+
+	f - Send the output to a file, instead of stdout.
+
+	n - The name of the symbol being sought, e.g \"device\" or \"enable_irq\".
+
+	m - An optional mask that can help speed searches, if you have an idea
+	    of where to look, e.g. \"acpi\" or \"fs\"
+
+	t - This option does not appear when the Search Mode is set to
+	    \"Exported Functions\" or when the \"Whole Word\" search is disabled.
+	    By typing the associated key, the value toggles between \"struct\"
+	    and \"union\". This is used for more precise searches, when you
+$OFF	       know exactly what you're seeking.
+$OFF
+$BLD$UND Run Parameters$OFF
+
+$OFF	    These parameters are toggled by pressing the associated key.
+
+	1 - Stop after finding the first instance when \"Whole Word\" mode
+	    is true. When \"Whole Word\" is false, the search stops after
+	    the first file containing strings that match the \"Search Name.\"
+
+	l - Only seek symbols that are in the kABI whitelists. If the symbol
+	    cannot be found in the white list, the search stops there.
+	    With this option true, the \"Whole Word\" option is automatically
+	    set to \"true\", since you should know exactly what you're seeking
+	    in the white list.
+
+	w - Whole words only works similarly to the grep -w option. The
+	    is more precise with this option.
+
+	v - Verbose mode will drill down through the whole hierarchy of
+	    the given symbol. This generates a lot of output, so don't
+	    use it unless you really need it.
+
+	s - Search Mode steps through the four available search modes.
+	    Each time the key is pressed, the Search Mode advances to
+$OFF	       the next mode in the rotation.
+
+$OFF	There are several search modes.
+
+$BLD Exported Functions $OFF
+	Simple lookup of exported function names. Searching the white
+	list requires an exact name.
+
+$BLD kABI Sensitive Symbols$OFF
+$OFF	   These are symbols like \"struct device\" that may or may not be
+$OFF	   kABI sensitive, but this mode will test to see if indeed it is.
+$OFF	   Searches can be inexact by setting the \"Whole Word\" option to
+$OFF	   false.
+
+$OFF
+$BLD Symbol Definition $OFF
+$OFF	   Seeks the actual definition of the symbol. Most useful when you
+	just want a quick look at the members of a data structure.
+	In verbose mode, the entire hierarchy of the structure is presented,
+	right down to the last subordinate element. This is a lot of output,
+$OFF	   but when you need it, it's there.
+
+$BLD Count symbol instances$OFF
+$OFF	   Counts the number of times the symbol, or substring, appears in
+	the graph.
+"
+
+echo -e "$helpstr" | less -r
+
