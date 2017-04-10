@@ -4,6 +4,8 @@ kabitools
 This is a toolkit that is intended to assist in determining whether a given
 symbol affects or is affected by other symbols in a kABI sense.
 
+You must install boost to run this kit.
+
 What is a symbol? From the sparse project:
 
 	An identifier with semantic meaning is a "symbol".
@@ -23,10 +25,7 @@ that matches your distro and architecture.
 
 http://people.redhat.com/tcamuso/kabitools/
 
-The following will be installed.
-
-/usr/lib/ 	    - boost libraries
-/usr/include/boost/ - boost headers
+The following will be installed by the rpm.
 
 /usr/sbin/kabi-graph
 /usr/sbin/kabi-lookup
@@ -34,15 +33,15 @@ The following will be installed.
 /usr/sbin/kabi-dump
 /usr/sbin/kabi-data.sh
 /usr/sbin/makei.sh
-/usr/share/kabitools-fedora-kernel-make.patch
+/usr/share/kabitools-pegas-kernel-make.patch
 /usr/share/kabitools-rhel-kernel-make.patch
 /usr/share/doc/kabitools-*/README
 
 Use of this toolkit consists primarily of two steps.
 
 1. Create the kernel graph files
-2. Use the lookup tool to determine whether a given symbol could affect
-   kABI.
+2. Use the lookup tool, kabi-lookup, or its mienu-driven wrapper, kabiscan,
+   to determine whether a given symbol could affect kABI.
 
    There are other tools in the kit for those who like to get under the hood,
    but the most practical application is comprised of the above two steps.
@@ -58,32 +57,154 @@ This script must be invoked from the top of the kernel tree.
 Time to complete a full kernel build is lengthened by about 10% by invoking
 this tool.
 
-kabi-graph -[cjh]
+kabi-graph -[jnDh] [target]
 
-	-c	- make clean first
+	Builds a graph from the preprocessor output of each file compiled.
+	Must be invoked from the top of the kernel tree.
+
+	The optional target argument can be any valid kernel make target
+	including a subdirectory, e.g. "virt/" or a module build, e.g.
+	"M=drivers/char/tpm"
+
+	The kABI graph will be limited to the scope of the build of the
+	optional target.
+
+	Default action without the optarg:
+		make clean	# can be disabled with -n option
+		make
+		make modules
+
+	Options
 	-j	- Optional number of processors to assign to the make task.
-	-h	- help screen.
+		  There must be a space between -j and the number.
+		  Default is all processors in this system: 40
 
-	Runs the following make commands.
+	-n	- Do not make clean first
+	-R	- Recreate the list of graph files: redhat/kabi/kabi-datafiles.list
+	-D	- Delete all the graph files and exit.
+	-h	- This help screen.
 
-	make            # compiles all files necessary to make vmlinux
-	make modules    # compiles all kmods
+	NOTE:	The graph file extension will be added to .git/info/exclude,
+		but will be selectively removed with "kabi-graph -D" command,
+		which removes all the graph files.
 
-	While compiling the kernel and kmods, the script builds a graph
-	from the preprocessor output of each file compiled.
-
-	You should use the -c switch the first time you run this script so
-	you can build the graph files for the whole kernel.
-
-	Without the -c switch, only files that have been changed will be
-	compiled and have their graph files created or updated.
 
 There are other methods for those who like to tinker. They are detailed at
 the end of this README.
 
 ---------------------------------------------------------------------------
+Using kabiscan to Find Symbols Affecting or Affected by kABI
+---------------------------------------------------------------------------
+
+The easiest way of doing this is with the kabiscan menu-driven wrapper
+for kabi-lookup.
+
+ Before using this tool, the following criteria must be met.
+
+ * Install boost.
+ * Build the kernel graph using the kabi-graph script.
+ * Build the kABI whitelist with "make rh-kabi".
+ * This script must be invoked from the top of your kernel tree.
+
+ Here is a view of the default menu after a fresh install of kabitools.
+
+ Scan The Kernel for kABI Sensitive Symbols
+
+ Environment
+     Most Recent Tag             : kernel-pegas-4.10.0-7.el7$
+  b  Current git branch          : pegas
+  f  File to receive output      : /dev/stdout
+  n  Search name                 :
+  m  Search mask                 :
+  t  struct or union             : struct
+
+ Run Parameters
+  1  Stop after finding one      : true
+  l  Only seek whitelist symbols : true
+  w  Whole words only            : true
+  v  Verbose output              : false
+  s  Search mode                 : kABI Sensitive Symbols
+
+ Control
+  r  Run the search
+  h  help text
+  q  Quit
+
+ Enter one of the above:
+
+ Environment
+
+        b - An enumerated list of git branches will be presented from which
+            to select by number.
+
+        f - Send the output to a file, instead of stdout.
+
+        n - The name of the symbol being sought, e.g "device" or "enable_irq".
+
+        m - An optional mask that can help speed searches, if you have an idea
+            of where to look, e.g. "acpi" or "fs"
+
+        t - This option does not appear when the Search Mode is set to
+            "Exported Functions" or when the "Whole Word" search is disabled.
+            By typing the associated key, the value toggles between "struct"
+            and "union". This is used for more precise searches, when you
+            know exactly what you're seeking.
+
+ Run Parameters
+
+         These parameters are toggled by pressing the associated key.
+
+        1 - Stop after finding the first instance when "Whole Word" mode
+            is true. When "Whole Word" is false, the search stops after
+            the first file containing strings that match the "Search Name."
+
+        l - Only seek symbols that are in the kABI whitelists. If the symbol
+            cannot be found in the white list, the search stops there.
+            With this option true, the "Whole Word" option is automatically
+            set to "true", since you should know exactly what you're seeking
+            in the white list.
+
+        w - Whole words only works similarly to the grep -w option. The
+            is more precise with this option.
+
+        v - Verbose mode will drill down through the whole hierarchy of
+            the given symbol. This generates a lot of output, so don't
+            use it unless you really need it.
+
+        s - Search Mode steps through the four available search modes.
+            Each time the key is pressed, the Search Mode advances to
+            the next mode in the rotation.
+
+     There are several search modes.
+
+ Exported Functions
+        Simple lookup of exported function names. Searching the white
+        list requires an exact name.
+
+ kABI Sensitive Symbols
+        These are symbols like "struct device" that may or may not be
+        kABI sensitive, but this mode will test to see if indeed it is.
+        Searches can be inexact by setting the "Whole Word" option to
+        false.
+
+
+ Symbol Definition
+        Seeks the actual definition of the symbol. Most useful when you
+        just want a quick look at the members of a data structure.
+        In verbose mode, the entire hierarchy of the structure is presented,
+        right down to the last subordinate element. This is a lot of output,
+        but when you need it, it's there.
+
+ Count symbol instances
+        Counts the number of times the symbol, or substring, appears in
+        the graph.
+
+
+---------------------------------------------------------------------------
 Using kabi-lookup to Find Symbols Affecting or Affected by kABI
 ---------------------------------------------------------------------------
+
+If you prefer the command line, you can use the kabi-lookup tool directly.
 
 kabi-lookup enables the user to determine whether a compound data type,
 i.e. struct or union, has any relation to exported symbols. Conversely, the
@@ -181,6 +302,8 @@ Options:
 
 	   The more unique the -m string, the more limited the search.
 
+	-1 Hyphen-number-1, limits the search to the first instance.
+
 	-p path
 	   Path to the top of the kernel tree, if executing in a different
 	   directory.
@@ -267,7 +390,7 @@ Other Methods For Creating the Kernel Graph Files
 Patches for the kernel Makefiles are also provided in this kit and are
 saved in /usr/share in the following files.
 
-/usr/share/kabitools-fedora-kernel-make.patch
+/usr/share/kabitools-pegas-kernel-make.patch
 /usr/share/kabitools-rhel-kernel-make.patch
 
 The kabitools script actually applies the appropriate patch to build the
