@@ -28,7 +28,7 @@ $BLD  b  Current git branch          :$OFF pegas
 $BLD  f  File to receive output      :$OFF /dev/stdout
 $BLD  n  Search name                 :
 $BLD  m  Search mask                 :$OFF
-$BLD  t  struct or union             :OFF struct
+$BLD  t  struct or union             :$OFF struct
 
 $BLD$UND Run Parameters $OFF
 $BLD  1  Stop after finding one      :$OFF true
