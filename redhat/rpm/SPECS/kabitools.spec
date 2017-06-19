@@ -34,7 +34,7 @@
 
 Name:		kabitools
 Version:	3.6.0
-Release:	1%{?dist}
+Release:	2%{?dist}
 Summary:	A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
 
@@ -113,6 +113,10 @@ cp %{_topdir}/BUILD/%{name}/kabitools-pegas-kernel-make.patch $RPM_BUILD_ROOT%{_
 %doc README
 
 %changelog
+* Mon Jun 19 2017 Tony Camuso <tcamuso@redhat.com> - 3.6.0-2
+- aac6b47 README: Update list of files and fix a spelling error
+- c171352 kabiscan.help: fix a minor bug
+- 5ffe81f README: necessary updates
 * Sat Apr 01 2017 Tony Camuso <tcamuso@redhat.com> - 3.6.0-1
 - When whitelist flag is set, check the whitelist for the sybmol
   before proceeding.
