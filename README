@@ -27,20 +27,23 @@ http://people.redhat.com/tcamuso/kabitools/
 
 The following will be installed by the rpm.
 
+/usr/sbin/kabi-data.sh
+/usr/sbin/kabi-dump
 /usr/sbin/kabi-graph
 /usr/sbin/kabi-lookup
 /usr/sbin/kabi-parser
-/usr/sbin/kabi-dump
-/usr/sbin/kabi-data.sh
+/usr/sbin/kabiscan
+/usr/sbin/kabiscan.help
 /usr/sbin/makei.sh
+/usr/share/doc/kabitools
+/usr/share/doc/kabitools/README
 /usr/share/kabitools-pegas-kernel-make.patch
 /usr/share/kabitools-rhel-kernel-make.patch
-/usr/share/doc/kabitools-*/README
 
 Use of this toolkit consists primarily of two steps.
 
 1. Create the kernel graph files
-2. Use the lookup tool, kabi-lookup, or its mienu-driven wrapper, kabiscan,
+2. Use the lookup tool, kabi-lookup, or its menu-driven wrapper, kabiscan,
    to determine whether a given symbol could affect kABI.
 
    There are other tools in the kit for those who like to get under the hood,
