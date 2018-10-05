@@ -33,8 +33,8 @@
 ###########################################################################
 
 Name:		kabitools
-Version:	3.6.0
-Release:	2%{?dist}
+Version:	3.6.1
+Release:	1%{?dist}
 Summary:	A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
 
@@ -113,6 +113,10 @@ cp %{_topdir}/BUILD/%{name}/kabitools-pegas-kernel-make.patch $RPM_BUILD_ROOT%{_
 %doc README
 
 %changelog
+* Fri Oct 05 2018 Tony Camuso <tcamuso@redhat.com> - 3.6.1-1
+- kabi-map.cpp requires explicit include iostream
+- Makefile enhancements and fixes
+- Bump version numbers
 * Mon Jun 19 2017 Tony Camuso <tcamuso@redhat.com> - 3.6.0-2
 - aac6b47 README: Update list of files and fix a spelling error
 - c171352 kabiscan.help: fix a minor bug
