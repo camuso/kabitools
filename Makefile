@@ -2,7 +2,7 @@
 
 TAR_VER 	:= 3.6.1
 TAR_FILE	:= kabitools-$(TAR_VER).tar.gz
-TAR_FLAGS	:= --exclude-vcs --exclude-vcs-ignores --exclude-backups --exclude=redhat
+TAR_FLAGS	:= --exclude-vcs --exclude-backups --exclude=redhat
 TAR_DIR 	:= ./redhat/rpm/SOURCES
 
 # Need to have sparse headers handy in a local include directory
