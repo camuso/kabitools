@@ -12,7 +12,7 @@
 #
 ###########################################################################
 
-VERSION		:= 3.6.0
+VERSION		:= 3.6.1
 
 RPMBUILD	:= /usr/bin/rpmbuild
 KABIDIR		:= /work/kabi
@@ -34,7 +34,7 @@ SPARSEROOT	:= /work/sparse
 SPARSERPMS	:= $(SPARSEROOT)/redhat/rpm/RPMS
 SPARSESPECS	:= $(SPARSEROOT)/redhat/rpm/SPECS
 
-TARFLAGS	:= --exclude-vcs --exclude=redhat -czf
+TARFLAGS	:= --exclude-vcs --exclude-backups --exclude=redhat -czf
 
 RPMFLAGS = $(RPMBUILD) \
 	--define "_topdir	$(RPM)" \
