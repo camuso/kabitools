@@ -1,39 +1,13 @@
-From 42e69540cd117859e49c1d7b0cf20fc86bf3ce3c Mon Sep 17 00:00:00 2001
+From 19fccd807c12721aa3870a088610e16b5650a837 Mon Sep 17 00:00:00 2001
 From: Tony Camuso <tcamuso@redhat.com>
-Date: Thu, 24 Sep 2015 09:01:40 -0400
-Subject: [RHEL7.4 1/1] RFC: [RHEL7 PATCH] make - add argument to build
- kabitools database
+Date: Mon, 20 May 2019 15:09:48 -0400
+Subject: [RHEL7.7 BZ-1517616] RHEL7 make patch for kabitools
 
-Pursuant to our tech-talk on kabi tools, here is a patch to the RHEL kernel
-make that adds an argument to initiate a build of the database for the
-kabitools.
+	modified:   .gitignore
+	modified:   Makefile
+	modified:   redhat/.gitignore
+	modified:   scripts/Makefile.build
 
-Slides for the tech talk are available here:
-http://people.redhat.com/tcamuso/kabitools/doc/kabitools.odp
-
-In order to use of the kabi-lookup tool, you will need to install
-http://people.redhat.com/tcamuso/kabitools/kabitools-3.5-0.el7.x86_64.rpm
-
-Sources for the kit are at https://github.com/camuso/kabitools
-
-The argument to the kernel make to build the kabi tool database is 'K=1',
-and 'make help' has an entry for it.
-
-If the kabitools have not been installed, this argument is ignored.
-
-Without 'K=1' the make proceeds as normal without creating the database.
-
-'make clean' removes all the database files.
-
-There were also changes to .gitignore at the top level and in the redhat
-directory.
-
-Signed-off-by: Tony Camuso <tcamuso@redhat.com>
-
-CC: prarit@redhat.com
-CC: dzickus@redhat.om
-CC: linville@redhat.com
-CC: ddutile@redhat.com
 Signed-off-by: Tony Camuso <tcamuso@redhat.com>
 ---
  .gitignore             |  1 +
@@ -43,10 +17,10 @@ Signed-off-by: Tony Camuso <tcamuso@redhat.com>
  4 files changed, 34 insertions(+), 2 deletions(-)
 
 diff --git a/.gitignore b/.gitignore
-index f73f35f..13a3e04 100644
+index 01f4d91..aa471d9 100644
 --- a/.gitignore
 +++ b/.gitignore
-@@ -100,6 +100,7 @@ x509.genkey
+@@ -101,6 +101,7 @@ x509.genkey
  #
  configs/*.config
  localversion
@@ -55,7 +29,7 @@ index f73f35f..13a3e04 100644
  # configuration file for rh- targets
  .rhel7git.mk
 diff --git a/Makefile b/Makefile
-index 1c54427..dfea585 100644
+index 339033b..2de2a17 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -86,6 +86,16 @@ ifeq ("$(origin M)", "command line")
@@ -101,7 +75,7 @@ index 1c54427..dfea585 100644
  export HOSTCXX HOSTCXXFLAGS LDFLAGS_MODULE CHECK CHECKFLAGS
  
  export KBUILD_CPPFLAGS NOSTDINC_FLAGS LINUXINCLUDE OBJCOPYFLAGS LDFLAGS
-@@ -1236,6 +1247,7 @@ help:
+@@ -1252,6 +1263,7 @@ help:
  	@echo  '		2: warnings which occur quite often but may still be relevant'
  	@echo  '		3: more obscure warnings, can most likely be ignored'
  	@echo  '		Multiple levels can be combined with W=12 or W=123'
@@ -109,7 +83,7 @@ index 1c54427..dfea585 100644
  	@echo  ''
  	@echo  'Execute "make" or "make all" to build all targets marked with [*] '
  	@echo  'For further info see the ./README file'
-@@ -1349,6 +1361,7 @@ clean: $(clean-dirs)
+@@ -1365,6 +1377,7 @@ clean: $(clean-dirs)
  		-o -name '.*.d' -o -name '.*.tmp' -o -name '*.mod.c' \
  		-o -name '*.symtypes' -o -name 'modules.order' \
  		-o -name modules.builtin -o -name '.tmp_*.o.*' \
@@ -118,16 +92,16 @@ index 1c54427..dfea585 100644
  
  # Generate tags for editors
 diff --git a/redhat/.gitignore b/redhat/.gitignore
-index 6ea87b3..11f12d2 100644
+index 6ea9051..53805ec9 100644
 --- a/redhat/.gitignore
 +++ b/redhat/.gitignore
-@@ -9,3 +9,4 @@ kabi/Module.kabi_x86_64
+@@ -15,3 +15,4 @@ kabi/Module.kabi_dup_x86_64
  kabi/kabi-current
  kabi/kabi-rhel7?
  kabi/kabi-rhel7?/*
 +kabi/kabi-datafiles.list
 diff --git a/scripts/Makefile.build b/scripts/Makefile.build
-index 61527b0..bb233e7 100644
+index 2fdc215..476ef25 100644
 --- a/scripts/Makefile.build
 +++ b/scripts/Makefile.build
 @@ -30,6 +30,9 @@ ldflags-y  :=
@@ -140,9 +114,9 @@ index 61527b0..bb233e7 100644
  # Read auto.conf if it exists, otherwise ignore
  -include include/config/auto.conf
  
-@@ -209,6 +212,16 @@ cmd_cc_i_c       = $(CPP) $(c_flags)   -o $@ $<
+@@ -209,6 +212,16 @@ cmd_cpp_i_c       = $(CPP) $(c_flags) -o $@ $<
  $(obj)/%.i: $(src)/%.c FORCE
- 	$(call if_changed_dep,cc_i_c)
+ 	$(call if_changed_dep,cpp_i_c)
  
 +ifeq ($(KBUILD_KABIPARSER),1)
 +    cmd_kabiparser = 					\
