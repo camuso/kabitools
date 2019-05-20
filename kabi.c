@@ -154,7 +154,7 @@ static inline void add_string(struct string_list **list, char *string)
 	// for tags of some sort. Pointers to strings do not necessarily
 	// have the low two bits clear, so this "notag" call is provided
 	// for that situation.
-	add_ptr_list_notag(list, string);
+	add_ptr_list(list, string);
 }
 
 static inline int string_list_size(struct string_list *list)
