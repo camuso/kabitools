@@ -33,7 +33,7 @@
 ###########################################################################
 
 Name:		kabitools
-Version:	3.6.1
+Version:	3.6.2
 Release:	1%{?dist}
 Summary:	A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
@@ -113,6 +113,21 @@ cp %{_topdir}/BUILD/%{name}/kabitools-pegas-kernel-make.patch $RPM_BUILD_ROOT%{_
 %doc README
 
 %changelog
+* Mon May 20 2019 Tony Camuso <tcamuso@redhat.com> - 3.6.2-1
+- Allow kabi-graph to include all RHEL
+- In kabi.c, MOD_TYPEDEF and MOD_ACCESSED are no longer defined
+  in the sparse library, so delete them.
+- In kabi.h, typedef for bool emits an error, so it was removed.
+  The problem is that kabi.c includes sparse/symbol.h, which
+  includes sparse/lib.h, which now includes stdbool.h(C99),
+  which defines the bool type. Pull from upstream in sparse
+  made this change.
+- In the kabitools Makefile, a change was made to specifically
+  extract libsparse.a. The rpm build of libsparse.a now includes
+  all the header files, so without specifically calling out the
+  libsparse static library, all the headers get glommed onto
+  the binary lib.
+- Version bumps all around.
 * Fri Oct 05 2018 Tony Camuso <tcamuso@redhat.com> - 3.6.1-1
 - kabi-map.cpp requires explicit include iostream
 - Makefile enhancements and fixes

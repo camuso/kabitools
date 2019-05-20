@@ -28,7 +28,6 @@
 #define strnotequal(s1, s2)     (*(s1) != *(s2) || strcmp(s1, s2) != 0)
 
 #ifndef __cplusplus
-typedef unsigned int bool;
 #ifdef true
 #undef true
 #endif

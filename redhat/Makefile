@@ -12,7 +12,7 @@
 #
 ###########################################################################
 
-VERSION		:= 3.6.1
+VERSION		:= 3.6.2
 
 RPMBUILD	:= /usr/bin/rpmbuild
 KABIDIR		:= /work/kabi
@@ -94,7 +94,7 @@ prepare_lib = \
 	mkdir -p $(KABILIB)/$(1); \
 	$(RPM2CPIO) \
 	$(SPARSERPMS)/$(1)/libsparse-$(SPARSE_VER)-*.$(DISTRO).$(1).rpm \
-	| $(CPIO) $(CPIOFLAGS) > $(KABILIB)/libsparse.a
+	| $(CPIO) $(CPIOFLAGS) ./usr/lib64/libsparse.a > $(KABILIB)/libsparse.a
 
 # These are the cross-compile targets
 # The final one will also build the src.rpm

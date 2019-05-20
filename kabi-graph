@@ -253,11 +253,6 @@ main() {
 	#
 	[ -d redhat ] || errexit "$not_redhat_str" $err_not_redhat
 
-	# We only do RHEL6 and RHEL7
-	#
-	rhel=$(grep -m1 RHEL_MAJOR Makefile | cut -d' ' -f3)
-	[[ $rhel =~ ^[6-7] ]] || errexit "$not_redhat_str" $err_not_redhat
-
 	while getopts hnRDj: OPTION; do
 	    case "$OPTION" in
 

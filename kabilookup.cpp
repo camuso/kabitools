@@ -55,7 +55,7 @@ string lookup::get_version()
 {
 	return "\
 \n\
-kabi-lookup Version 3.6.1\n\
+kabi-lookup Version 3.6.2\n\
 \n";
 }
 
