@@ -1,0 +1,145 @@
+From bbd7d521b174b2ee974af5e16c8fab296459d4f5 Mon Sep 17 00:00:00 2001
+From: Tony Camuso <tcamuso@redhat.com>
+Date: Mon, 20 May 2019 15:38:27 -0400
+Subject: [RHEL8 PATCH] make changes for kabitools
+
+	modified:   .gitignore
+	modified:   Makefile
+	modified:   redhat/.gitignore
+	modified:   scripts/Makefile.build
+
+Signed-off-by: Tony Camuso <tcamuso@redhat.com>
+---
+ .gitignore             |  2 ++
+ Makefile               | 17 +++++++++++++++--
+ redhat/.gitignore      |  1 +
+ scripts/Makefile.build | 16 ++++++++++++++++
+ 4 files changed, 34 insertions(+), 2 deletions(-)
+
+diff --git a/.gitignore b/.gitignore
+index c31e5904742e..6e69a37cc00d 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -114,6 +114,8 @@ GTAGS
+ # id-utils files
+ ID
+ 
++*.kbg
++*.list
+ *.orig
+ *~
+ \#*#
+diff --git a/Makefile b/Makefile
+index 5047315a18b3..c035049b6be6 100644
+--- a/Makefile
++++ b/Makefile
+@@ -100,6 +100,16 @@ endif
+ 
+ export quiet Q KBUILD_VERBOSE
+ 
++# Call the kabiparser to create a graph for each c file in the build.
++# Use 'make K=1' to invoke the kabiparser during the build.
++
++ifeq ("$(origin K)", "command line")
++  KBUILD_KABIPARSER = $(K)
++endif
++ifndef KBUILD_KABIPARSER
++  KBUILD_KABIPARSER = 0
++endif
++
+ # kbuild supports saving output files in a separate directory.
+ # To locate output files in a separate directory two syntaxes are supported.
+ # In both cases the working directory must be the root of the kernel src.
+@@ -203,7 +213,7 @@ else
+         endif
+ endif
+ 
+-export KBUILD_CHECKSRC KBUILD_EXTMOD KBUILD_SRC
++export KBUILD_CHECKSRC KBUILD_EXTMOD KBUILD_SRC KBUILD_KABIPARSER
+ 
+ objtree		:= .
+ src		:= $(srctree)
+@@ -379,6 +389,7 @@ PYTHON		= python
+ PYTHON2		= python2
+ PYTHON3		= python3
+ CHECK		= sparse
++KABIPARSER 	= $(shell [ -x "/usr/sbin/kabi-parser" ] && echo kabi-parser)
+ 
+ CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
+ 		  -Wbitwise -Wno-return-void -Wno-unknown-attribute $(CF)
+@@ -425,7 +436,7 @@ GCC_PLUGINS_CFLAGS :=
+ export ARCH SRCARCH CONFIG_SHELL HOSTCC KBUILD_HOSTCFLAGS CROSS_COMPILE AS LD CC
+ export CPP AR NM STRIP OBJCOPY OBJDUMP KBUILD_HOSTLDFLAGS KBUILD_HOSTLDLIBS
+ export MAKE LEX YACC AWK GENKSYMS INSTALLKERNEL PERL PYTHON PYTHON2 PYTHON3 UTS_MACHINE
+-export HOSTCXX KBUILD_HOSTCXXFLAGS LDFLAGS_MODULE CHECK CHECKFLAGS
++export HOSTCXX KBUILD_HOSTCXXFLAGS LDFLAGS_MODULE CHECK CHECKFLAGS KABIPARSER
+ 
+ export KBUILD_CPPFLAGS NOSTDINC_FLAGS LINUXINCLUDE OBJCOPYFLAGS LDFLAGS
+ export KBUILD_CFLAGS CFLAGS_KERNEL CFLAGS_MODULE
+@@ -1343,6 +1354,7 @@ mrproper: clean archmrproper $(mrproper-dirs)
+ 	$(call cmd,rmfiles)
+ 
+ # distclean
++		-o -name '*.i' -o -name '*.kbg' -o -name 'kabi-datafiles.*' \
+ #
+ PHONY += distclean
+ 
+@@ -1462,6 +1474,7 @@ help:
+ 	@echo  '		2: warnings which occur quite often but may still be relevant'
+ 	@echo  '		3: more obscure warnings, can most likely be ignored'
+ 	@echo  '		Multiple levels can be combined with W=12 or W=123'
++	@echo  '  make K=1   [targets] Build kabitools database.'
+ 	@echo  ''
+ 	@echo  'Execute "make" or "make all" to build all targets marked with [*] '
+ 	@echo  'For further info see the ./README file'
+diff --git a/redhat/.gitignore b/redhat/.gitignore
+index 6fceb06a11fb..5eff3b88f9fc 100644
+--- a/redhat/.gitignore
++++ b/redhat/.gitignore
+@@ -6,3 +6,4 @@ kabi/Module.kabi_*
+ kabi/kabi-current
+ kabi/kabi-rhel8?
+ kabi/kabi-rhel8?/*
++kabi/kabi-datafiles.list
+diff --git a/scripts/Makefile.build b/scripts/Makefile.build
+index 96e86e0b533c..1fc638080f5a 100644
+--- a/scripts/Makefile.build
++++ b/scripts/Makefile.build
+@@ -31,6 +31,9 @@ ldflags-y  :=
+ subdir-asflags-y :=
+ subdir-ccflags-y :=
+ 
++KABIDATADIR	= redhat/kabi
++KABIDATAFILE	= $(KABIDATADIR)/kabi-datafiles.list
++
+ # Read auto.conf if it exists, otherwise ignore
+ -include include/config/auto.conf
+ 
+@@ -192,11 +195,24 @@ else
+ 
+ cmd_cc_o_c = $(CC) $(c_flags) -c -o $(@D)/.tmp_$(@F) $<
+ 
++ifeq ($(KBUILD_KABIPARSER),1)
++cmd_kabiparser =					\
++	$(CPP) $(c_flags) -o $(1) $<;			\
++	$(KABIPARSER) -xo $(2) -f $(1) -S -Wall_off;	\
++	test -e $(2) && echo $(2) >> $(KABIDATAFILE);	\
++	rm -f $(1);
++else
++cmd_kabiparser = echo -n
++endif
++
+ cmd_modversions_c =								\
+ 	if $(OBJDUMP) -h $(@D)/.tmp_$(@F) | grep -q __ksymtab; then		\
+ 		$(call cmd_gensymtypes_c,$(KBUILD_SYMTYPES),$(@:.o=.symtypes))	\
+ 		    > $(@D)/.tmp_$(@F:.o=.ver);					\
+ 										\
++		[ "$(KABIPARSER)" ] &&						\
++			$(call cmd_kabiparser,$(@:.o=.i),$(@:.o=.kbg))		\
++										\
+ 		$(LD) $(LDFLAGS) -r -o $@ $(@D)/.tmp_$(@F) 			\
+ 			-T $(@D)/.tmp_$(@F:.o=.ver);				\
+ 		rm -f $(@D)/.tmp_$(@F) $(@D)/.tmp_$(@F:.o=.ver);		\
+-- 
+2.18.1
+

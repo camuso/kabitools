@@ -279,11 +279,14 @@ main() {
 	kernel=$(grep -m1 VERSION Makefile | cut -d' ' -f3)
 
 	case $kernel in
-	    2 )	patch="/usr/share/kabitools-rhel-kernel-make.patch"
+
+	    # RHEL6 and RHEL7 share the same Makefile patch
+	    #
+	    2 )	patch="/usr/share/kabitools-rhel7-kernel-make.patch"
 			;;
-	    3 )	patch="/usr/share/kabitools-rhel-kernel-make.patch"
+	    3 )	patch="/usr/share/kabitools-rhel7-kernel-make.patch"
 			;;
-	    4 )	patch="/usr/share/kabitools-pegas-kernel-make.patch"
+	    4 )	patch="/usr/share/kabitools-rhel8-kernel-make.patch"
 			;;
 	    * )	errexit "$no_patch_str" $err_no_patch
 	esac

@@ -34,7 +34,7 @@
 
 Name:		kabitools
 Version:	3.6.2
-Release:	1%{?dist}
+Release:	2%{?dist}
 Summary:	A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
 
@@ -95,8 +95,8 @@ cp %{_topdir}/BUILD/%{name}/kabiscan      $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}/kabiscan.help $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}/kabi-data.sh  $RPM_BUILD_ROOT%{_sbindir}
 cp %{_topdir}/BUILD/%{name}/makei.sh      $RPM_BUILD_ROOT%{_sbindir}
-cp %{_topdir}/BUILD/%{name}/kabitools-rhel-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
-cp %{_topdir}/BUILD/%{name}/kabitools-pegas-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
+cp %{_topdir}/BUILD/%{name}/kabitools-rhel7-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
+cp %{_topdir}/BUILD/%{name}/kabitools-rhel8-kernel-make.patch $RPM_BUILD_ROOT%{_datadir}
 
 %files
 %defattr(-,root,root)
@@ -108,11 +108,18 @@ cp %{_topdir}/BUILD/%{name}/kabitools-pegas-kernel-make.patch $RPM_BUILD_ROOT%{_
 %{_sbindir}/kabiscan.help
 %{_sbindir}/kabi-data.sh
 %{_sbindir}/makei.sh
-%{_datadir}/kabitools-rhel-kernel-make.patch
-%{_datadir}/kabitools-pegas-kernel-make.patch
+%{_datadir}/kabitools-rhel7-kernel-make.patch
+%{_datadir}/kabitools-rhel8-kernel-make.patch
 %doc README
 
 %changelog
+* Mon May 20 2019 Tony Camuso <tcamuso@redhat.com> - 3.6.2-2
+- kabi.c: change add_ptr_list_notag to add_ptr_list
+- kabitools-rhel-kernel-make.patch: sync with drift in rhel7 make
+- rename kabitools-rhel-kernel-make.patch to
+  kabitools-rhel7-kernel-make.patch
+- remove kabitools-pegas-kernel-make.patch
+- add kabitools-rhel8-kernel-make.patch
 * Mon May 20 2019 Tony Camuso <tcamuso@redhat.com> - 3.6.2-1
 - Allow kabi-graph to include all RHEL
 - In kabi.c, MOD_TYPEDEF and MOD_ACCESSED are no longer defined

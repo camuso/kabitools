@@ -1,7 +1,7 @@
 From 19fccd807c12721aa3870a088610e16b5650a837 Mon Sep 17 00:00:00 2001
 From: Tony Camuso <tcamuso@redhat.com>
 Date: Mon, 20 May 2019 15:09:48 -0400
-Subject: [RHEL7.7 BZ-1517616] RHEL7 make patch for kabitools
+Subject: [RHEL7 PATCH] make changes for kabitools
 
 	modified:   .gitignore
 	modified:   Makefile
