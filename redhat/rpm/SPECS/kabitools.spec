@@ -34,7 +34,7 @@
 
 Name:		kabitools
 Version:	3.6.2
-Release:	2%{?dist}
+Release:	3%{?dist}
 Summary:	A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
 
@@ -113,6 +113,8 @@ cp %{_topdir}/BUILD/%{name}/kabitools-rhel8-kernel-make.patch $RPM_BUILD_ROOT%{_
 %doc README
 
 %changelog
+* Thu Jan 23 2020 Tony Camuso <tcamuso@redhat.com> - 3.6.2-3
+- kabitools-rhel8-kernel-make.patch: sync with latest rhel8
 * Mon May 20 2019 Tony Camuso <tcamuso@redhat.com> - 3.6.2-2
 - kabi.c: change add_ptr_list_notag to add_ptr_list
 - kabitools-rhel-kernel-make.patch: sync with drift in rhel7 make
