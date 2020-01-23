@@ -30,10 +30,10 @@ index c31e5904742e..6e69a37cc00d 100644
  *~
  \#*#
 diff --git a/Makefile b/Makefile
-index 5047315a18b3..c035049b6be6 100644
+index d4deea596ef3..c8edadfb2ea1 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -100,6 +100,16 @@ endif
+@@ -107,6 +107,16 @@ endif
  
  export quiet Q KBUILD_VERBOSE
  
@@ -50,7 +50,7 @@ index 5047315a18b3..c035049b6be6 100644
  # kbuild supports saving output files in a separate directory.
  # To locate output files in a separate directory two syntaxes are supported.
  # In both cases the working directory must be the root of the kernel src.
-@@ -203,7 +213,7 @@ else
+@@ -210,7 +220,7 @@ else
          endif
  endif
  
@@ -59,7 +59,7 @@ index 5047315a18b3..c035049b6be6 100644
  
  objtree		:= .
  src		:= $(srctree)
-@@ -379,6 +389,7 @@ PYTHON		= python
+@@ -386,6 +396,7 @@ PYTHON		= python
  PYTHON2		= python2
  PYTHON3		= python3
  CHECK		= sparse
@@ -67,16 +67,16 @@ index 5047315a18b3..c035049b6be6 100644
  
  CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
  		  -Wbitwise -Wno-return-void -Wno-unknown-attribute $(CF)
-@@ -425,7 +436,7 @@ GCC_PLUGINS_CFLAGS :=
+@@ -434,7 +445,7 @@ GCC_PLUGINS_CFLAGS :=
  export ARCH SRCARCH CONFIG_SHELL HOSTCC KBUILD_HOSTCFLAGS CROSS_COMPILE AS LD CC
- export CPP AR NM STRIP OBJCOPY OBJDUMP KBUILD_HOSTLDFLAGS KBUILD_HOSTLDLIBS
- export MAKE LEX YACC AWK GENKSYMS INSTALLKERNEL PERL PYTHON PYTHON2 PYTHON3 UTS_MACHINE
+ export CPP AR NM STRIP OBJCOPY OBJDUMP PAHOLE KBUILD_HOSTLDFLAGS KBUILD_HOSTLDLIBS
+ export MAKE LEX YACC AWK INSTALLKERNEL PERL PYTHON PYTHON2 PYTHON3 UTS_MACHINE
 -export HOSTCXX KBUILD_HOSTCXXFLAGS LDFLAGS_MODULE CHECK CHECKFLAGS
 +export HOSTCXX KBUILD_HOSTCXXFLAGS LDFLAGS_MODULE CHECK CHECKFLAGS KABIPARSER
  
  export KBUILD_CPPFLAGS NOSTDINC_FLAGS LINUXINCLUDE OBJCOPYFLAGS LDFLAGS
  export KBUILD_CFLAGS CFLAGS_KERNEL CFLAGS_MODULE
-@@ -1343,6 +1354,7 @@ mrproper: clean archmrproper $(mrproper-dirs)
+@@ -1360,6 +1371,7 @@ mrproper: clean archmrproper $(mrproper-dirs)
  	$(call cmd,rmfiles)
  
  # distclean
@@ -84,7 +84,7 @@ index 5047315a18b3..c035049b6be6 100644
  #
  PHONY += distclean
  
-@@ -1462,6 +1474,7 @@ help:
+@@ -1479,6 +1491,7 @@ help:
  	@echo  '		2: warnings which occur quite often but may still be relevant'
  	@echo  '		3: more obscure warnings, can most likely be ignored'
  	@echo  '		Multiple levels can be combined with W=12 or W=123'
@@ -102,7 +102,7 @@ index 6fceb06a11fb..5eff3b88f9fc 100644
  kabi/kabi-rhel8?/*
 +kabi/kabi-datafiles.list
 diff --git a/scripts/Makefile.build b/scripts/Makefile.build
-index 96e86e0b533c..1fc638080f5a 100644
+index f1c0c3e6dd9c..ac5fce5cf616 100644
 --- a/scripts/Makefile.build
 +++ b/scripts/Makefile.build
 @@ -31,6 +31,9 @@ ldflags-y  :=
