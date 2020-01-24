@@ -185,7 +185,6 @@ static char *pad_out(int padsize, char padchar)
 // Forward Declarations
 //----------------------------------------------------
 static bool is_exported(struct symbol *sym);
-static const char *get_modstr(unsigned long mod);
 static void get_declist(struct sparm *sp, struct symbol *sym);
 static struct symbol *find_internal_exported (struct symbol_list *symlist,
 					      char *symname);
@@ -216,13 +215,8 @@ static void get_declist(struct sparm *sp, struct symbol *sym)
 		enum typemask tm = 1 << basetype->type;
 		typnam = get_type_name(basetype->type);
 
-		if (basetype->type == SYM_BASETYPE) {
-
-			if (! basetype->ctype.modifiers)
-				typnam = "void";
-			else
-				typnam = get_modstr(basetype->ctype.modifiers);
-		}
+		if (basetype->type == SYM_BASETYPE)
+			typnam = show_typename(basetype);
 
 		if (basetype->type == SYM_PTR)
 			sp->flags |= CTL_POINTER;
@@ -505,96 +499,6 @@ static void build_tree_genksyms(char *file,
 	} END_FOR_EACH_PTR(sym);
 
 	fclose(inputfile);
-}
-
-static const char *get_modstr(unsigned long mod)
-{
-	static char buffer[100];
-	unsigned len = 0;
-	int bits = 0;
-	unsigned i;
-	struct mod_name {
-		unsigned long mod;
-		const char *name;
-	} *m;
-
-	static struct mod_name mod_names[] = {
-		{MOD_AUTO,		"auto"},
-		{MOD_REGISTER,		"register"},
-		{MOD_STATIC,		"static"},
-		{MOD_EXTERN,		"extern"},
-		{MOD_CONST,		"const"},
-		{MOD_VOLATILE,		"volatile"},
-		{MOD_SIGNED,		"signed"},
-		{MOD_UNSIGNED,		"unsigned"},
-		{MOD_CHAR,		"char"},
-		{MOD_SHORT,		"short"},
-		{MOD_LONG,		"long"},
-		{MOD_LONGLONG,		"long long"},
-		{MOD_LONGLONGLONG,	"long long long"},
-		{MOD_TLS,		"tls"},
-		{MOD_INLINE,		"inline"},
-		{MOD_ADDRESSABLE,	"addressable"},
-		{MOD_NOCAST,		"nocast"},
-		{MOD_NODEREF,		"noderef"},
-		{MOD_TOPLEVEL,		"toplevel"},
-		{MOD_ASSIGNED,		"assigned"},
-		{MOD_TYPE,		"type"},
-		{MOD_SAFE,		"safe"},
-		{MOD_USERTYPE,		"usertype"},
-		{MOD_NORETURN,		"noreturn"},
-		{MOD_EXPLICITLY_SIGNED,	"explicitly-signed"},
-		{MOD_BITWISE,		"bitwise"},
-		{MOD_PURE,		"pure"},
-	};
-
-	// Return these type modifiers the way we're accustomed to seeing
-	// them in the source code.
-	//
-	// reported by sparse/show-parse.c::modifier_string()  as ...
-	//
-	if (mod == MOD_SIGNED)
-		return "int";			// [signed]
-	if (mod == MOD_UNSIGNED)
-		return "unsigned int";		// [unsigned]
-	if (STD_SIGNED(mod, MOD_CHAR))
-		return "char";			// [signed][char]
-	if (STD_SIGNED(mod, MOD_LONG))
-		return "long";			// [signed][long]
-	if (STD_SIGNED(mod, MOD_LONGLONG))
-		return "long long";		// [signed][long long]
-	if (STD_SIGNED(mod, MOD_LONGLONGLONG))
-		return "long long long";	// [signed][long long long]
-
-	// More than one of these bits can be set at the same time,
-	// so clear the redundant ones.
-	//
-	if ((mod & MOD_LONGLONGLONG) && (mod & MOD_LONGLONG))
-		mod &= ~MOD_LONGLONG;
-	if ((mod & MOD_LONGLONGLONG) && (mod & MOD_LONG))
-		mod &= ~MOD_LONG;
-	if ((mod & MOD_LONGLONG) && (mod & MOD_LONG))
-		mod &= ~MOD_LONG;
-
-	// Now scan the list for matching bits and copy the corresponding
-	// names into the return buffer.
-	//
-	for (i = 0; i < ARRAY_SIZE(mod_names); i++) {
-		m = mod_names + i;
-		if (mod & m->mod) {
-			char c;
-			const char *name = m->name;
-			while ((c = *name++) != '\0' && len + 1 < sizeof buffer)
-				buffer[len++] = c;
-			buffer[len++] = ' ';
-			bits++;
-		}
-	}
-	if (bits > 1)
-		buffer[len-1] = 0;
-	else
-		buffer[len] = 0;
-	return buffer;
 }
 
 /*****************************************************
