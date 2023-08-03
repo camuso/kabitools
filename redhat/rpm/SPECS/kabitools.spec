@@ -25,7 +25,8 @@
 #		--define "_srcrpmdir	$(SRPMS)" \
 #		--define "_rpmdir	$(RPMS)" \
 #		--define "_specdir	$(SPECS)" \
-#		--define "_kbversion	$(VERSION)"
+#		--define "_kbversion	$(VERSION)" \
+#		--define "_kbrelease	$(RELEASE)"
 #
 # The Makefile also creates the libsparse.tar.gz archive from whatever is
 # in the $(KABISRC) directory.
@@ -34,7 +35,7 @@
 
 Name:		kabitools
 Version:	%{_kbversion}
-Release:	4%{?dist}
+Release:	%{_kbrelease}%{?dist}
 Summary:	A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/
 
@@ -113,6 +114,9 @@ cp %{_topdir}/BUILD/%{name}/kabitools-rhel8-kernel-make.patch $RPM_BUILD_ROOT%{_
 %doc README
 
 %changelog
+* Thu Aug 03 2023 Tony Camuso <tcamuso@redhat.com> - 3.6.4-2
+- Extensive changes to the build to minimize user intervention
+  and to liberate it from hard-coded directories.
 * Fri Jan 24 2020 Tony Camuso <tcamuso@redhat.com> - 3.6.2-4
 - Using latest sparse version 0.6.1-3
 * Thu Jan 23 2020 Tony Camuso <tcamuso@redhat.com> - 3.6.2-3

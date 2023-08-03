@@ -5,6 +5,7 @@
 # This make invokes cross compilers to create the kabitools kit for the
 # following architectures. Only 64 bit architectures are created.
 #
+#	aarch64
 #	s390x
 #	ppc64
 #	ppc64le
@@ -12,15 +13,17 @@
 #
 ###########################################################################
 
-VERSION		:= 3.6.3
+# These are passed to the spec file
+VERSION		:= 3.6.4
+RELEASE		:= 2
 
 
 SCRIPTLIB	:= https://raw.githubusercontent.com/camuso/scripts/master/lib
 RPMBUILD	:= $(shell which rpmbuild)
-REDHAT		:= $(PWD)
-KABISRC		:= $(REDHAT)/..
+KABISRC		:= $(shell realpath $(PWD)/..)
+REDHAT		:= $(shell realpath $(PWD))
 RPM		:= $(REDHAT)/rpm
-SOURCES 	:= $(RPM)/SOURCES
+SOURCES		:= $(RPM)/SOURCES
 BUILD		:= $(RPM)/BUILD
 RPMS		:= $(RPM)/RPMS
 SRPMS		:= $(RPM)/SRPMS
@@ -30,12 +33,12 @@ SCRIPTS		:= $(PWD)/scripts
 RPM2CPIO	:= $(shell which /usr/bin/rpm2cpio)
 CPIO		:= $(shell which /usr/bin/cpio)
 CPIOFLAGS	:= -iv --to-stdout
-SPARSEROOT	:= ../../libsparse
+SPARSEROOT	:= $(KABISRC)/../libsparse
 SPARSERPMS	:= $(SPARSEROOT)/rpm/RPMS
 SPARSESPECS	:= $(SPARSEROOT)/rpm/SPECS
 SPARSELIB	:= $(SPARSEROOT)/lib
 
-TARFLAGS	:= --exclude-vcs --exclude-backups --exclude=$(REDHAT) -czf
+TARFLAGS	:= --exclude-backups --exclude-vcs --exclude=./redhat -czf
 
 RPMFLAGS = $(RPMBUILD) \
 	--define "_topdir	$(RPM)" \
@@ -44,7 +47,8 @@ RPMFLAGS = $(RPMBUILD) \
 	--define "_srcrpmdir	$(SRPMS)" \
 	--define "_rpmdir	$(RPMS)" \
 	--define "_specdir	$(SPECS)" \
-	--define "_kbversion	$(VERSION)"
+	--define "_kbversion	$(VERSION)" \
+	--define "_kbrelease	$(RELEASE)"
 
 ARCH_LIST := \
 	s390x \
@@ -84,6 +88,7 @@ all:	test_env get_scripts
 	for arch in $(ARCH_LIST); do \
 		echo; echo "*****"; echo arch = $$arch; echo "*****"; \
 		$(call prepare_lib,$$arch); \
+		@make -C $(KABISRC) clean
 		$(RPMFLAGS) --target $$arch --with cross -bb $(SPECS)/kabitools.spec; \
 	done
 
@@ -91,6 +96,7 @@ one: test_env get_scripts
 	$(call make_kabiscan)
 	$(call make_tar)
 	$(call prepare_lib,x86_64)
+	@make -C $(KABISRC) clean
 	$(RPMFLAGS) --target x86_64 --with cross -ba $(SPECS)/kabitools.spec
 
 test_env:
@@ -100,7 +106,7 @@ test_env:
 		exit 1; \
 	fi
 	@if ! find ../../libsparse/rpm/ -type d -name RPMS > /dev/null 2>&1; then \
-		@echo "You must build libsparse at $(realpath ../../libsparse)."; \
+		@echo "You must build libsparse at $(realpath $(KABISRC)/../libsparse)."; \
 		@echo "See https://github.com/camuso/libsparse"; \
 		exit 1; \
 	fi
@@ -129,13 +135,11 @@ report_missingtool = \
 	state=1
 
 make_tar = \
-	set -x; \
-	tar $(TARFLAGS) $(SOURCES)/kabitools-$(VERSION).tar.gz -C $(KABISRC) .; \
-	set +x
+	tar $(TARFLAGS) $(SOURCES)/kabitools-$(VERSION).tar.gz -C $(KABISRC) .
 
 make_kabiscan = \
 	cat $(SCRIPTS)/ui.source > $(KABISRC)/kabiscan; \
-	cat $(SCRIPTS)/project.source >> $(KABISRC)/kabiscan; \
+	cat $(SCRIPTS)/cfgmgr.source >> $(KABISRC)/kabiscan; \
 	cat $(SCRIPTS)/kabiscan.source >> $(KABISRC)/kabiscan; \
 	chmod +x $(SCRIPTS)/kabiscan
 
