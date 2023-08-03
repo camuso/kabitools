@@ -7,17 +7,16 @@
 # The make defines the following make variables and redefines the rpmbuild
 # directory macros to correspond to the build environment.
 #
-#	RPMBUILD	:= /usr/bin/rpmbuild
-#	KABIDIR		:= /work/kabi
-#	KABILIB		:= $(KABIDIR)/lib
-#	KABISRC		:= $(KABIDIR)/src
-#	REDHAT		:= $(KABISRC)/redhat
+#	RPMBUILD	:= $(shell which rpmbuild)
+#	REDHAT		:= $(PWD)
+#	KABISRC		:= $(REDHAT)/..
 #	RPM		:= $(REDHAT)/rpm
 #	SOURCES 	:= $(RPM)/SOURCES
 #	BUILD		:= $(RPM)/BUILD
 #	RPMS		:= $(RPM)/RPMS
 #	SRPMS		:= $(RPM)/SRPMS
 #	SPECS		:= $(RPM)/SPECS
+#	SCRIPTS		:= $(PWD)/scripts
 #
 #	RPMFLAGS = $(RPMBUILD)
 #		--define "_topdir	$(RPM)" \
@@ -26,6 +25,7 @@
 #		--define "_srcrpmdir	$(SRPMS)" \
 #		--define "_rpmdir	$(RPMS)" \
 #		--define "_specdir	$(SPECS)" \
+#		--define "_kbversion	$(VERSION)"
 #
 # The Makefile also creates the libsparse.tar.gz archive from whatever is
 # in the $(KABISRC) directory.
@@ -33,7 +33,7 @@
 ###########################################################################
 
 Name:		kabitools
-Version:	3.6.2
+Version:	%{_kbversion}
 Release:	4%{?dist}
 Summary:	A toolkit for KABI navigation
 BuildRoot:	%{_topdir}/BUILDROOT/

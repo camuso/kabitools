@@ -12,29 +12,30 @@
 #
 ###########################################################################
 
-VERSION		:= 3.6.2
+VERSION		:= 3.6.3
 
-RPMBUILD	:= /usr/bin/rpmbuild
-KABIDIR		:= /work/kabi
-KABILIB		:= $(KABIDIR)/lib
-KABISRC		:= $(KABIDIR)/src
-REDHAT		:= $(KABISRC)/redhat
+
+SCRIPTLIB	:= https://raw.githubusercontent.com/camuso/scripts/master/lib
+RPMBUILD	:= $(shell which rpmbuild)
+REDHAT		:= $(PWD)
+KABISRC		:= $(REDHAT)/..
 RPM		:= $(REDHAT)/rpm
 SOURCES 	:= $(RPM)/SOURCES
 BUILD		:= $(RPM)/BUILD
 RPMS		:= $(RPM)/RPMS
 SRPMS		:= $(RPM)/SRPMS
 SPECS		:= $(RPM)/SPECS
-HOMEBINLIB	:= $(HOME)/bin/lib
+SCRIPTS		:= $(PWD)/scripts
 
-RPM2CPIO	:= /usr/bin/rpm2cpio
-CPIO		:= /usr/bin/cpio
+RPM2CPIO	:= $(shell which /usr/bin/rpm2cpio)
+CPIO		:= $(shell which /usr/bin/cpio)
 CPIOFLAGS	:= -iv --to-stdout
-SPARSEROOT	:= /work/sparse
-SPARSERPMS	:= $(SPARSEROOT)/redhat/rpm/RPMS
-SPARSESPECS	:= $(SPARSEROOT)/redhat/rpm/SPECS
+SPARSEROOT	:= ../../libsparse
+SPARSERPMS	:= $(SPARSEROOT)/rpm/RPMS
+SPARSESPECS	:= $(SPARSEROOT)/rpm/SPECS
+SPARSELIB	:= $(SPARSEROOT)/lib
 
-TARFLAGS	:= --exclude-vcs --exclude-backups --exclude=redhat -czf
+TARFLAGS	:= --exclude-vcs --exclude-backups --exclude=$(REDHAT) -czf
 
 RPMFLAGS = $(RPMBUILD) \
 	--define "_topdir	$(RPM)" \
@@ -42,7 +43,8 @@ RPMFLAGS = $(RPMBUILD) \
 	--define "_builddir	$(BUILD)" \
 	--define "_srcrpmdir	$(SRPMS)" \
 	--define "_rpmdir	$(RPMS)" \
-	--define "_specdir	$(SPECS)"
+	--define "_specdir	$(SPECS)" \
+	--define "_kbversion	$(VERSION)"
 
 ARCH_LIST := \
 	s390x \
@@ -52,8 +54,8 @@ ARCH_LIST := \
 	x86_64
 
 BOOSTPKG := $(shell rpm -q boost-serialization)
-ARCH 	 := $(shell echo $(BOOSTPKG) | rev | cut -d'.' -f1 | rev)
 DISTRO	 := $(shell echo $(BOOSTPKG) | rev | cut -d'.' -f2 | rev)
+ARCH 	 := $(shell uname -m)
 
 SPARSE_VER := $(shell grep -m1 Version $(SPARSESPECS)/libsparse.spec | cut -d '	' -f2)
 
@@ -68,41 +70,13 @@ CROSS_PACKAGE_LIST = binutils-powerpc64-linux-gnu \
 		     numactl-devel \
 		     diffstat
 
-wrong_arch = 	\
-	echo -en "\nArch is $(ARCH), but this make must be executed on x86_64.\n"; \
-	exit 1
-
-no_boost = 	\
-	echo -e "\n*** Please install boost before running this make. ***\n"; \
-	exit 1
-
-make_tar = \
-	tar $(TARFLAGS) $(SOURCES)/kabitools-$(VERSION).tar.gz -C $(KABISRC) .
-
-make_kabiscan = \
-	cat $(HOMEBINLIB)/ui.source > $(KABISRC)/kabiscan; \
-	cat $(HOMEBINLIB)/project.source >> $(KABISRC)/kabiscan; \
-	cat $(HOMEBINLIB)/kabiscan.source >> $(KABISRC)/kabiscan; \
-	chmod +x $(KABISRC)/kabiscan
-
-# This procedure requires that the cross-compile of libsparse.a has been
-# accomplished and is in the directory tree defined by SPARSEROOT.
-# See http://git.engineering.redhat.com/git/users/tcamuso/libsparse/libsparse.git/.git/
-# git://git.engineering.redhat.com/users/tcamuso/libsparse/libsparse.git/.git
-#
-prepare_lib = \
-	mkdir -p $(KABILIB)/$(1); \
-	$(RPM2CPIO) \
-	$(SPARSERPMS)/$(1)/libsparse-$(SPARSE_VER)-*.$(DISTRO).$(1).rpm \
-	| $(CPIO) $(CPIOFLAGS) ./usr/lib64/libsparse.a > $(KABILIB)/libsparse.a
+.PHONY: test_env get_scripts
 
 # These are the cross-compile targets
 # The final one will also build the src.rpm
 #
-all:
-	$(shell [ $(BOOSTPKG) ] || $(call no_boost))
+all:	test_env get_scripts
 	@echo "DISTRO: $(DISTRO)"
-	$(shell [[ $(ARCH) == "x86_64" ]] || $(call wrong_arch))
 	@echo "SPARSE_VER: $(SPARSE_VER)"
 	$(call make_kabiscan)
 	$(call make_tar)
@@ -113,10 +87,68 @@ all:
 		$(RPMFLAGS) --target $$arch --with cross -bb $(SPECS)/kabitools.spec; \
 	done
 
-one:
+one: test_env get_scripts
+	$(call make_kabiscan)
 	$(call make_tar)
 	$(call prepare_lib,x86_64)
 	$(RPMFLAGS) --target x86_64 --with cross -ba $(SPECS)/kabitools.spec
+
+test_env:
+	@echo "testing environment ..."
+	@if [ "$(ARCH)" != "x86_64" ]; then \
+		@echo "\nArch is $(ARCH), but this make must be executed on x86_64.\n"; \
+		exit 1; \
+	fi
+	@if ! find ../../libsparse/rpm/ -type d -name RPMS > /dev/null 2>&1; then \
+		@echo "You must build libsparse at $(realpath ../../libsparse)."; \
+		@echo "See https://github.com/camuso/libsparse"; \
+		exit 1; \
+	fi
+	@if ! which rpmbuild > /dev/null 2>&1; then $(call get_package,"rpmbuild"); fi
+	@if ! rpm -q boost-serialization > /dev/null 2>&1; then \
+		$(call get_package, "boost boost-devel"); \
+	fi
+	@which cpio > /dev/null 2>&1 || $(call get_package,"cpio")
+	@which rpm2cpio > /dev/null 2>&1 || $(call get_package,"cpio")
+
+get_scripts:
+	@echo "getting scripts..."
+	@[ -d $(PWD)/scripts ] || mkdir -p $(PWD)/scripts
+	@wget -q -N -P $(SCRIPTS) $(SCRIPTLIB)/kabiscan.source
+	@wget -q -N -P $(SCRIPTS) $(SCRIPTLIB)/cfgmgr.source
+	@wget -q -N -P $(SCRIPTS) $(SCRIPTLIB)/ui.source
+
+get_package = \
+	if ! sudo dnf install -y $(1); then \
+		@echo "You must install $(1) first."; \
+		exit 1; \
+	fi
+
+report_missingtool = \
+	@echo "You must install $(1)"; \
+	state=1
+
+make_tar = \
+	set -x; \
+	tar $(TARFLAGS) $(SOURCES)/kabitools-$(VERSION).tar.gz -C $(KABISRC) .; \
+	set +x
+
+make_kabiscan = \
+	cat $(SCRIPTS)/ui.source > $(KABISRC)/kabiscan; \
+	cat $(SCRIPTS)/project.source >> $(KABISRC)/kabiscan; \
+	cat $(SCRIPTS)/kabiscan.source >> $(KABISRC)/kabiscan; \
+	chmod +x $(SCRIPTS)/kabiscan
+
+# This procedure requires that the cross-compile of libsparse.a has been
+# accomplished and is in the directory tree defined by SPARSEROOT.
+# See https://github.com/camuso/libsparse
+#
+prepare_lib = \
+	@echo "sparseroot: $(SPARSEROOT) $(SPARSELIB)"; \
+	mkdir -p $(SPARSELIB)/lib/$(1); \
+	$(RPM2CPIO) \
+	$(SPARSERPMS)/$(1)/libsparse-$(SPARSE_VER)-*.$(DISTRO).$(1).rpm \
+	| $(CPIO) $(CPIOFLAGS) ./usr/lib64/libsparse.a > $(SPARSELIB)/libsparse.a
 
 clean:
 	make -C $(KABISRC) clean
