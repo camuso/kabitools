@@ -86,16 +86,14 @@ all:	test_env get_scripts
 	$(call make_tar)
 
 	for arch in $(ARCH_LIST); do \
-		echo; echo "*****"; echo arch = $$arch; echo "*****"; \
-		$(call prepare_lib,$$arch); \
-		@make -C $(KABISRC) clean
+		echo; echo "*****"; echo "arch = $$arch"; echo "*****"; \
+		@make -C $(KABISRC) clean; \
 		$(RPMFLAGS) --target $$arch --with cross -bb $(SPECS)/kabitools.spec; \
 	done
 
 one: test_env get_scripts
 	$(call make_kabiscan)
 	$(call make_tar)
-	$(call prepare_lib,x86_64)
 	@make -C $(KABISRC) clean
 	$(RPMFLAGS) --target x86_64 --with cross -ba $(SPECS)/kabitools.spec
 
