@@ -11,7 +11,7 @@ CFLAGS		+= -I./include -I/usr/include/c++
 CXXFLAGS	+= -std=gnu++11
 
 LIBS		+= -lboost_serialization
-STATICLIBS	+= /work/kabi/lib/libsparse.a
+STATICLIBS	+= /usr/lib64/libsparse.a
 
 COMMON_OBJS	:= checksum.o kabi-map.o
 COMMON_HDRS	:= checksum.h kabi-map.h
