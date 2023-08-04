@@ -30,7 +30,7 @@ PROGRAMS = kabi-parser kabi-lookup kabi-dump
 all	: $(PROGRAMS)
 
 clean	:
-	rm -vf *.o $(PROGRAMS)
+	@rm -vf *.o $(PROGRAMS)
 
 kabi-parser	: $(PARSER_OBJS) $(PARSER_HDRS)
 	g++ $(CXXFLAGS) $(CFLAGS) -o kabi-parser $(PARSER_OBJS) $(LIBS) $(STATICLIBS)
