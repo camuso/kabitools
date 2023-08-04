@@ -17,11 +17,16 @@
 VERSION		:= 3.6.4
 RELEASE		:= 2
 
-
+# This github repo contains scripts used to build the kabiscan script.
 SCRIPTLIB	:= https://raw.githubusercontent.com/camuso/scripts/master/lib
+
+# The following absolute paths are needed to assure the relative paths
+# will work.
 RPMBUILD	:= $(shell which rpmbuild)
 KABISRC		:= $(shell realpath $(PWD)/..)
 REDHAT		:= $(shell realpath $(PWD))
+
+# Relative paths
 RPM		:= $(REDHAT)/rpm
 SOURCES		:= $(RPM)/SOURCES
 BUILD		:= $(RPM)/BUILD
@@ -30,14 +35,13 @@ SRPMS		:= $(RPM)/SRPMS
 SPECS		:= $(RPM)/SPECS
 SCRIPTS		:= $(PWD)/scripts
 
-RPM2CPIO	:= $(shell which /usr/bin/rpm2cpio)
-CPIO		:= $(shell which /usr/bin/cpio)
-CPIOFLAGS	:= -iv --to-stdout
+# libsparse paths are absolute
 SPARSEROOT	:= $(KABISRC)/../libsparse
 SPARSERPMS	:= $(SPARSEROOT)/rpm/RPMS
 SPARSESPECS	:= $(SPARSEROOT)/rpm/SPECS
 SPARSELIB	:= $(SPARSEROOT)/lib
 
+# Tool flags
 TARFLAGS	:= --exclude-backups --exclude-vcs --exclude=./redhat -czf
 
 RPMFLAGS = $(RPMBUILD) \
@@ -108,29 +112,19 @@ test_env:
 		@echo "See https://github.com/camuso/libsparse"; \
 		exit 1; \
 	fi
-	@if ! which rpmbuild > /dev/null 2>&1; then $(call get_package,"rpmbuild"); fi
-	@if ! rpm -q boost-serialization > /dev/null 2>&1; then \
-		$(call get_package, "boost boost-devel"); \
+	@if ! which rpmbuild > /dev/null 2>&1; then \
+		@echo "You must install the rpmbuild package."; \
 	fi
-	@which cpio > /dev/null 2>&1 || $(call get_package,"cpio")
-	@which rpm2cpio > /dev/null 2>&1 || $(call get_package,"cpio")
+	@if ! rpm -q boost-serialization > /dev/null 2>&1; then \
+		@cho "You must install the boost and boost-devel packages"; \
+	fi
 
 get_scripts:
 	@echo "getting scripts..."
-	@[ -d $(PWD)/scripts ] || mkdir -p $(PWD)/scripts
+	@[ -d $(SCRIPTS) ] || mkdir -p $(SCRIPTS)
 	@wget -q -N -P $(SCRIPTS) $(SCRIPTLIB)/kabiscan.source
 	@wget -q -N -P $(SCRIPTS) $(SCRIPTLIB)/cfgmgr.source
 	@wget -q -N -P $(SCRIPTS) $(SCRIPTLIB)/ui.source
-
-get_package = \
-	if ! sudo dnf install -y $(1); then \
-		@echo "You must install $(1) first."; \
-		exit 1; \
-	fi
-
-report_missingtool = \
-	@echo "You must install $(1)"; \
-	state=1
 
 make_tar = \
 	tar $(TARFLAGS) $(SOURCES)/kabitools-$(VERSION).tar.gz -C $(KABISRC) .
@@ -141,18 +135,7 @@ make_kabiscan = \
 	cat $(SCRIPTS)/kabiscan.source >> $(KABISRC)/kabiscan; \
 	chmod +x $(SCRIPTS)/kabiscan
 
-# This procedure requires that the cross-compile of libsparse.a has been
-# accomplished and is in the directory tree defined by SPARSEROOT.
-# See https://github.com/camuso/libsparse
-#
-prepare_lib = \
-	@echo "sparseroot: $(SPARSEROOT) $(SPARSELIB)"; \
-	mkdir -p $(SPARSELIB)/lib/$(1); \
-	$(RPM2CPIO) \
-	$(SPARSERPMS)/$(1)/libsparse-$(SPARSE_VER)-*.$(DISTRO).$(1).rpm \
-	| $(CPIO) $(CPIOFLAGS) ./usr/lib64/libsparse.a > $(SPARSELIB)/libsparse.a
-
 clean:
 	make -C $(KABISRC) clean
 	rm -rf $(BUILD)/*
-	find $(RPMS)/ -type f -name "*.rpm" -exec rm -vf '{}' \;
+	# find $(RPMS)/ -type f -name "*.rpm" -exec rm -vf '{}' \;
