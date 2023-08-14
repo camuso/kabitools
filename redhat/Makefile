@@ -71,7 +71,7 @@ one: test_env get_scripts make_kabiscan
 make_kabiscan:
 	cat $(SCRIPTS)/ui.source > $(KABISRC)/kabiscan
 	cat $(SCRIPTS)/cfgmgr.source >> $(KABISRC)/kabiscan
-	cat $(SCRIPTS)/kabiscan.source >> $(KABISRC)/kabiscan
+	cat $(KABISRC)/kabiscan.source >> $(KABISRC)/kabiscan
 	chmod +x $(KABISRC)/kabiscan
 
 test_env:
@@ -91,7 +91,6 @@ test_env:
 get_scripts:
 	@echo "getting scripts..."
 	@[ -d $(SCRIPTS) ] || mkdir -p $(SCRIPTS)
-	@wget -q -N -P $(SCRIPTS) $(SCRIPTLIB)/kabiscan.source
 	@wget -q -N -P $(SCRIPTS) $(SCRIPTLIB)/cfgmgr.source
 	@wget -q -N -P $(SCRIPTS) $(SCRIPTLIB)/ui.source
 
