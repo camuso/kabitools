@@ -15,7 +15,7 @@
 
 # These are passed to the spec file
 VERSION		:= 3.6.4
-RELEASE		:= 2
+RELEASE		:= 3
 
 # This github repo contains scripts used to build the kabiscan script.
 SCRIPTLIB	:= https://raw.githubusercontent.com/camuso/scripts/master/lib
@@ -54,61 +54,30 @@ RPMFLAGS = $(RPMBUILD) \
 	--define "_kbversion	$(VERSION)" \
 	--define "_kbrelease	$(RELEASE)"
 
-ARCH_LIST := \
-	s390x \
-	ppc64 \
-	ppc64le \
-	aarch64 \
-	x86_64
-
 BOOSTPKG := $(shell rpm -q boost-serialization)
 DISTRO	 := $(shell echo $(BOOSTPKG) | rev | cut -d'.' -f2 | rev)
 ARCH 	 := $(shell uname -m)
 
 SPARSE_VER := $(shell grep -m1 Version $(SPARSESPECS)/libsparse.spec | cut -d '	' -f2)
 
-CROSS_PACKAGE_LIST = binutils-powerpc64-linux-gnu \
-		     binutils-s390x-linux-gnu \
-		     cross-binutils-common \
-		     cross-gcc-common \
-		     gcc-powerpc64-linux-gnu \
-		     gcc-s390x-linux-gnu \
-		     glibc-static \
-		     ncurses-devel \
-		     numactl-devel \
-		     diffstat
-
 .PHONY: test_env get_scripts
 
-# These are the cross-compile targets
-# The final one will also build the src.rpm
-#
-all:	test_env get_scripts
-	@echo "DISTRO: $(DISTRO)"
-	@echo "SPARSE_VER: $(SPARSE_VER)"
-	$(call make_kabiscan)
-	$(call make_tar)
-
-	for arch in $(ARCH_LIST); do \
-		echo; echo "*****"; echo "arch = $$arch"; echo "*****"; \
-		@make -C $(KABISRC) clean; \
-		$(RPMFLAGS) --target $$arch --with cross -bb $(SPECS)/kabitools.spec; \
-	done
-
-one: test_env get_scripts
+one: test_env get_scripts make_kabiscan
 	$(call make_kabiscan)
 	$(call make_tar)
 	@make -C $(KABISRC) clean
-	$(RPMFLAGS) --target x86_64 --with cross -ba $(SPECS)/kabitools.spec
+	$(RPMFLAGS) -ba $(SPECS)/kabitools.spec
+
+make_kabiscan:
+	cat $(SCRIPTS)/ui.source > $(KABISRC)/kabiscan
+	cat $(SCRIPTS)/cfgmgr.source >> $(KABISRC)/kabiscan
+	cat $(SCRIPTS)/kabiscan.source >> $(KABISRC)/kabiscan
+	chmod +x $(KABISRC)/kabiscan
 
 test_env:
 	@echo "testing environment ..."
-	@if [ "$(ARCH)" != "x86_64" ]; then \
-		@echo "\nArch is $(ARCH), but this make must be executed on x86_64.\n"; \
-		exit 1; \
-	fi
-	@if ! find ../../libsparse/rpm/ -type d -name RPMS > /dev/null 2>&1; then \
-		@echo "You must build libsparse at $(realpath $(KABISRC)/../libsparse)."; \
+	@if ! stat /usr/lib64/libsparse.a > /dev/null 2>&1; then \
+		@echo "You must build and install libsparse." \
 		@echo "See https://github.com/camuso/libsparse"; \
 		exit 1; \
 	fi
@@ -128,12 +97,6 @@ get_scripts:
 
 make_tar = \
 	tar $(TARFLAGS) $(SOURCES)/kabitools-$(VERSION).tar.gz -C $(KABISRC) .
-
-make_kabiscan = \
-	cat $(SCRIPTS)/ui.source > $(KABISRC)/kabiscan; \
-	cat $(SCRIPTS)/cfgmgr.source >> $(KABISRC)/kabiscan; \
-	cat $(SCRIPTS)/kabiscan.source >> $(KABISRC)/kabiscan; \
-	chmod +x $(SCRIPTS)/kabiscan
 
 clean:
 	make -C $(KABISRC) clean

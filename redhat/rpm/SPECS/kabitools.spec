@@ -114,6 +114,11 @@ cp %{_topdir}/BUILD/%{name}/kabitools-rhel8-kernel-make.patch $RPM_BUILD_ROOT%{_
 %doc README
 
 %changelog
+* Fri Aug 11 2023 Tony Camuso <tcamuso@redhat.com> - 3.6.4-3
+- Removed multi-arch build, because it's impractical. Too many
+  arch-specific libraries and headers to install in the tool
+  chain, as well as the cros-compilers.
+  Easier to just build on the platform for the platform.
 * Thu Aug 03 2023 Tony Camuso <tcamuso@redhat.com> - 3.6.4-2
 - Extensive changes to the build to minimize user intervention
   and to liberate it from hard-coded directories.
