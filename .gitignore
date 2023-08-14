@@ -19,6 +19,7 @@ coventry/
 kabicompdb/
 redhat/rpm/BUILDROOT
 redhat/rpm/BUILD
+redhat/scripts
 
 # Object files
 *.o
