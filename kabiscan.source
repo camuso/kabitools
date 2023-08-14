@@ -131,9 +131,9 @@ shift $optcount
 #
 git_checkrepo() {
 
-	[ -d .git ] || { echo -e "${crmsg[$crm_nogit]}"; return $crm_nogit; }
-	[ -d redhat ] || { echo -e "${crmsg[$crm_norhel]}"; return $crm_norhel; }
-	[ -f "$kabidatafile" ] || { echo -e "${crmsg[$crm_nokabi]}"; return $crm_nokabi; }
+	[ -d .git ] || { echo -e "${crmsg[crm_nogit]}"; return $crm_nogit; }
+	[ -d redhat ] || { echo -e "${crmsg[crm_norhel]}"; return $crm_norhel; }
+	[ -f "$kabidatafile" ] || { echo -e "${crmsg[crm_nokabi]}"; return $crm_nokabi; }
 	return 0
 }
 
