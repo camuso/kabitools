@@ -6,7 +6,7 @@
 declare MYDIR=
 declare MYDATA=
 
-MYDIR="$(dirname "$(which "$(basename "$0")")")"
+MYDIR="$(dirname "$0")"
 MYDATA=$(realpath ./.data)
 [ -d "$MYDATA" ] || mkdir -p "$MYDATA"
 
@@ -42,12 +42,15 @@ declare kabidatafile=
 #*********************
 # Array of repo error msgs
 #
-declare -a crmsg=(
+declare -a crmsg
+create_checkrepo_msgs() {
+	crmsg=(
 ""
 "$STA$PWD$WRN is not a git repo"
 "$STA$PWD$WRN is not the top of a RHEL kernel tree$OFF"
-"$STA$PWD$WRN You must create the kabi graph\n${INF}'g' from main menu.$OFF"
-)
+"\n${WRN}You must create the kabi graph\n${MNU}'g' from main menu.$OFF\n"
+	)
+}
 declare -i crm_nogit=1
 declare -i crm_norhel=2
 declare -i crm_nokabi=3
@@ -91,8 +94,7 @@ http://giteengineering.redhat.com/git/users/tcamuso/kabitools/kabitools.git/
 RPMs:
 http://people.redhat.com/tcamuso/kabitools/
 
-Here is the help from the kabi-lookup tool.
-$(kabi-lookup -h | less)
+Type ${MNU}kabi-lookup -h$OFF for details.
 \0
 EOF
 )
@@ -127,10 +129,11 @@ shift $optcount
 # usage:
 # 	git_checkrepo || echo "$PWD is not a valid git repo" || exit 1
 #
-function git_checkrepo {
-	[ -d .git ] || { echo -e "${crmsg[crm_nogit]}"; return $crm_nogit; }
-	[ -d redhat ] || { echo -e "${crmsg[crm_norhel]}"; return $crm_norhel; }
-	[ -f "$kabidatafile" ] || { echo -e "${crmsg[crm_nokabi]}"; return $crm_nokabi; }
+git_checkrepo() {
+
+	[ -d .git ] || { echo -e "${crmsg[$crm_nogit]}"; return $crm_nogit; }
+	[ -d redhat ] || { echo -e "${crmsg[$crm_norhel]}"; return $crm_norhel; }
+	[ -f "$kabidatafile" ] || { echo -e "${crmsg[$crm_nokabi]}"; return $crm_nokabi; }
 	return 0
 }
 
@@ -319,6 +322,7 @@ menu_parser() {
 				|| echo -e "$usagestr"
 			;;
 		q )	rm -f $last_tag_file
+			cfg_write_cfgfile configtable
 			echo
 			exit 0
 			;;
@@ -326,12 +330,13 @@ menu_parser() {
 	return $rc_continue
 }
 
-#############################
-# Start of Script Execution
-#############################
-
 init() {
-	ui_setbg bgtemp
+	local bg
+
+	ui_setbg bg
+
+	create_checkrepo_msgs
+	git_checkrepo || exit 1
 
 	configfile="$MYDATA"/"$(basename "$0")".conf
 	cfg_start configtable "$configfile"
@@ -346,7 +351,7 @@ init() {
 main() {
     local optstr
 
-    git_checkrepo || exit 1
+    init
 
     while true; do
 	optstr=""
@@ -392,7 +397,7 @@ main() {
 #
 control_c()
 {
-	set_booleans
+	cfg_write_cfgfile configtable
 	rm -f $last_tag_file
 	exit $CTLC_EXIT		# defined in lib/ui.source
 }
