@@ -1,0 +1,400 @@
+#!/bin/bash
+#
+# kabiscan
+#
+
+declare MYDIR=
+declare MYDATA=
+
+MYDIR="$(dirname "$(which "$(basename "$0")")")"
+MYDATA=$(realpath ./.data)
+[ -d "$MYDATA" ] || mkdir -p "$MYDATA"
+
+# Enable extglob for more specific directory actions
+#
+shopt -s extglob
+
+########################################
+# Function Return Codes
+########################################
+declare rc_continue=0	# Continue for another pass
+declare rc_run=1	# Execute the selected options
+
+#######################################
+# Global variables
+#######################################
+declare lasttag=
+declare rmlasttag=false
+declare searchmask
+declare searchstr
+declare outfile
+declare gitbranch
+
+declare b_justone
+declare b_whitelist
+declare b_wholeword
+declare b_verbose
+declare b_type
+declare b_exported=false
+
+declare kabidatafile=
+
+#*********************
+# Array of repo error msgs
+#
+declare -a crmsg=(
+""
+"$STA$PWD$WRN is not a git repo"
+"$STA$PWD$WRN is not the top of a RHEL kernel tree$OFF"
+"$STA$PWD$WRN You must create the kabi graph\n${INF}'g' from main menu.$OFF"
+)
+declare -i crm_nogit=1
+declare -i crm_norhel=2
+declare -i crm_nokabi=3
+
+#*********************
+# Search Modes          # Search for ...
+#                       # -----------------------------
+declare -i smode_sym=0  # kABI-sensitive symbols
+declare -i smode_fun=1  # exported functions
+declare -i smode_def=2  # struct and union definitions
+declare -i smode_cnt=3  # count instances of one of the above
+declare -i smode
+
+declare configfile=
+declare -A configtable
+configtable[mydir]="$PWD"
+configtable[mylib]="$MYLIB"
+configtable[mydata]="$MYDATA"
+configtable[smode]=$smode_sym
+configtable[outfile]=/dev/stdout
+configtable[searchstr]=
+configtable[searchmask]=
+configtable[b_justone]=true
+configtable[b_whitelist]=true
+configtable[b_wholeword]=false
+configtable[b_verbose]=false
+configtable[b_type]=true
+
+declare usagestr=$(
+cat <<EOF
+$(basename $0)
+
+This is a wrapper for the kabi-lookup tool, which searches a kabi
+database for symbols. The results of the search are indented
+hierarchically and are printed to stdout or to the path entered by
+the user.
+
+Sources:
+http://giteengineering.redhat.com/git/users/tcamuso/kabitools/kabitools.git/
+
+RPMs:
+http://people.redhat.com/tcamuso/kabitools/
+
+Here is the help from the kabi-lookup tool.
+$(kabi-lookup -h | less)
+\0
+EOF
+)
+
+usage() {
+	echo -e "$usagestr"
+	exit $1
+}
+
+while getopts h OPTION; do
+    case "$OPTION" in
+
+	h ) optcount=$((optcount+1))
+	    usage 0
+	    ;;
+	* ) echo "unrecognized option -$OPTION"
+	    usage 127
+    esac
+done
+
+shift $optcount
+[ $# -eq 0 ] || usage 1
+
+# git_checkrepo
+# 	Determines whether the current directory is a valid git repo
+#
+# returns 0 - top of RHEL kernel git tree
+#         1 - not a git repo
+#         2 - not the top of a RHEL kernel tree
+#         3 - no kABI database
+#
+# usage:
+# 	git_checkrepo || echo "$PWD is not a valid git repo" || exit 1
+#
+function git_checkrepo {
+	[ -d .git ] || { echo -e "${crmsg[crm_nogit]}"; return $crm_nogit; }
+	[ -d redhat ] || { echo -e "${crmsg[crm_norhel]}"; return $crm_norhel; }
+	[ -f "$kabidatafile" ] || { echo -e "${crmsg[crm_nokabi]}"; return $crm_nokabi; }
+	return 0
+}
+
+# git_get_lasttag <tagstr> [path]
+#
+# Obtains the most recent tag in the current branch and stores it in
+# /dev/shm/lasttag, or the optional path submitted in $2 by the caller.
+#
+# Returns the tag in $1.
+#
+# Deletes the previously recorded last tagin /dev/shm/lasttag or the
+# optional path submitted by caller.
+#
+# This operation can take some time, so the git command is spawned
+# and we perform a wait for the tag file to appear.
+#
+# $1 - receives the last tag string
+# $2 - optional path to store lasttag file
+#
+git_get_lasttag() {
+
+	local _ltfile_
+	local _lasttag_
+	local _mypid_
+
+	[ $# -eq 2 ] && _ltfile_="$2" || _ltfile_="/dev/shm/lasttag"
+
+	[ -f "$_ltfile_" ] && rm -f $_ltfile_
+
+	echo -n "Getting last git tag."
+	git describe --tags --abbrev=0 > $_ltfile_ &
+	_mypid_=$!
+	ui_waitonproc $_mypid_ .1
+	_lasttag_=$(cat $_ltfile_)
+	eval $1="$_lasttag_"
+	echo
+}
+
+git_getcurrentbranch() {
+	echo $(git branch | egrep \* | cut -d' ' -f2)
+}
+
+# git_setbranch outdir
+#
+# $1 if it exists sets the outdir. Default is /tmp
+#
+git_setbranch() {
+	local index=1
+	local line
+	local _outdir="/tmp"
+
+	[ $# -eq 1 ] && _outdir="$1"
+
+	git branch > $_outdir/branchlist
+	echo -e "$attr_bold"
+
+	while read line; do
+		printf "%2d  $line\n" $index
+		let index++
+	done < $_outdir/branchlist
+
+	echo
+	echo -en "$BLD"
+	echo -en "Enter the number corresponding to the branch you want: "
+	echo -en "$OFF"
+	read  linenumber
+	gitbranch="$(ui_readline $linenumber $_outdir/branchlist | tr -d [\*" "])"
+	echo "git checkout "$gitbranch""
+	git checkout "$gitbranch" 2>&1
+
+	if [ $? -ne 0 ]; then
+		echo -e "$BLD\0Please commit or stash your changes first.$OFF"
+		return 1
+	fi
+
+	git log -n1
+	return 0
+}
+
+get_type() {
+	local _type_=$1
+	$_type_ && echo "struct" || echo "union"
+}
+
+show_type() {
+
+	structstr=$(
+cat <<EOF
+
+ t  struct or union             :$OFF $(get_type $b_type)$BLD
+EOF
+)
+	$b_wholeword && ! $b_exported && echo -e "$structstr"
+}
+
+show_search_mode() {
+	local _mode_=$1
+	b_exported=false
+
+	case $_mode_ in
+		$smode_sym ) echo "kABI Sensitive Symbols";;
+		$smode_fun ) echo "Exported Functions"; b_exported=true ;;
+		$smode_def ) echo "Symbol definition" ;;
+		$smode_cnt ) echo "Count symbol instances" ;;
+	esac
+}
+
+show_settings() {
+
+	settingstr=$(
+cat <<EOF
+$BLD
+    $MNU$UND\0Scan The Kernel for kABI Sensitive Symbols$OFF
+$MNU
+    $UND\0Environment        $OFF
+    Most Recent Tag             :$STA $lasttag
+$MNU b $OFF Current git branch          :$STA $gitbranch
+$MNU f $OFF File to receive output      :$STA $outfile
+$MNU n $OFF Search name                 :$STA $searchstr
+$MNU m $OFF Search mask                 :$STA $searchmask$(show_type)
+$MNU
+    $UND\0Run Parameters     $OFF
+$MNU 1 $OFF Stop after finding one      :$STA $b_justone
+$MNU l $OFF Only seek whitelist symbols :$STA $b_whitelist
+$MNU w $OFF Whole words only            :$STA $b_wholeword
+$MNU v $OFF Verbose output              :$STA $b_verbose
+$MNU s $OFF Search mode                 :$STA $(show_search_mode $smode)
+$MNU
+    $UND\0Control            $OFF
+$MNU r $OFF Run the search
+$MNU g $OFF Create the kabi graph
+$MNU h $OFF help text
+$MNU q $OFF Quit
+$OFF
+EOF
+)
+	echo -e "$settingstr"
+}
+
+menu_parser() {
+	local setting
+
+	[ $smode -eq $smode_fun ] && b_exported=true || b_exported=false
+	show_settings
+	promptgetchar "$BLD\0Enter one of the above: $OFF" setting
+	case $setting in
+		b )	git_setbranch
+			git_get_lasttag lasttag $last_tag_file
+			;;
+		f )	getuser "Send output to: " outfile
+			[ "$outfile" ] || outfile=/dev/stdout
+			;;
+		n )	getuser "Search name: " searchstr
+			configtable[searchstr]=$searchstr
+			;;
+		1 )	ui_toggle b_justone
+			configtable[b_justone]=$b_justone
+			;;
+		l )	ui_toggle b_whitelist
+			$b_wholeword || b_wholeword=true
+			configtable[b_whitelist]=$b_whitelist
+			configtable[b_wholeword]=$b_wholeword
+			;;
+		w )	ui_toggle b_wholeword
+			$b_wholeword || b_whitelist=false
+			configtable[b_wholeword]=$b_wholeword
+			configtable[b_whitelist]=$b_whitelist
+			;;
+		v )	ui_toggle b_verbose
+			configtable[b_verbose]=$b_verbose
+			;;
+		t )	$b_wholeword || continue
+			ui_toggle b_type
+			configtable[b_type]=$b_type
+			;;
+		m )	getuser "Search mask: " searchmask
+			configtable[searchmask]=$searchmask
+			;;
+		r )	return $rc_run
+			;;
+		s )	ui_cycle_state smode 4
+			configtable[smode]=$smode
+			;;
+		h )	[ $(which kabiscan.help) ] \
+				&& kabiscan.help \
+				|| echo -e "$usagestr"
+			;;
+		q )	rm -f $last_tag_file
+			echo
+			exit 0
+			;;
+	esac
+	return $rc_continue
+}
+
+#############################
+# Start of Script Execution
+#############################
+
+init() {
+	ui_setbg bgtemp
+
+	configfile="$MYDATA"/"$(basename "$0")".conf
+	cfg_start configtable "$configfile"
+
+	kabidatafile="redhat/kabi/kabi-datafiles.list"
+	git_get_lasttag lasttag $last_tag_file
+
+	# trap keyboard interrupt (control-c)
+	trap control_c SIGINT
+}
+
+main() {
+    local optstr
+
+    git_checkrepo || exit 1
+
+    while true; do
+	optstr=""
+
+	gitbranch=$(git_getcurrentbranch)
+	outfile="${configtable[outfile]}"
+	searchmask="${configtable[searchmask]}"
+	searchstr="${configtable[searchstr]}"
+	smode=${configtable[smode]}
+
+	while true; do
+		menu_parser
+		[ $? -eq $rc_run ] && break
+	done
+
+	# Build the option string to pass to kabi-lookup
+	[ "$searchmask" ] && optstr="$optstr""-m $searchmask "
+	$b_justone	  && optstr="$optstr""-1 "
+	$b_whitelist	  && optstr="$optstr""-l "
+	$b_wholeword	  && optstr="$optstr""-w "
+	$b_verbose	  && optstr="$optstr""-v "
+
+	case $smode in
+		$smode_fun ) optstr="$optstr""-e " ;;
+		$smode_sym ) optstr="$optstr""-s " ;;
+		$smode_def ) optstr="$optstr""-d " ;;
+		$smode_cnt ) optstr="$optstr""-c " ;;
+	esac
+
+	if $b_wholeword && ! $b_exported; then
+		searchstr="$(get_type $b_type) $searchstr"
+		echo "kabi-lookup $optstr \"$searchstr\""
+		kabi-lookup $optstr "$searchstr"
+	else
+		echo "kabi-lookup $optstr$searchstr"
+		kabi-lookup $optstr $searchstr
+	fi
+
+    done
+}
+
+# run if user hits control-c
+#
+control_c()
+{
+	set_booleans
+	rm -f $last_tag_file
+	exit $CTLC_EXIT		# defined in lib/ui.source
+}
+
+main
