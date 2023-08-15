@@ -48,7 +48,7 @@ create_checkrepo_msgs() {
 ""
 "$STA$PWD$WRN is not a git repo"
 "$STA$PWD$WRN is not the top of a RHEL kernel tree$OFF"
-"\n${WRN}You must create the kabi graph\n${MNU}'g' from main menu.$OFF\n"
+"\n${WRN}You must create the kabi graph\n${INF}Type '${MNU}kabi-graph -h$INF' to see how.$OFF\n"
 	)
 }
 declare -i crm_nogit=1
@@ -223,7 +223,7 @@ show_type() {
 	structstr=$(
 cat <<EOF
 
- t  struct or union             :$OFF $(get_type $b_type)$BLD
+$MNU t $OFF struct or union             :$STA $(get_type $b_type)$BLD
 EOF
 )
 	$b_wholeword && ! $b_exported && echo -e "$structstr"
@@ -250,16 +250,16 @@ $BLD
 $MNU
     $UND\0Environment        $OFF
     Most Recent Tag             :$STA $lasttag
-$MNU b $OFF Current git branch          :$STA $gitbranch
-$MNU f $OFF File to receive output      :$STA $outfile
-$MNU n $OFF Search name                 :$STA $searchstr
-$MNU m $OFF Search mask                 :$STA $searchmask$(show_type)
+$MNU b $OFF Current git branch          :$STA ${configtable[gitbranch]}
+$MNU f $OFF File to receive output      :$STA ${configtable[outfile]}
+$MNU n $OFF Search name                 :$STA ${configtable[searchstr]}
+$MNU m $OFF Search mask                 :$STA $searchmask$OFF$(show_type)
 $MNU
     $UND\0Run Parameters     $OFF
-$MNU 1 $OFF Stop after finding one      :$STA $b_justone
-$MNU l $OFF Only seek whitelist symbols :$STA $b_whitelist
-$MNU w $OFF Whole words only            :$STA $b_wholeword
-$MNU v $OFF Verbose output              :$STA $b_verbose
+$MNU 1 $OFF Stop after finding one      :$STA ${configtable[b_justone]}
+$MNU l $OFF Only seek whitelist symbols :$STA ${configtable[b_whitelist]}
+$MNU w $OFF Whole words only            :$STA ${configtable[b_wholeword]}
+$MNU v $OFF Verbose output              :$STA ${configtable[b_verbose]}
 $MNU s $OFF Search mode                 :$STA $(show_search_mode $smode)
 $MNU
     $UND\0Control            $OFF
@@ -278,13 +278,13 @@ menu_parser() {
 
 	[ $smode -eq $smode_fun ] && b_exported=true || b_exported=false
 	show_settings
-	promptgetchar "$BLD\0Enter one of the above: $OFF" setting
+	promptgetchar "$MNU\0Enter one of the above: $OFF" setting
 	case $setting in
 		b )	git_setbranch
 			git_get_lasttag lasttag $last_tag_file
 			;;
 		f )	getuser "Send output to: " outfile
-			[ "$outfile" ] || outfile=/dev/stdout
+			[ "$outfile" ] || configtable[outfile]=/dev/stdout
 			;;
 		n )	getuser "Search name: " searchstr
 			configtable[searchstr]=$searchstr
@@ -335,13 +335,13 @@ init() {
 
 	ui_setbg bg
 
+	kabidatafile="$PWD/redhat/kabi/kabi-datafiles.list"
 	create_checkrepo_msgs
 	git_checkrepo || exit 1
 
 	configfile="$MYDATA"/"$(basename "$0")".conf
 	cfg_start configtable "$configfile"
 
-	kabidatafile="redhat/kabi/kabi-datafiles.list"
 	git_get_lasttag lasttag $last_tag_file
 
 	# trap keyboard interrupt (control-c)
@@ -356,7 +356,7 @@ main() {
     while true; do
 	optstr=""
 
-	gitbranch=$(git_getcurrentbranch)
+	configtable[gitbranch]=$(git_getcurrentbranch)
 	outfile="${configtable[outfile]}"
 	searchmask="${configtable[searchmask]}"
 	searchstr="${configtable[searchstr]}"
@@ -369,10 +369,10 @@ main() {
 
 	# Build the option string to pass to kabi-lookup
 	[ "$searchmask" ] && optstr="$optstr""-m $searchmask "
-	$b_justone	  && optstr="$optstr""-1 "
-	$b_whitelist	  && optstr="$optstr""-l "
-	$b_wholeword	  && optstr="$optstr""-w "
-	$b_verbose	  && optstr="$optstr""-v "
+	${configtable[b_justone]}	  && optstr="$optstr""-1 "
+	${configtable[b_whitelist]}	  && optstr="$optstr""-l "
+	${configtable[b_wholeword]}	  && optstr="$optstr""-w "
+	${configtable[b_verbose]}	  && optstr="$optstr""-v "
 
 	case $smode in
 		$smode_fun ) optstr="$optstr""-e " ;;
@@ -382,12 +382,12 @@ main() {
 	esac
 
 	if $b_wholeword && ! $b_exported; then
-		searchstr="$(get_type $b_type) $searchstr"
-		echo "kabi-lookup $optstr \"$searchstr\""
-		kabi-lookup $optstr "$searchstr"
+		configtable[searchstr]="$(get_type $b_type) ${configtable[searchstr]}"
+		echo "kabi-lookup $optstr \"${configtable[searchstr]}\""
+		kabi-lookup $optstr "${configtable[searchstr]}"
 	else
-		echo "kabi-lookup $optstr$searchstr"
-		kabi-lookup $optstr $searchstr
+		echo "kabi-lookup $optstr${configtable[searchstr]}"
+		kabi-lookup $optstr ${configtable[searchstr]}
 	fi
 
     done
