@@ -3,6 +3,8 @@
 # kabiscan
 #
 
+declare version="v3.0"
+
 declare MYDIR=
 declare MYDATA=
 
@@ -246,7 +248,7 @@ show_settings() {
 	settingstr=$(
 cat <<EOF
 $BLD
-    $MNU$UND\0Scan The Kernel for kABI Sensitive Symbols$OFF
+    $MNU$UND\0kabiscan $version$OFF
 $MNU
     $UND\0Environment        $OFF
     Most Recent Tag             :$STA $lasttag
@@ -369,10 +371,10 @@ main() {
 
 	# Build the option string to pass to kabi-lookup
 	[ "$searchmask" ] && optstr="$optstr""-m $searchmask "
-	${configtable[b_justone]}	  && optstr="$optstr""-1 "
-	${configtable[b_whitelist]}	  && optstr="$optstr""-l "
-	${configtable[b_wholeword]}	  && optstr="$optstr""-w "
-	${configtable[b_verbose]}	  && optstr="$optstr""-v "
+	${configtable[b_justone]}	&& optstr="$optstr""-1 "
+	${configtable[b_whitelist]}	&& optstr="$optstr""-l "
+	${configtable[b_wholeword]}	&& optstr="$optstr""-w "
+	${configtable[b_verbose]}	&& optstr="$optstr""-v "
 
 	case $smode in
 		$smode_fun ) optstr="$optstr""-e " ;;
@@ -382,12 +384,12 @@ main() {
 	esac
 
 	if $b_wholeword && ! $b_exported; then
-		configtable[searchstr]="$(get_type $b_type) ${configtable[searchstr]}"
-		echo "kabi-lookup $optstr \"${configtable[searchstr]}\""
-		kabi-lookup $optstr "${configtable[searchstr]}"
+		searchstr="$(get_type $b_type) ${configtable[searchstr]}"
+		echo "kabi-lookup $optstr \"$searchstr\""
+		kabi-lookup $optstr "$searchstr"
 	else
-		echo "kabi-lookup $optstr${configtable[searchstr]}"
-		kabi-lookup $optstr ${configtable[searchstr]}
+		echo "kabi-lookup $optstr$searchstr"
+		kabi-lookup $optstr $searchstr
 	fi
 
     done
